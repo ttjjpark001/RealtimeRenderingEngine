@@ -1,0 +1,25 @@
+#pragma once
+
+#include <DirectXMath.h>
+#include <d3d12.h>
+
+namespace RRE
+{
+
+struct Vertex
+{
+    DirectX::XMFLOAT3 position;
+    DirectX::XMFLOAT4 color;
+    DirectX::XMFLOAT3 normal;
+};
+
+inline const D3D12_INPUT_ELEMENT_DESC VERTEX_INPUT_LAYOUT[] =
+{
+    { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0,  0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    { "COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT,  0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    { "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT,     0, 28, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+};
+
+inline constexpr UINT VERTEX_INPUT_LAYOUT_COUNT = _countof(VERTEX_INPUT_LAYOUT);
+
+} // namespace RRE

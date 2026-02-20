@@ -8,6 +8,8 @@ namespace RRE
 
 class Win32Window;
 class IRHIDevice;
+class IRHIBuffer;
+class Mesh;
 
 struct EngineInitParams
 {
@@ -29,9 +31,22 @@ private:
     void Update(float deltaTime);
     void Render();
     void OnResize(uint32 width, uint32 height);
+    void UploadMesh(const Mesh& mesh);
 
     std::unique_ptr<Win32Window> m_window;
     std::unique_ptr<IRHIDevice> m_rhiDevice;
+
+    // Mesh buffers
+    std::unique_ptr<IRHIBuffer> m_vertexBuffer;
+    std::unique_ptr<IRHIBuffer> m_indexBuffer;
+    uint32 m_indexCount = 0;
+
+    // Cube mesh
+    std::unique_ptr<Mesh> m_cubeMesh;
+
+    // Animation
+    float m_rotationAngle = 0.0f;
+
     bool m_isInitialized = false;
 
     // High-resolution timer

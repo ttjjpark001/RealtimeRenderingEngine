@@ -4,6 +4,8 @@
 #include <wrl/client.h>
 #include "Core/Types.h"
 #include "RHI/RHIContext.h"
+#include "RHI/D3D12/D3D12PipelineState.h"
+#include "RHI/D3D12/D3D12DescriptorHeap.h"
 
 namespace RRE
 {
@@ -21,6 +23,9 @@ public:
 
     void SetSwapChain(D3D12SwapChain* swapChain) { m_swapChain = swapChain; }
 
+    // Set View-Projection matrix for current frame
+    void SetViewProjection(const DirectX::XMFLOAT4X4& viewProj) { m_viewProjection = viewProj; }
+
     // IRHIContext interface
     void BeginFrame() override;
     void EndFrame() override;
@@ -34,6 +39,7 @@ public:
     ID3D12GraphicsCommandList* GetCommandList() const { return m_commandList.Get(); }
 
     void WaitForGPU();
+    void CreateDepthBuffer(uint32 width, uint32 height);
 
 private:
     void MoveToNextFrame();
@@ -49,6 +55,17 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Fence> m_fence;
     uint64 m_fenceValue = 0;
     HANDLE m_fenceEvent = nullptr;
+
+    // Pipeline state
+    D3D12PipelineState m_pipelineState;
+    bool m_hasPSO = false;
+
+    // Depth buffer
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_depthBuffer;
+    D3D12DescriptorHeap m_dsvHeap;
+
+    // Current frame's view-projection matrix
+    DirectX::XMFLOAT4X4 m_viewProjection;
 };
 
 } // namespace RRE

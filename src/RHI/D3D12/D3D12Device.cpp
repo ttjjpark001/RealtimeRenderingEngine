@@ -116,6 +116,10 @@ bool D3D12Device::InitializeInternal(void* windowHandle, uint32 width, uint32 he
         return false;
 
     m_context.SetSwapChain(&m_swapChain);
+
+    // Create depth buffer
+    m_context.CreateDepthBuffer(width, height);
+
     m_isInitialized = true;
     return true;
 }
@@ -140,6 +144,7 @@ void D3D12Device::OnResize(uint32 width, uint32 height)
 
     m_context.WaitForGPU();
     m_swapChain.ResizeBuffers(width, height, m_device.Get());
+    m_context.CreateDepthBuffer(width, height);
 }
 
 bool D3D12Device::CreateDevice(IDXGIAdapter1* adapter)

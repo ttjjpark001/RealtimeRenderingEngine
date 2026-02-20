@@ -25,6 +25,9 @@
     <Filter Include="Scene">
       <UniqueIdentifier>{CD8CBF07-0D1E-4E9F-FC7D-BE4F8A0BC2D3}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{DE9DCF08-1E2F-5FA0-0D8E-CF5A9B1CD3E4}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
 
   <ItemGroup>
@@ -46,6 +49,15 @@
     </ClCompile>
     <ClCompile Include="RHI\D3D12\D3D12DescriptorHeap.cpp">
       <Filter>RHI\D3D12</Filter>
+    </ClCompile>
+    <ClCompile Include="RHI\D3D12\D3D12Buffer.cpp">
+      <Filter>RHI\D3D12</Filter>
+    </ClCompile>
+    <ClCompile Include="RHI\D3D12\D3D12PipelineState.cpp">
+      <Filter>RHI\D3D12</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\MeshFactory.cpp">
+      <Filter>Renderer</Filter>
     </ClCompile>
   </ItemGroup>
 
@@ -83,5 +95,29 @@
     <ClInclude Include="RHI\D3D12\D3D12DescriptorHeap.h">
       <Filter>RHI\D3D12</Filter>
     </ClInclude>
+    <ClInclude Include="RHI\D3D12\D3D12Buffer.h">
+      <Filter>RHI\D3D12</Filter>
+    </ClInclude>
+    <ClInclude Include="RHI\D3D12\D3D12PipelineState.h">
+      <Filter>RHI\D3D12</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Vertex.h">
+      <Filter>Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\Mesh.h">
+      <Filter>Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\FaceColorPalette.h">
+      <Filter>Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\MeshFactory.h">
+      <Filter>Renderer</Filter>
+    </ClInclude>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Shaders\BasicColor.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

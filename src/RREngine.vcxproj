@@ -90,6 +90,9 @@
     <ClCompile Include="RHI\D3D12\D3D12Context.cpp" />
     <ClCompile Include="RHI\D3D12\D3D12SwapChain.cpp" />
     <ClCompile Include="RHI\D3D12\D3D12DescriptorHeap.cpp" />
+    <ClCompile Include="RHI\D3D12\D3D12Buffer.cpp" />
+    <ClCompile Include="RHI\D3D12\D3D12PipelineState.cpp" />
+    <ClCompile Include="Renderer\MeshFactory.cpp" />
   </ItemGroup>
 
   <!-- Header Files -->
@@ -105,6 +108,17 @@
     <ClInclude Include="RHI\D3D12\D3D12Context.h" />
     <ClInclude Include="RHI\D3D12\D3D12SwapChain.h" />
     <ClInclude Include="RHI\D3D12\D3D12DescriptorHeap.h" />
+    <ClInclude Include="RHI\D3D12\D3D12Buffer.h" />
+    <ClInclude Include="RHI\D3D12\D3D12PipelineState.h" />
+    <ClInclude Include="Renderer\Vertex.h" />
+    <ClInclude Include="Renderer\Mesh.h" />
+    <ClInclude Include="Renderer\FaceColorPalette.h" />
+    <ClInclude Include="Renderer\MeshFactory.h" />
+  </ItemGroup>
+
+  <!-- Shader Files -->
+  <ItemGroup>
+    <None Include="Shaders\BasicColor.hlsl" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
