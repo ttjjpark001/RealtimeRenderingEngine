@@ -116,14 +116,17 @@ void Engine::Render()
     auto* context = static_cast<D3D12Context*>(m_rhiDevice->GetContext());
 
     // Compute view and projection matrices
-    XMVECTOR eyePos = XMVectorSet(0.0f, 2.0f, -5.0f, 1.0f);
+    // Camera positioned at a comfortable distance to show the full cube
+    XMVECTOR eyePos = XMVectorSet(0.0f, 2.5f, -6.0f, 1.0f);
     XMVECTOR lookAt = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
     XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
     XMMATRIX view = XMMatrixLookAtLH(eyePos, lookAt, up);
 
     float aspectRatio = static_cast<float>(m_window->GetWidth())
         / static_cast<float>(m_window->GetHeight());
-    XMMATRIX projection = XMMatrixPerspectiveFovLH(XM_PIDIV4, aspectRatio, 0.1f, 100.0f);
+    // Wider FOV (60°) gives more visible area and makes objects appear smaller
+    XMMATRIX projection = XMMatrixPerspectiveFovLH(
+        XMConvertToRadians(60.0f), aspectRatio, 0.1f, 100.0f);
 
     XMMATRIX viewProj = view * projection;
     XMFLOAT4X4 viewProjFloat;
