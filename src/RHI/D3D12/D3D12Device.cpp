@@ -120,6 +120,10 @@ bool D3D12Device::InitializeInternal(void* windowHandle, uint32 width, uint32 he
     // Create depth buffer
     m_context.CreateDepthBuffer(width, height);
 
+    // Initialize D2D text rendering (D3D11On12 + D2D1 + DirectWrite)
+    if (!m_context.InitializeD2D(m_device.Get(), m_context.GetCommandQueue(), &m_swapChain))
+        return false;
+
     m_isInitialized = true;
     return true;
 }
@@ -130,8 +134,8 @@ void D3D12Device::Shutdown()
         return;
 
     m_context.WaitForGPU();
-    m_swapChain.Shutdown();
     m_context.Shutdown();
+    m_swapChain.Shutdown();
     m_device.Reset();
     m_factory.Reset();
     m_isInitialized = false;
@@ -143,8 +147,10 @@ void D3D12Device::OnResize(uint32 width, uint32 height)
         return;
 
     m_context.WaitForGPU();
+    m_context.ReleaseD2DRenderTargets();
     m_swapChain.ResizeBuffers(width, height, m_device.Get());
     m_context.CreateDepthBuffer(width, height);
+    m_context.CreateD2DRenderTargets(&m_swapChain);
 }
 
 bool D3D12Device::CreateDevice(IDXGIAdapter1* adapter)

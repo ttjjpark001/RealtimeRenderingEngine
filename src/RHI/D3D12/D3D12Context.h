@@ -1,7 +1,12 @@
 #pragma once
 
 #include <d3d12.h>
+#include <d3d11on12.h>
+#include <d2d1_1.h>
+#include <dwrite.h>
 #include <wrl/client.h>
+#include <vector>
+#include <string>
 #include "Core/Types.h"
 #include "RHI/RHIContext.h"
 #include "RHI/D3D12/D3D12PipelineState.h"
@@ -19,6 +24,14 @@ struct PerObjectConstants
 
 class D3D12SwapChain;
 
+struct TextCommand
+{
+    int x;
+    int y;
+    std::string text;
+    DirectX::XMFLOAT4 color;
+};
+
 class D3D12Context : public IRHIContext
 {
 public:
@@ -29,6 +42,13 @@ public:
     void Shutdown();
 
     void SetSwapChain(D3D12SwapChain* swapChain) { m_swapChain = swapChain; }
+
+    // D2D text rendering
+    bool InitializeD2D(ID3D12Device* device, ID3D12CommandQueue* commandQueue,
+        D3D12SwapChain* swapChain);
+    void CreateD2DRenderTargets(D3D12SwapChain* swapChain);
+    void ReleaseD2DRenderTargets();
+    void ShutdownD2D();
 
     // Set View-Projection matrix for current frame
     void SetViewProjection(const DirectX::XMFLOAT4X4& viewProj) { m_viewProjection = viewProj; }
@@ -51,6 +71,7 @@ public:
 private:
     void MoveToNextFrame();
     bool CreateConstantBuffer();
+    void FlushTextCommands();
 
     ID3D12Device* m_device = nullptr;
     D3D12SwapChain* m_swapChain = nullptr;
@@ -79,6 +100,26 @@ private:
 
     // Current frame's view-projection matrix
     DirectX::XMFLOAT4X4 m_viewProjection;
+
+    // D3D11On12 / D2D / DirectWrite
+    Microsoft::WRL::ComPtr<ID3D11On12Device> m_d3d11On12Device;
+    Microsoft::WRL::ComPtr<ID3D11Device> m_d3d11Device;
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> m_d3d11DeviceContext;
+    Microsoft::WRL::ComPtr<ID2D1Factory1> m_d2dFactory;
+    Microsoft::WRL::ComPtr<ID2D1Device> m_d2dDevice;
+    Microsoft::WRL::ComPtr<ID2D1DeviceContext> m_d2dDeviceContext;
+    Microsoft::WRL::ComPtr<IDWriteFactory> m_dwriteFactory;
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> m_textFormat;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> m_textBrush;
+
+    // Per-back-buffer wrapped resources
+    static constexpr uint32 MAX_BACK_BUFFERS = 2;
+    Microsoft::WRL::ComPtr<ID3D11Resource> m_wrappedBackBuffers[MAX_BACK_BUFFERS];
+    Microsoft::WRL::ComPtr<ID2D1Bitmap1> m_d2dRenderTargets[MAX_BACK_BUFFERS];
+
+    // Queued text commands
+    std::vector<TextCommand> m_textCommands;
+    bool m_d2dInitialized = false;
 };
 
 } // namespace RRE

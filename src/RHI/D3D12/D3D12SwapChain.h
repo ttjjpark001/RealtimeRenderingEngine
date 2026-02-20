@@ -26,6 +26,7 @@ public:
 
     uint32 GetCurrentBackBufferIndex() const { return m_swapChain->GetCurrentBackBufferIndex(); }
     ID3D12Resource* GetCurrentBackBuffer() const { return m_backBuffers[GetCurrentBackBufferIndex()].Get(); }
+    ID3D12Resource* GetBackBuffer(uint32 index) const { return m_backBuffers[index].Get(); }
     D3D12_CPU_DESCRIPTOR_HANDLE GetCurrentRTV() const;
 
     uint32 GetWidth() const { return m_width; }

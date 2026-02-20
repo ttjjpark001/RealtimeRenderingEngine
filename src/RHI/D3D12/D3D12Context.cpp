@@ -3,6 +3,10 @@
 #include "RHI/D3D12/D3D12Buffer.h"
 #include <cstring>
 
+#pragma comment(lib, "d3d11.lib")
+#pragma comment(lib, "d2d1.lib")
+#pragma comment(lib, "dwrite.lib")
+
 namespace RRE
 {
 
@@ -110,9 +114,208 @@ bool D3D12Context::CreateConstantBuffer()
     return true;
 }
 
+bool D3D12Context::InitializeD2D(ID3D12Device* device, ID3D12CommandQueue* commandQueue,
+    D3D12SwapChain* swapChain)
+{
+    // Create D3D11On12 device wrapping D3D12
+    IUnknown* queues[] = { commandQueue };
+    UINT d3d11DeviceFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+#ifdef _DEBUG
+    d3d11DeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
+#endif
+
+    Microsoft::WRL::ComPtr<ID3D11Device> d3d11Device;
+    HRESULT hr = D3D11On12CreateDevice(
+        device,
+        d3d11DeviceFlags,
+        nullptr, 0,      // feature levels
+        queues, 1,       // command queues
+        0,               // node mask
+        &d3d11Device,
+        &m_d3d11DeviceContext,
+        nullptr);
+    if (FAILED(hr))
+        return false;
+
+    hr = d3d11Device.As(&m_d3d11On12Device);
+    if (FAILED(hr))
+        return false;
+
+    m_d3d11Device = d3d11Device;
+
+    // Create D2D1 factory
+    D2D1_FACTORY_OPTIONS d2dOptions = {};
+#ifdef _DEBUG
+    d2dOptions.debugLevel = D2D1_DEBUG_LEVEL_INFORMATION;
+#endif
+    hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,
+        __uuidof(ID2D1Factory1), &d2dOptions,
+        reinterpret_cast<void**>(m_d2dFactory.GetAddressOf()));
+    if (FAILED(hr))
+        return false;
+
+    // Get DXGI device from D3D11 device
+    Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
+    hr = m_d3d11Device.As(&dxgiDevice);
+    if (FAILED(hr))
+        return false;
+
+    // Create D2D1 device and device context
+    hr = m_d2dFactory->CreateDevice(dxgiDevice.Get(), &m_d2dDevice);
+    if (FAILED(hr))
+        return false;
+
+    hr = m_d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &m_d2dDeviceContext);
+    if (FAILED(hr))
+        return false;
+
+    // Create DirectWrite factory
+    hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED,
+        __uuidof(IDWriteFactory),
+        reinterpret_cast<IUnknown**>(m_dwriteFactory.GetAddressOf()));
+    if (FAILED(hr))
+        return false;
+
+    // Create text format (Consolas 14pt)
+    hr = m_dwriteFactory->CreateTextFormat(
+        L"Consolas", nullptr,
+        DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+        14.0f, L"en-us", &m_textFormat);
+    if (FAILED(hr))
+        return false;
+
+    // Create D2D render targets for back buffers
+    CreateD2DRenderTargets(swapChain);
+
+    // Create brush (will be set per-draw)
+    hr = m_d2dDeviceContext->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &m_textBrush);
+    if (FAILED(hr))
+        return false;
+
+    m_d2dInitialized = true;
+    return true;
+}
+
+void D3D12Context::CreateD2DRenderTargets(D3D12SwapChain* swapChain)
+{
+    if (!m_d3d11On12Device || !swapChain)
+        return;
+
+    float dpiX = 96.0f, dpiY = 96.0f;
+
+    D2D1_BITMAP_PROPERTIES1 bitmapProps = D2D1::BitmapProperties1(
+        D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+        D2D1::PixelFormat(DXGI_FORMAT_R8G8B8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
+        dpiX, dpiY);
+
+    for (uint32 i = 0; i < D3D12SwapChain::BUFFER_COUNT; i++)
+    {
+        D3D11_RESOURCE_FLAGS d3d11Flags = {};
+        d3d11Flags.BindFlags = D3D11_BIND_RENDER_TARGET;
+
+        HRESULT hr = m_d3d11On12Device->CreateWrappedResource(
+            swapChain->GetBackBuffer(i),
+            &d3d11Flags,
+            D3D12_RESOURCE_STATE_RENDER_TARGET,
+            D3D12_RESOURCE_STATE_PRESENT,
+            IID_PPV_ARGS(&m_wrappedBackBuffers[i]));
+        if (FAILED(hr))
+            continue;
+
+        Microsoft::WRL::ComPtr<IDXGISurface> surface;
+        hr = m_wrappedBackBuffers[i].As(&surface);
+        if (FAILED(hr))
+            continue;
+
+        hr = m_d2dDeviceContext->CreateBitmapFromDxgiSurface(
+            surface.Get(), &bitmapProps, &m_d2dRenderTargets[i]);
+    }
+}
+
+void D3D12Context::ReleaseD2DRenderTargets()
+{
+    if (m_d2dDeviceContext)
+        m_d2dDeviceContext->SetTarget(nullptr);
+
+    for (uint32 i = 0; i < MAX_BACK_BUFFERS; i++)
+    {
+        m_d2dRenderTargets[i].Reset();
+        m_wrappedBackBuffers[i].Reset();
+    }
+
+    if (m_d3d11DeviceContext)
+        m_d3d11DeviceContext->Flush();
+}
+
+void D3D12Context::ShutdownD2D()
+{
+    ReleaseD2DRenderTargets();
+
+    m_textBrush.Reset();
+    m_textFormat.Reset();
+    m_d2dDeviceContext.Reset();
+    m_d2dDevice.Reset();
+    m_d2dFactory.Reset();
+    m_dwriteFactory.Reset();
+    m_d3d11On12Device.Reset();
+    m_d3d11DeviceContext.Reset();
+    m_d3d11Device.Reset();
+    m_d2dInitialized = false;
+}
+
+void D3D12Context::FlushTextCommands()
+{
+    if (!m_d2dInitialized || m_textCommands.empty() || !m_swapChain)
+        return;
+
+    uint32 backBufferIndex = m_swapChain->GetCurrentBackBufferIndex();
+    if (!m_wrappedBackBuffers[backBufferIndex] || !m_d2dRenderTargets[backBufferIndex])
+        return;
+
+    // Acquire the wrapped back buffer for D2D rendering
+    ID3D11Resource* wrappedResources[] = { m_wrappedBackBuffers[backBufferIndex].Get() };
+    m_d3d11On12Device->AcquireWrappedResources(wrappedResources, 1);
+
+    m_d2dDeviceContext->SetTarget(m_d2dRenderTargets[backBufferIndex].Get());
+    m_d2dDeviceContext->BeginDraw();
+
+    for (const auto& cmd : m_textCommands)
+    {
+        // Convert color
+        m_textBrush->SetColor(D2D1::ColorF(cmd.color.x, cmd.color.y, cmd.color.z, cmd.color.w));
+
+        // Convert text to wide string
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, cmd.text.c_str(), -1, nullptr, 0);
+        std::wstring wtext(wlen - 1, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, cmd.text.c_str(), -1, &wtext[0], wlen);
+
+        // Draw text
+        D2D1_RECT_F layoutRect = D2D1::RectF(
+            static_cast<float>(cmd.x),
+            static_cast<float>(cmd.y),
+            static_cast<float>(m_swapChain->GetWidth()),
+            static_cast<float>(m_swapChain->GetHeight()));
+
+        m_d2dDeviceContext->DrawText(
+            wtext.c_str(), static_cast<UINT32>(wtext.size()),
+            m_textFormat.Get(), &layoutRect, m_textBrush.Get());
+    }
+
+    m_d2dDeviceContext->EndDraw();
+    m_d2dDeviceContext->SetTarget(nullptr);
+
+    // Release the wrapped back buffer (transitions to PRESENT state)
+    m_d3d11On12Device->ReleaseWrappedResources(wrappedResources, 1);
+    m_d3d11DeviceContext->Flush();
+
+    m_textCommands.clear();
+}
+
 void D3D12Context::Shutdown()
 {
     WaitForGPU();
+
+    ShutdownD2D();
 
     // Unmap constant buffer
     if (m_constantBuffer && m_cbData)
@@ -145,18 +348,24 @@ void D3D12Context::BeginFrame()
 
 void D3D12Context::EndFrame()
 {
-    // Transition back buffer: RENDER_TARGET -> PRESENT
-    if (m_swapChain)
+    bool hasTextCommands = m_d2dInitialized && !m_textCommands.empty();
+
+    if (!hasTextCommands)
     {
-        ID3D12Resource* backBuffer = m_swapChain->GetCurrentBackBuffer();
-        D3D12_RESOURCE_BARRIER barrier = {};
-        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        barrier.Transition.pResource = backBuffer;
-        barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
-        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        m_commandList->ResourceBarrier(1, &barrier);
+        // No text: use standard barrier path
+        if (m_swapChain)
+        {
+            ID3D12Resource* backBuffer = m_swapChain->GetCurrentBackBuffer();
+            D3D12_RESOURCE_BARRIER barrier = {};
+            barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            barrier.Transition.pResource = backBuffer;
+            barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+            barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+            barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            m_commandList->ResourceBarrier(1, &barrier);
+        }
     }
+    // When text exists, D3D11On12 handles RT->PRESENT via ReleaseWrappedResources
 
     // Close command list
     m_commandList->Close();
@@ -164,6 +373,12 @@ void D3D12Context::EndFrame()
     // Execute command list
     ID3D12CommandList* commandLists[] = { m_commandList.Get() };
     m_commandQueue->ExecuteCommandLists(1, commandLists);
+
+    // Flush D2D text commands (acquires wrapped resource in RT, releases in PRESENT)
+    if (hasTextCommands)
+    {
+        FlushTextCommands();
+    }
 
     // Present
     if (m_swapChain)
@@ -268,11 +483,15 @@ void D3D12Context::DrawPrimitives(IRHIBuffer* vb, IRHIBuffer* ib,
 void D3D12Context::DrawText(int x, int y, const char* text,
     const DirectX::XMFLOAT4& color)
 {
-    // TODO: Implement in Phase 7
-    UNREFERENCED_PARAMETER(x);
-    UNREFERENCED_PARAMETER(y);
-    UNREFERENCED_PARAMETER(text);
-    UNREFERENCED_PARAMETER(color);
+    if (!m_d2dInitialized || !text)
+        return;
+
+    TextCommand cmd;
+    cmd.x = x;
+    cmd.y = y;
+    cmd.text = text;
+    cmd.color = color;
+    m_textCommands.push_back(std::move(cmd));
 }
 
 void D3D12Context::WaitForGPU()

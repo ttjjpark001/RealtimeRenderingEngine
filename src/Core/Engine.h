@@ -10,6 +10,7 @@ class Win32Window;
 class IRHIDevice;
 class IRHIBuffer;
 class Mesh;
+class DebugHUD;
 
 struct EngineInitParams
 {
@@ -43,6 +44,9 @@ private:
 
     // Cube mesh
     std::unique_ptr<Mesh> m_cubeMesh;
+
+    // Debug HUD
+    std::unique_ptr<DebugHUD> m_debugHUD;
 
     // Animation
     float m_rotationAngle = 0.0f;

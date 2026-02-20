@@ -7,6 +7,7 @@
 #include "RHI/D3D12/D3D12Context.h"
 #include "Renderer/Mesh.h"
 #include "Renderer/MeshFactory.h"
+#include "Renderer/DebugHUD.h"
 #include <DirectXMath.h>
 
 using namespace DirectX;
@@ -49,6 +50,9 @@ bool Engine::Initialize(const EngineInitParams& params)
     // Create cube mesh
     m_cubeMesh = std::make_unique<Mesh>(MeshFactory::CreateCube());
     UploadMesh(*m_cubeMesh);
+
+    // Create debug HUD
+    m_debugHUD = std::make_unique<DebugHUD>();
 
     // Initialize high-resolution timer
     LARGE_INTEGER freq;
@@ -106,6 +110,19 @@ void Engine::Update(float deltaTime)
 {
     // Rotate cube
     m_rotationAngle += 1.0f * deltaTime;
+
+    // Update debug HUD
+    if (m_debugHUD)
+    {
+        RenderStats stats = {};
+        stats.fps = 0.0f; // DebugHUD calculates this internally
+        stats.width = m_window->GetWidth();
+        stats.height = m_window->GetHeight();
+        stats.aspectRatio = static_cast<float>(stats.width) / static_cast<float>(stats.height);
+        stats.totalPolygons = m_indexCount / 3;
+        stats.polygonsPerSec = stats.totalPolygons * (1.0f / deltaTime);
+        m_debugHUD->Update(deltaTime, stats);
+    }
 }
 
 void Engine::Render()
@@ -149,6 +166,12 @@ void Engine::Render()
         XMStoreFloat4x4(&worldFloat, world);
 
         context->DrawPrimitives(m_vertexBuffer.get(), m_indexBuffer.get(), worldFloat);
+    }
+
+    // Render debug HUD (before EndFrame so text commands are queued)
+    if (m_debugHUD)
+    {
+        m_debugHUD->Render(*context);
     }
 
     context->EndFrame();
