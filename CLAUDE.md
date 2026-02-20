@@ -66,6 +66,11 @@ tests/
 - 연산 타입: XMVECTOR, XMMATRIX (SIMD 레지스터, 로컬 연산용)
 - 변환 패턴: XMLoadFloat3 → SIMD 연산 → XMStoreFloat3
 - Types.h 별칭: Vector3 = XMFLOAT3, Vector4 = XMFLOAT4, Matrix4x4 = XMFLOAT4X4
+- **행렬 전치 규칙 (CPU → GPU 전달 시 필수)**:
+  - DirectXMath는 행 우선(row-major), HLSL cbuffer는 기본 열 우선(column-major)
+  - GPU로 행렬을 전달하기 전에 반드시 `XMMatrixTranspose()`로 전치해야 한다
+  - HLSL에서 `row_major` 키워드를 사용하지 않는다 (CBV 방식에서 불안정)
+  - 패턴: `XMStoreFloat4x4(&dst, XMMatrixTranspose(matrix))` → Constant Buffer에 복사
 
 ### Scene Graph
 - 트리 구조: 루트 노드 아래 부모-자식 계층
@@ -174,3 +179,5 @@ dxguid.lib     — DirectX GUIDs
 - DirectXMath의 XMVECTOR/XMMATRIX는 함수 파라미터로 직접 전달 시 FXMVECTOR/CXMMATRIX 사용 규칙을 따른다.
 - float 비교 시 epsilon 기반 비교를 사용한다 (XMVector3NearEqual 등).
 - D3D12 리소스 해제 전 GPU 작업 완료를 반드시 대기한다 (Fence).
+- **행렬을 Constant Buffer(CBV)로 GPU에 전달할 때 반드시 `XMMatrixTranspose()`로 전치한다.** DirectXMath(row-major)와 HLSL cbuffer(column-major) 간의 메모리 레이아웃 불일치로, 전치 없이 전달하면 변환이 깨져 오브젝트가 화면에 비정상적으로 표시된다.
+- MSBuild로 `.vcxproj`를 직접 빌드할 때 `$(SolutionDir)`이 `.sln` 위치가 아닌 `.vcxproj` 위치로 잡힌다. 올바른 출력 경로를 위해 `/p:SolutionDir=<루트경로>\`를 명시해야 한다.
