@@ -135,7 +135,35 @@ RealtimeRenderingEngine/
 
 **완료 기준**: 인접면이 다른 색상인 큐브가 D3D12로 렌더링
 
-### Phase 5: Scene Graph
+### Phase 5: 렌더링 파이프라인 강화
+**목표**: Depth Stencil Buffer, 상수 버퍼 관리, 빌드 타임 셰이더 컴파일 등 D3D12 렌더링 인프라 완성 (Phase 1~4 완료 후 진행)
+
+1. Depth Stencil Buffer 생성 및 관리:
+   - `D3D12Device`에서 DXGI_FORMAT_D24_UNORM_S8_UINT 형식 Depth Stencil Buffer 생성
+   - DSV Heap (D3D12_DESCRIPTOR_HEAP_TYPE_DSV) 생성 및 DSV 생성
+   - `D3D12Context::Clear`에서 `OMSetRenderTargets`에 DSV 포함, Depth Buffer 클리어
+   - `OnResize` 시 Depth Stencil Buffer 및 DSV 재생성
+
+2. CBV DescriptorHeap + Upload Buffer 기반 Constant Buffer 관리:
+   - D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV 힙 생성 (shader-visible)
+   - Upload Heap에 256바이트 정렬 Constant Buffer 생성 (per-frame)
+   - `struct PerObjectConstants { XMFLOAT4X4 world; XMFLOAT4X4 viewProj; }`
+   - 매 프레임 Map/Unmap으로 CPU → GPU 데이터 업데이트
+   - Root Signature에 CBV descriptor table 추가
+   - `DrawPrimitives`에서 CBV 바인딩
+
+3. HLSL 셰이더를 .cso 파일로 빌드 타임 컴파일:
+   - `RREngine.vcxproj`에서 src/Shaders/ HLSL 파일 빌드 액션을 VS HLSL Compiler로 설정
+   - VS/PS Entry Point, Shader Model, 출력 경로 설정 (`$(OutDir)Shaders/`)
+   - `D3D12PipelineState`에서 D3DCompileFromFile 제거 → `D3DReadFileToBlob`으로 .cso 로드
+
+4. Vertex 구조체 정렬 빌드 타임 검증:
+   - `Vertex.h`에 `static_assert(offsetof(Vertex, position) == 0)` 등 추가
+   - `static_assert(sizeof(Vertex) == 40)` 추가
+
+**완료 기준**: DSV로 깊이 테스트 정상 동작, CBV로 행렬 전달, .cso 빌드 및 로드 성공, static_assert 통과
+
+### Phase 6: Scene Graph
 **목표**: 계층적 오브젝트 관리 시스템
 
 1. `Transform` — XMFLOAT3 position/rotation/scale → XMMATRIX 생성
@@ -146,7 +174,7 @@ RealtimeRenderingEngine/
 
 **완료 기준**: 부모 회전 시 자식도 함께 회전
 
-### Phase 6: 상태 표시 HUD
+### Phase 7: 상태 표시 HUD
 **목표**: 화면 왼쪽 상단에 렌더링 통계 오버레이
 
 1. `DebugHUD` — 상태 정보를 화면에 텍스트로 렌더링
@@ -157,7 +185,7 @@ RealtimeRenderingEngine/
 
 **완료 기준**: 화면 좌상단에 FPS, 해상도, 종횡비, 폴리곤 수, 폴리곤/초가 표시
 
-### Phase 7: 메뉴 (오브젝트 선택 + 애니메이션 제어)
+### Phase 8: 메뉴 (오브젝트 선택 + 애니메이션 제어)
 **목표**: Win32 메뉴를 통한 오브젝트 전환 및 애니메이션 시작/멈춤
 
 1. `Win32Menu` — Win32 메뉴바 생성 및 WM_COMMAND 처리
@@ -178,15 +206,16 @@ RealtimeRenderingEngine/
 
 **완료 기준**: View 메뉴로 해상도/풀스크린 전환, 메뉴/Space로 오브젝트 전환 및 애니메이션 시작/멈춤 가능
 
-### Phase 8: 포인트 광원
+### Phase 9: 포인트 광원
 **목표**: 포인트 광원 추가 및 라이팅 셰이더, 광원 정보 표시/편집
 
 1. `PointLight` — 위치(XMFLOAT3), 색상(XMFLOAT3), 감쇠 계수
-2. HLSL 셰이더 확장:
+2. HLSL 셰이더 확장 (Per-Pixel Lighting):
    - Vertex에 Normal 입력 추가
-   - Constant Buffer에 LightPosition, LightColor, CameraPosition 추가
-   - Pixel Shader에서 Diffuse + Ambient 라이팅 계산
-     (N·L × lightColor × faceColor + ambient)
+   - Constant Buffer에 LightPosition, LightColor, CameraPosition, 감쇠 계수 추가
+   - Pixel Shader에서 픽셀 단위 Diffuse + Ambient 라이팅 계산:
+     - `attenuation = 1 / (Kc + Kl·d + Kq·d²)` 감쇠 적용
+     - `result = (ambient + diff * lightColor * attenuation) * faceColor`
 3. DebugHUD에 광원 정보 표시 추가:
    - "Light Color: White", "Light Pos: (2.0, 3.0, -1.0)" 등
    - 표시 on/off 토글 가능
@@ -203,7 +232,7 @@ RealtimeRenderingEngine/
 
 **완료 기준**: 광원에 의한 라이팅이 적용되고, 광원 정보 표시/숨김/색상 변경/위치 이동 가능
 
-### Phase 9: 카메라
+### Phase 10: 카메라
 **목표**: Perspective/Orthographic 카메라 구현 및 카메라 정보 표시/편집
 
 1. `Camera` — 카메라 클래스 (Scene/Camera.h/.cpp)
@@ -240,7 +269,7 @@ RealtimeRenderingEngine/
 
 **완료 기준**: 카메라 정보 표시/숨김, 투영 전환, WASD+QE 이동, FOV 조절 가능
 
-### Phase 10: 통합 & 스모크 테스트
+### Phase 11: 통합 & 스모크 테스트
 **목표**: 전체 파이프라인 통합 및 데모
 
 1. `Renderer` — Scene Graph 순회 → RHI 드로우 콜 발행
@@ -256,13 +285,14 @@ RealtimeRenderingEngine/
 ```
 Phase 1 (기반)
     ├── Phase 2 (DirectXMath)
-    │       └── Phase 5 (Scene Graph) ──┐
+    │       └── Phase 6 (Scene Graph) ──┐
     └── Phase 3 (RHI + D3D12)           │
-            ├── Phase 4 (Vertex/Mesh) ──┤
-            ├── Phase 6 (HUD) ──────────┤
-            ├── Phase 7 (메뉴) ─────────┼── Phase 10 (통합)
-            ├── Phase 8 (광원) ─────────┤
-            └── Phase 9 (카메라) ───────┘
+            ├── Phase 4 (Vertex/Mesh)   │
+            │       └── Phase 5 (렌더링 파이프라인 강화) ──┤
+            ├── Phase 7 (HUD) ──────────┤
+            ├── Phase 8 (메뉴) ─────────┼── Phase 11 (통합)
+            ├── Phase 9 (광원) ─────────┤
+            └── Phase 10 (카메라) ──────┘
 ```
 
 ## 리스크 & 대응

@@ -241,10 +241,72 @@ PRD.md와 PLAN.md를 참조하여 Phase 4를 구현하라.
 
 ---
 
-## Prompt 5: Scene Graph
+## Prompt 5: 렌더링 파이프라인 강화
 
 ```
-PRD.md와 PLAN.md를 참조하여 Phase 5를 구현하라.
+PRD.md와 PLAN.md를 참조하여 Phase 5를 구현하라. (Phase 1~4는 이미 완료됨)
+
+1. Depth Stencil Buffer 생성 및 관리:
+   - src/RHI/D3D12/D3D12Device.h/.cpp에서 DSB 생성 로직 추가:
+     - DXGI_FORMAT_D24_UNORM_S8_UINT 형식의 ID3D12Resource 생성 (Committed Resource)
+     - D3D12_RESOURCE_STATE_DEPTH_WRITE 초기 상태
+   - src/RHI/D3D12/D3D12DescriptorHeap.h/.cpp 확장:
+     - D3D12_DESCRIPTOR_HEAP_TYPE_DSV 힙 추가 (non-shader-visible)
+     - DSV 생성 (CreateDepthStencilView)
+   - src/RHI/D3D12/D3D12Context.h/.cpp 수정:
+     - Clear()에서 OMSetRenderTargets의 두 번째 인자에 DSV 포함
+     - BeginFrame()에서 ClearDepthStencilView 호출
+   - OnResize 처리:
+     - 기존 DSB 리소스 해제 후 새 크기로 재생성
+     - DSV 재생성
+
+2. CBV DescriptorHeap + Upload Buffer 기반 Constant Buffer 관리:
+   - src/RHI/D3D12/D3D12DescriptorHeap.h/.cpp 확장:
+     - D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV 힙 추가 (shader-visible)
+   - Constant Buffer 리소스 생성:
+     - Upload Heap (D3D12_HEAP_TYPE_UPLOAD)에 256바이트 정렬 버퍼 생성
+     - struct PerObjectConstants { XMFLOAT4X4 world; XMFLOAT4X4 viewProj; };
+     - sizeof(PerObjectConstants)를 256바이트로 align: ((sz + 255) & ~255)
+   - CBV 디스크립터 생성 (CreateConstantBufferView)
+   - Root Signature 수정:
+     - descriptor table (CBV) 를 Root Parameter로 추가
+   - D3D12Context::DrawPrimitives 수정:
+     - Map/Unmap으로 world, viewProj 행렬을 Constant Buffer에 업데이트
+     - SetGraphicsRootDescriptorTable로 CBV 바인딩
+
+3. HLSL 셰이더를 .cso 파일로 빌드 타임 컴파일:
+   - RREngine.vcxproj에서 src/Shaders/BasicColor.hlsl 항목의 빌드 규칙을 "HLSL Compiler"로 설정
+     (VS 속성 → 일반 → 항목 유형: HLSL Compiler)
+   - VS/PS Shader Type, Shader Model(5.1), Entry Point, Output File 지정:
+     - VS: EntryPoint=VSMain, Output=$(OutDir)Shaders\VertexShader.cso
+     - PS: EntryPoint=PSMain, Output=$(OutDir)Shaders\PixelShader.cso
+   - src/RHI/D3D12/D3D12PipelineState.h/.cpp 수정:
+     - D3DCompileFromFile 제거
+     - D3DReadFileToBlob("...VertexShader.cso", &vsBlob) 로 대체
+     - D3DReadFileToBlob("...PixelShader.cso", &psBlob) 로 대체
+   - HLSL Constant Buffer를 cbuffer 블록으로 정의:
+     cbuffer PerObjectCB : register(b0) { matrix World; matrix ViewProj; };
+
+4. Vertex 구조체 바이트 오프셋 빌드 타임 검증:
+   - src/Renderer/Vertex.h에 static_assert 추가:
+     static_assert(offsetof(Vertex, position) == 0,  "position offset mismatch");
+     static_assert(offsetof(Vertex, color)    == 12, "color offset mismatch");
+     static_assert(offsetof(Vertex, normal)   == 28, "normal offset mismatch");
+     static_assert(sizeof(Vertex)             == 40, "Vertex size mismatch");
+
+빌드하여 다음을 확인하라:
+- Depth Stencil Buffer가 생성되고, 깊이 테스트로 은면 처리가 올바른지 확인
+- .cso 파일이 빌드 시 bin/Debug/Shaders/ 에 생성되고 파이프라인이 정상 동작
+- Constant Buffer를 통해 World/ViewProj 행렬이 정상 전달되어 오브젝트가 올바르게 변환
+- static_assert가 컴파일 타임에 통과하여 Vertex 레이아웃이 Input Layout과 일치함을 보장
+```
+
+---
+
+## Prompt 6: Scene Graph
+
+```
+PRD.md와 PLAN.md를 참조하여 Phase 6를 구현하라.
 
 1. src/Scene/Transform.h/.cpp를 만든다.
    - class Transform
@@ -282,10 +344,10 @@ PRD.md와 PLAN.md를 참조하여 Phase 5를 구현하라.
 
 ---
 
-## Prompt 6: 상태 표시 HUD
+## Prompt 7: 상태 표시 HUD
 
 ```
-PRD.md와 PLAN.md를 참조하여 Phase 6를 구현하라.
+PRD.md와 PLAN.md를 참조하여 Phase 7를 구현하라.
 
 1. src/Renderer/DebugHUD.h/.cpp를 만든다.
    - class DebugHUD
@@ -320,10 +382,10 @@ PRD.md와 PLAN.md를 참조하여 Phase 6를 구현하라.
 
 ---
 
-## Prompt 7: 메뉴 (오브젝트 선택 + 애니메이션 제어)
+## Prompt 8: 메뉴 (오브젝트 선택 + 애니메이션 제어)
 
 ```
-PRD.md와 PLAN.md를 참조하여 Phase 7를 구현하라.
+PRD.md와 PLAN.md를 참조하여 Phase 8를 구현하라.
 
 1. src/Platform/Win32/Win32Menu.h/.cpp를 만든다.
    - class Win32Menu
@@ -386,10 +448,10 @@ PRD.md와 PLAN.md를 참조하여 Phase 7를 구현하라.
 
 ---
 
-## Prompt 8: 포인트 광원
+## Prompt 9: 포인트 광원
 
 ```
-PRD.md와 PLAN.md를 참조하여 Phase 8를 구현하라.
+PRD.md와 PLAN.md를 참조하여 Phase 9를 구현하라.
 
 1. src/Lighting/PointLight.h/.cpp를 만든다.
    - class PointLight
@@ -402,17 +464,16 @@ PRD.md와 PLAN.md를 참조하여 Phase 8를 구현하라.
    - SetColor(), GetColor()
    - GetColorName() → 현재 색상의 이름 문자열 ("White", "Red" 등)
 
-2. HLSL 셰이더를 확장한다 (src/Shaders/BasicColor.hlsl):
-   - cbuffer LightBuffer:
-     float3 lightPosition
-     float3 lightColor
-     float3 cameraPosition
+2. HLSL 셰이더를 확장한다 (src/Shaders/BasicColor.hlsl) — Per-Pixel Lighting:
+   - cbuffer LightBuffer (register b1):
+     float3 lightPosition, float3 lightColor, float3 cameraPosition
      float3 ambientColor (= 0.15, 0.15, 0.15)
-   - PS에서 Diffuse 라이팅 계산:
+     float Kc (= 1.0), float Kl (= 0.09), float Kq (= 0.032)
+   - PS에서 픽셀 단위 Diffuse 라이팅 계산 (Per-Pixel Lighting):
      float3 lightDir = normalize(lightPosition - worldPos)
      float diff = max(dot(worldNormal, lightDir), 0.0)
-     float distance = length(lightPosition - worldPos)
-     float attenuation = 1.0 / (constant + linear*distance + quadratic*distance*distance)
+     float d = length(lightPosition - worldPos)
+     float attenuation = 1.0 / (Kc + Kl * d + Kq * d * d)
      float3 diffuse = diff * lightColor * attenuation
      float3 result = (ambientColor + diffuse) * faceColor.rgb
      return float4(result, faceColor.a)
@@ -462,10 +523,10 @@ PRD.md와 PLAN.md를 참조하여 Phase 8를 구현하라.
 
 ---
 
-## Prompt 9: 카메라
+## Prompt 10: 카메라
 
 ```
-PRD.md와 PLAN.md를 참조하여 Phase 9를 구현하라.
+PRD.md와 PLAN.md를 참조하여 Phase 10를 구현하라.
 
 1. src/Scene/Camera.h/.cpp를 만든다.
    - class Camera
@@ -546,10 +607,10 @@ PRD.md와 PLAN.md를 참조하여 Phase 9를 구현하라.
 
 ---
 
-## Prompt 10: 통합 & 스모크 테스트
+## Prompt 11: 통합 & 스모크 테스트
 
 ```
-PRD.md와 PLAN.md를 참조하여 Phase 10를 구현하라.
+PRD.md와 PLAN.md를 참조하여 Phase 11를 구현하라.
 
 1. src/Renderer/Renderer.h/.cpp를 만든다.
    - class Renderer

@@ -56,7 +56,10 @@ tests/
 - ID3D12Device → Command Queue → Command List → PSO → Draw
 - 더블 버퍼링 (IDXGISwapChain4)
 - Fence 기반 GPU 동기화
-- HLSL 셰이더: Position + Color + Normal 입력, WVP 변환 + Diffuse 라이팅
+- Depth Stencil Buffer (DXGI_FORMAT_D24_UNORM_S8_UINT) + DSV Heap 생성/관리, 리사이즈 시 재생성
+- CBV_SRV_UAV DescriptorHeap(shader-visible) + Upload Buffer(256바이트 정렬) 기반 Constant Buffer 관리
+- HLSL 셰이더: Position + Color + Normal 입력, WVP 변환 + Per-Pixel Diffuse 라이팅
+- 셰이더는 빌드 타임에 .cso 파일로 사전 컴파일 (VS HLSL Compiler), 런타임 D3DCompileFromFile 미사용
 
 ### 수학 (DirectXMath)
 - 저장 타입: XMFLOAT3, XMFLOAT4, XMFLOAT4X4 (멤버 변수용)
@@ -104,7 +107,9 @@ tests/
 ### 포인트 광원 (PointLight)
 - 장면에 1개의 포인트 광원이 존재
 - 속성: 위치(XMFLOAT3), 색상(XMFLOAT3), 감쇠 계수 (constant/linear/quadratic)
-- HLSL Pixel Shader에서 Diffuse + Ambient 라이팅 계산
+- 라이팅은 Pixel Shader에서 픽셀 단위(Per-Pixel Lighting)로 계산
+- 거리 기반 감쇠 수식: `attenuation = 1 / (Kc + Kl·d + Kq·d²)` (기본값: Kc=1.0, Kl=0.09, Kq=0.032)
+- HLSL Pixel Shader에서 Diffuse + Ambient 라이팅 계산: `(ambient + diff * lightColor * attenuation) * faceColor`
 - Constant Buffer로 매 프레임 광원 데이터를 GPU에 전달
 - 화면에 광원 정보(색상명, 위치) 표시 가능, "Light" 메뉴에서 on/off 토글
 - 메뉴에서 광원 색상 선택 (White/Red/Green/Blue/Yellow/Cyan/Magenta)
@@ -122,7 +127,8 @@ tests/
 
 ### Vertex 데이터
 - `struct Vertex { XMFLOAT3 position; XMFLOAT4 color; XMFLOAT3 normal; }` — 연속 메모리 배치
-- D3D12 Input Layout: POSITION (R32G32B32_FLOAT) + COLOR (R32G32B32A32_FLOAT) + NORMAL (R32G32B32_FLOAT)
+- D3D12 Input Layout: POSITION (R32G32B32_FLOAT, offset 0) + COLOR (R32G32B32A32_FLOAT, offset 12) + NORMAL (R32G32B32_FLOAT, offset 28)
+- `static_assert`로 각 멤버 오프셋과 `sizeof(Vertex) == 40`을 빌드 타임 검증
 - Mesh는 Vertex 배열 + Index 배열로 구성
 
 ## 코딩 컨벤션

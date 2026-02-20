@@ -27,6 +27,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | W-08 | 전체 화면에서 윈도우 모드로 복귀할 수 있다 (Esc 키 또는 메뉴) | P0 |
 | W-09 | 화면 모드 변경 시 렌더링 컨텍스트(SwapChain, RTV 등)가 올바르게 갱신된다 | P0 |
 | W-10 | 프리셋 해상도 변경과 마우스 드래그 리사이즈는 독립적으로 모두 동작한다 | P0 |
+| W-11 | 전체 화면 전환은 Borderless Windowed 방식(WS_POPUP 스타일 + 모니터 전체 크기 SetWindowPos)으로 구현한다. DXGI SetFullscreenState는 사용하지 않는다 | P0 |
 
 ### 3.2 Rendering Hardware Interface (RHI)
 | ID | 요구사항 | 우선순위 |
@@ -35,6 +36,9 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | R-02 | RHI는 디바이스 초기화, 프레임 시작/종료, 드로우 콜을 포함한다 | P0 |
 | R-03 | DirectX 12를 첫 번째 RHI 백엔드로 구현한다 | P0 |
 | R-04 | 버텍스 버퍼, 인덱스 버퍼를 RHI를 통해 관리한다 | P0 |
+| R-05 | 렌더링 시 Depth Stencil Buffer를 생성하고 DSV(Depth Stencil View)로 바인딩하여 깊이 테스트를 수행한다 | P0 |
+| R-06 | 뷰포트 리사이즈 시 Depth Stencil Buffer를 재생성한다 | P0 |
+| R-07 | Transform Matrix(World/View/Projection)를 매 프레임 GPU에 전달하기 위해 ID3D12DescriptorHeap(CBV 힙) 및 Upload Buffer 기반 Constant Buffer 관리 로직을 구현한다 | P0 |
 
 ### 3.3 Scene Graph
 | ID | 요구사항 | 우선순위 |
@@ -59,6 +63,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | V-02 | Vertex는 Color(r, g, b, a) 속성을 갖는다 | P0 |
 | V-03 | Vertex는 Normal(nx, ny, nz) 속성을 갖는다 (라이팅 연산용) | P0 |
 | V-04 | Vertex 데이터를 메모리에 연속적으로 배치한다 | P0 |
+| V-05 | Vertex 구조체 멤버의 바이트 오프셋은 D3D12 Input Layout 선언과 정확히 일치해야 하며, `static_assert`로 빌드 타임 검증한다 | P0 |
 
 ### 3.6 면 색상 규칙 (Face Coloring)
 | ID | 요구사항 | 우선순위 |
@@ -97,6 +102,8 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | L-06 | 메뉴를 통해 광원의 색상을 변경할 수 있다 (White, Red, Green, Blue, Yellow, Cyan, Magenta 중 선택) | P0 |
 | L-07 | 키보드(방향키 + PgUp/PgDn)로 광원의 위치를 이동할 수 있다 | P0 |
 | L-08 | 광원 위치 변경 시 라이팅 결과가 실시간 갱신된다 | P0 |
+| L-09 | 라이팅은 픽셀 셰이더(Pixel Shader)에서 픽셀 단위(Per-Pixel Lighting)로 계산한다 | P0 |
+| L-10 | 광원 감쇠는 거리 기반 수식 `attenuation = 1 / (Kc + Kl·d + Kq·d²)` 를 적용한다 (Kc: 상수 계수, Kl: 선형 계수, Kq: 이차 계수) | P0 |
 
 ### 3.10 상태 표시 HUD (On-Screen Debug Info)
 | ID | 요구사항 | 우선순위 |
@@ -143,6 +150,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | NF-03 | 외부 라이브러리 의존성 최소화 (Win32 API + DirectX 12 + 표준 라이브러리 중심) |
 | NF-04 | 60fps 이상의 렌더 루프 유지 목표 |
 | NF-05 | 테스트 프레임워크: Google Test |
+| NF-06 | HLSL 셰이더는 앱 빌드 타임에 .cso(Compiled Shader Object) 파일로 사전 컴파일한다. 런타임 D3DCompileFromFile 호출은 사용하지 않는다 |
 
 ## 5. 기술 스택
 
