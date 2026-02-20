@@ -11,5 +11,8 @@
 
   <ItemGroup>
     <ClCompile Include="test_main.cpp" />
+    <ClCompile Include="unit\test_MathUtil.cpp">
+      <Filter>unit</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

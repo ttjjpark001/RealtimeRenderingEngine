@@ -47,5 +47,8 @@
     <ClInclude Include="Platform\Win32\Win32Window.h">
       <Filter>Platform\Win32</Filter>
     </ClInclude>
+    <ClInclude Include="Math\MathUtil.h">
+      <Filter>Math</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
