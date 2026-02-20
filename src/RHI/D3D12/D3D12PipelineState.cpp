@@ -12,8 +12,8 @@ namespace
 const char* SHADER_SOURCE = R"(
 cbuffer ObjectConstants : register(b0)
 {
-    float4x4 World;
-    float4x4 ViewProjection;
+    row_major float4x4 World;
+    row_major float4x4 ViewProjection;
 };
 
 struct VSInput
