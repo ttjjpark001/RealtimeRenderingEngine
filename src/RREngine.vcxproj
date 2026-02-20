@@ -93,6 +93,9 @@
     <ClCompile Include="RHI\D3D12\D3D12Buffer.cpp" />
     <ClCompile Include="RHI\D3D12\D3D12PipelineState.cpp" />
     <ClCompile Include="Renderer\MeshFactory.cpp" />
+    <ClCompile Include="Scene\Transform.cpp" />
+    <ClCompile Include="Scene\SceneNode.cpp" />
+    <ClCompile Include="Scene\SceneGraph.cpp" />
   </ItemGroup>
 
   <!-- Header Files -->
@@ -114,6 +117,9 @@
     <ClInclude Include="Renderer\Mesh.h" />
     <ClInclude Include="Renderer\FaceColorPalette.h" />
     <ClInclude Include="Renderer\MeshFactory.h" />
+    <ClInclude Include="Scene\Transform.h" />
+    <ClInclude Include="Scene\SceneNode.h" />
+    <ClInclude Include="Scene\SceneGraph.h" />
   </ItemGroup>
 
   <!-- Shader Files (CustomBuild: compile VS and PS from single HLSL) -->

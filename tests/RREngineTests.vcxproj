@@ -99,6 +99,8 @@
     <ClCompile Include="test_main.cpp" />
     <ClCompile Include="unit\test_MathUtil.cpp" />
     <ClCompile Include="unit\test_FaceColoring.cpp" />
+    <ClCompile Include="unit\test_Transform.cpp" />
+    <ClCompile Include="unit\test_SceneGraph.cpp" />
     <ClCompile Include="smoke\test_RHIBackend.cpp" />
     <ClCompile Include="$(SolutionDir)src\RHI\D3D12\D3D12Device.cpp" />
     <ClCompile Include="$(SolutionDir)src\RHI\D3D12\D3D12Context.cpp" />
@@ -107,6 +109,9 @@
     <ClCompile Include="$(SolutionDir)src\RHI\D3D12\D3D12Buffer.cpp" />
     <ClCompile Include="$(SolutionDir)src\RHI\D3D12\D3D12PipelineState.cpp" />
     <ClCompile Include="$(SolutionDir)src\Renderer\MeshFactory.cpp" />
+    <ClCompile Include="$(SolutionDir)src\Scene\Transform.cpp" />
+    <ClCompile Include="$(SolutionDir)src\Scene\SceneNode.cpp" />
+    <ClCompile Include="$(SolutionDir)src\Scene\SceneGraph.cpp" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
