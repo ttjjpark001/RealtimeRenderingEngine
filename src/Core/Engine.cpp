@@ -8,6 +8,7 @@
 #include "Renderer/Mesh.h"
 #include "Renderer/MeshFactory.h"
 #include "Renderer/DebugHUD.h"
+#include "Platform/Win32/Win32Menu.h"
 #include <DirectXMath.h>
 
 using namespace DirectX;
@@ -47,9 +48,33 @@ bool Engine::Initialize(const EngineInitParams& params)
         return false;
     }
 
-    // Create cube mesh
+    // Create all 4 mesh types
+    m_sphereMesh = std::make_unique<Mesh>(MeshFactory::CreateSphere());
+    m_tetrahedronMesh = std::make_unique<Mesh>(MeshFactory::CreateTetrahedron());
     m_cubeMesh = std::make_unique<Mesh>(MeshFactory::CreateCube());
-    UploadMesh(*m_cubeMesh);
+    m_cylinderMesh = std::make_unique<Mesh>(MeshFactory::CreateCylinder());
+    m_currentMesh = m_cubeMesh.get();
+    UploadMesh(*m_currentMesh);
+
+    // Create menu
+    m_menu = std::make_unique<Win32Menu>();
+    m_menu->Initialize(m_window->GetHWND());
+    m_menu->SetViewCallback([this](uint32 w, uint32 h, bool fullscreen) {
+        OnViewModeChanged(w, h, fullscreen);
+    });
+    m_menu->SetMeshCallback([this](MeshType type) {
+        OnMeshTypeChanged(type);
+    });
+    m_menu->SetAnimCallback([this]() {
+        OnAnimationToggle();
+    });
+    m_window->SetMenu(m_menu.get());
+
+    // Set key callback for Space key animation toggle
+    m_window->SetKeyCallback([this](WPARAM key) {
+        if (key == VK_SPACE)
+            OnAnimationToggle();
+    });
 
     // Create debug HUD
     m_debugHUD = std::make_unique<DebugHUD>();
@@ -100,7 +125,12 @@ void Engine::Shutdown()
 
     m_vertexBuffer.reset();
     m_indexBuffer.reset();
+    m_currentMesh = nullptr;
+    m_sphereMesh.reset();
+    m_tetrahedronMesh.reset();
     m_cubeMesh.reset();
+    m_cylinderMesh.reset();
+    m_menu.reset();
     m_rhiDevice.reset();
     m_window.reset();
     m_isInitialized = false;
@@ -108,8 +138,9 @@ void Engine::Shutdown()
 
 void Engine::Update(float deltaTime)
 {
-    // Rotate cube
-    m_rotationAngle += 1.0f * deltaTime;
+    // Rotate object (only when animating)
+    if (m_isAnimating)
+        m_rotationAngle += 1.0f * deltaTime;
 
     // Update debug HUD
     if (m_debugHUD)
@@ -202,6 +233,41 @@ void Engine::UploadMesh(const Mesh& mesh)
     m_indexBuffer = std::move(ib);
 
     m_indexCount = static_cast<uint32>(mesh.indices.size());
+}
+
+void Engine::OnViewModeChanged(uint32 width, uint32 height, bool fullscreen)
+{
+    if (fullscreen)
+    {
+        m_window->SetFullscreen();
+    }
+    else
+    {
+        m_window->SetWindowed(width, height);
+    }
+
+    OnResize(m_window->GetWidth(), m_window->GetHeight());
+}
+
+void Engine::OnMeshTypeChanged(MeshType type)
+{
+    switch (type)
+    {
+    case MeshType::Sphere:      m_currentMesh = m_sphereMesh.get(); break;
+    case MeshType::Tetrahedron: m_currentMesh = m_tetrahedronMesh.get(); break;
+    case MeshType::Cube:        m_currentMesh = m_cubeMesh.get(); break;
+    case MeshType::Cylinder:    m_currentMesh = m_cylinderMesh.get(); break;
+    }
+
+    if (m_currentMesh)
+        UploadMesh(*m_currentMesh);
+}
+
+void Engine::OnAnimationToggle()
+{
+    m_isAnimating = !m_isAnimating;
+    if (m_menu)
+        m_menu->UpdateAnimCheckMark(m_isAnimating);
 }
 
 } // namespace RRE

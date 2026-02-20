@@ -8,6 +8,8 @@
 namespace RRE
 {
 
+class Win32Menu;
+
 class Win32Window
 {
 public:
@@ -31,6 +33,7 @@ public:
 
     void SetResizeCallback(ResizeCallback callback) { m_resizeCallback = std::move(callback); }
     void SetKeyCallback(KeyCallback callback) { m_keyCallback = std::move(callback); }
+    void SetMenu(Win32Menu* menu) { m_menu = menu; }
 
     void Show(int nCmdShow = SW_SHOW);
 
@@ -51,6 +54,7 @@ private:
 
     ResizeCallback m_resizeCallback;
     KeyCallback m_keyCallback;
+    Win32Menu* m_menu = nullptr;
 
     static constexpr const wchar_t* WINDOW_CLASS_NAME = L"RREngineWindowClass";
 };

@@ -1,4 +1,5 @@
 #include "Platform/Win32/Win32Window.h"
+#include "Platform/Win32/Win32Menu.h"
 
 namespace RRE
 {
@@ -108,8 +109,9 @@ void Win32Window::SetWindowed(uint32 width, uint32 height)
     DWORD style = WS_OVERLAPPEDWINDOW;
     SetWindowLongPtr(m_hwnd, GWL_STYLE, style);
 
+    BOOL hasMenu = (::GetMenu(m_hwnd) != nullptr) ? TRUE : FALSE;
     RECT windowRect = { 0, 0, static_cast<LONG>(width), static_cast<LONG>(height) };
-    AdjustWindowRect(&windowRect, style, FALSE);
+    AdjustWindowRect(&windowRect, style, hasMenu);
 
     int windowWidth = windowRect.right - windowRect.left;
     int windowHeight = windowRect.bottom - windowRect.top;
@@ -201,6 +203,13 @@ LRESULT Win32Window::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam)
             }
         }
         return 0;
+    }
+
+    case WM_COMMAND:
+    {
+        if (m_menu && m_menu->HandleCommand(wParam))
+            return 0;
+        break;
     }
 
     case WM_KEYDOWN:
