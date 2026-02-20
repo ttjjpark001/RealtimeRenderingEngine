@@ -2,8 +2,8 @@
 
 cbuffer PerObjectCB : register(b0)
 {
-    row_major float4x4 World;
-    row_major float4x4 ViewProj;
+    float4x4 World;
+    float4x4 ViewProj;
 };
 
 struct VSInput

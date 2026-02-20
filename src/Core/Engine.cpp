@@ -128,7 +128,8 @@ void Engine::Render()
     XMMATRIX projection = XMMatrixPerspectiveFovLH(
         XMConvertToRadians(60.0f), aspectRatio, 0.1f, 100.0f);
 
-    XMMATRIX viewProj = view * projection;
+    // Transpose for HLSL column-major layout (standard D3D12 pattern)
+    XMMATRIX viewProj = XMMatrixTranspose(view * projection);
     XMFLOAT4X4 viewProjFloat;
     XMStoreFloat4x4(&viewProjFloat, viewProj);
     context->SetViewProjection(viewProjFloat);
@@ -142,7 +143,8 @@ void Engine::Render()
     // Draw cube with rotation
     if (m_vertexBuffer && m_indexBuffer)
     {
-        XMMATRIX world = XMMatrixRotationY(m_rotationAngle);
+        // Transpose for HLSL column-major layout
+        XMMATRIX world = XMMatrixTranspose(XMMatrixRotationY(m_rotationAngle));
         XMFLOAT4X4 worldFloat;
         XMStoreFloat4x4(&worldFloat, world);
 
