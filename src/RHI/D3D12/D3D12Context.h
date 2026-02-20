@@ -10,6 +10,13 @@
 namespace RRE
 {
 
+// Constant buffer data passed to the GPU per draw call
+struct PerObjectConstants
+{
+    DirectX::XMFLOAT4X4 world;
+    DirectX::XMFLOAT4X4 viewProj;
+};
+
 class D3D12SwapChain;
 
 class D3D12Context : public IRHIContext
@@ -43,6 +50,7 @@ public:
 
 private:
     void MoveToNextFrame();
+    bool CreateConstantBuffer();
 
     ID3D12Device* m_device = nullptr;
     D3D12SwapChain* m_swapChain = nullptr;
@@ -63,6 +71,11 @@ private:
     // Depth buffer
     Microsoft::WRL::ComPtr<ID3D12Resource> m_depthBuffer;
     D3D12DescriptorHeap m_dsvHeap;
+
+    // Constant buffer (CBV)
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_constantBuffer;
+    D3D12DescriptorHeap m_cbvHeap;
+    uint8* m_cbData = nullptr;
 
     // Current frame's view-projection matrix
     DirectX::XMFLOAT4X4 m_viewProjection;

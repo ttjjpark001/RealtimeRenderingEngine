@@ -1,60 +1,16 @@
 #include "RHI/D3D12/D3D12PipelineState.h"
 #include "Renderer/Vertex.h"
 #include <d3dcompiler.h>
+#include <string>
 
 namespace RRE
 {
-
-namespace
-{
-
-// Embedded HLSL shader source for runtime compilation
-const char* SHADER_SOURCE = R"(
-cbuffer ObjectConstants : register(b0)
-{
-    row_major float4x4 World;
-    row_major float4x4 ViewProjection;
-};
-
-struct VSInput
-{
-    float3 position : POSITION;
-    float4 color    : COLOR;
-    float3 normal   : NORMAL;
-};
-
-struct PSInput
-{
-    float4 position  : SV_POSITION;
-    float4 color     : COLOR;
-    float3 normal    : NORMAL;
-    float3 worldPos  : TEXCOORD0;
-};
-
-PSInput VSMain(VSInput input)
-{
-    PSInput output;
-    float4 worldPos = mul(float4(input.position, 1.0f), World);
-    output.worldPos = worldPos.xyz;
-    output.position = mul(worldPos, ViewProjection);
-    output.normal = normalize(mul(input.normal, (float3x3)World));
-    output.color = input.color;
-    return output;
-}
-
-float4 PSMain(PSInput input) : SV_TARGET
-{
-    return input.color;
-}
-)";
-
-} // anonymous namespace
 
 bool D3D12PipelineState::Initialize(ID3D12Device* device)
 {
     if (!CreateRootSignature(device))
         return false;
-    if (!CompileShaders())
+    if (!LoadShaders())
         return false;
     if (!CreatePipelineState(device))
         return false;
@@ -71,13 +27,18 @@ void D3D12PipelineState::Shutdown()
 
 bool D3D12PipelineState::CreateRootSignature(ID3D12Device* device)
 {
-    // Single root constant buffer view (CBV) at register b0
+    // Descriptor table with one CBV at register b0
+    D3D12_DESCRIPTOR_RANGE cbvRange = {};
+    cbvRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+    cbvRange.NumDescriptors = 1;
+    cbvRange.BaseShaderRegister = 0;
+    cbvRange.RegisterSpace = 0;
+    cbvRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
     D3D12_ROOT_PARAMETER rootParam = {};
-    rootParam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-    rootParam.Constants.ShaderRegister = 0;
-    rootParam.Constants.RegisterSpace = 0;
-    // World (16 floats) + ViewProjection (16 floats) = 32 floats
-    rootParam.Constants.Num32BitValues = 32;
+    rootParam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParam.DescriptorTable.NumDescriptorRanges = 1;
+    rootParam.DescriptorTable.pDescriptorRanges = &cbvRange;
     rootParam.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
 
     D3D12_ROOT_SIGNATURE_DESC rsDesc = {};
@@ -97,24 +58,22 @@ bool D3D12PipelineState::CreateRootSignature(ID3D12Device* device)
     return SUCCEEDED(hr);
 }
 
-bool D3D12PipelineState::CompileShaders()
+bool D3D12PipelineState::LoadShaders()
 {
-    UINT compileFlags = 0;
-#ifdef _DEBUG
-    compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-#endif
+    // Get executable directory to find precompiled .cso files
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    std::wstring exeDir(exePath);
+    exeDir = exeDir.substr(0, exeDir.find_last_of(L"\\") + 1);
 
-    Microsoft::WRL::ComPtr<ID3DBlob> error;
+    std::wstring vsPath = exeDir + L"Shaders\\VertexShader.cso";
+    std::wstring psPath = exeDir + L"Shaders\\PixelShader.cso";
 
-    HRESULT hr = D3DCompile(SHADER_SOURCE, strlen(SHADER_SOURCE), "BasicColor.hlsl",
-        nullptr, nullptr, "VSMain", "vs_5_1", compileFlags, 0,
-        &m_vertexShader, &error);
+    HRESULT hr = D3DReadFileToBlob(vsPath.c_str(), &m_vertexShader);
     if (FAILED(hr))
         return false;
 
-    hr = D3DCompile(SHADER_SOURCE, strlen(SHADER_SOURCE), "BasicColor.hlsl",
-        nullptr, nullptr, "PSMain", "ps_5_1", compileFlags, 0,
-        &m_pixelShader, &error);
+    hr = D3DReadFileToBlob(psPath.c_str(), &m_pixelShader);
     if (FAILED(hr))
         return false;
 
@@ -148,7 +107,7 @@ bool D3D12PipelineState::CreatePipelineState(ID3D12Device* device)
     psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
     psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
     psoDesc.DepthStencilState.StencilEnable = FALSE;
-    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 
     psoDesc.SampleMask = UINT_MAX;
     psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;

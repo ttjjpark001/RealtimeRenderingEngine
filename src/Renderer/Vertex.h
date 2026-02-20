@@ -2,6 +2,7 @@
 
 #include <DirectXMath.h>
 #include <d3d12.h>
+#include <cstddef>
 
 namespace RRE
 {
@@ -12,6 +13,11 @@ struct Vertex
     DirectX::XMFLOAT4 color;
     DirectX::XMFLOAT3 normal;
 };
+
+static_assert(offsetof(Vertex, position) == 0,  "position offset mismatch");
+static_assert(offsetof(Vertex, color)    == 12, "color offset mismatch");
+static_assert(offsetof(Vertex, normal)   == 28, "normal offset mismatch");
+static_assert(sizeof(Vertex)             == 40, "Vertex size mismatch");
 
 inline const D3D12_INPUT_ELEMENT_DESC VERTEX_INPUT_LAYOUT[] =
 {

@@ -116,9 +116,19 @@
     <ClInclude Include="Renderer\MeshFactory.h" />
   </ItemGroup>
 
-  <!-- Shader Files -->
+  <!-- Shader Files (CustomBuild: compile VS and PS from single HLSL) -->
   <ItemGroup>
-    <None Include="Shaders\BasicColor.hlsl" />
+    <CustomBuild Include="Shaders\BasicColor.hlsl">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">if not exist "$(OutDir)Shaders" mkdir "$(OutDir)Shaders"
+"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T vs_5_1 /E VSMain /Zi /Od /Fo "$(OutDir)Shaders\VertexShader.cso" "%(FullPath)"
+"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T ps_5_1 /E PSMain /Zi /Od /Fo "$(OutDir)Shaders\PixelShader.cso" "%(FullPath)"</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">if not exist "$(OutDir)Shaders" mkdir "$(OutDir)Shaders"
+"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T vs_5_1 /E VSMain /O2 /Fo "$(OutDir)Shaders\VertexShader.cso" "%(FullPath)"
+"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T ps_5_1 /E PSMain /O2 /Fo "$(OutDir)Shaders\PixelShader.cso" "%(FullPath)"</Command>
+      <Outputs>$(OutDir)Shaders\VertexShader.cso;$(OutDir)Shaders\PixelShader.cso</Outputs>
+      <Message>Compiling HLSL shaders (VS + PS)...</Message>
+    </CustomBuild>
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

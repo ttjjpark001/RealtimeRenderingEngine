@@ -20,7 +20,7 @@ public:
 
 private:
     bool CreateRootSignature(ID3D12Device* device);
-    bool CompileShaders();
+    bool LoadShaders();
     bool CreatePipelineState(ID3D12Device* device);
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rootSignature;

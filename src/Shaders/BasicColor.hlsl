@@ -1,9 +1,9 @@
 // BasicColor.hlsl - Vertex/Pixel shader for colored geometry
 
-cbuffer ObjectConstants : register(b0)
+cbuffer PerObjectCB : register(b0)
 {
     row_major float4x4 World;
-    row_major float4x4 ViewProjection;
+    row_major float4x4 ViewProj;
 };
 
 struct VSInput
@@ -27,7 +27,7 @@ PSInput VSMain(VSInput input)
 
     float4 worldPos = mul(float4(input.position, 1.0f), World);
     output.worldPos = worldPos.xyz;
-    output.position = mul(worldPos, ViewProjection);
+    output.position = mul(worldPos, ViewProj);
     output.normal = normalize(mul(input.normal, (float3x3)World));
     output.color = input.color;
 
