@@ -35,6 +35,18 @@
     <ClCompile Include="Platform\Win32\Win32Window.cpp">
       <Filter>Platform\Win32</Filter>
     </ClCompile>
+    <ClCompile Include="RHI\D3D12\D3D12Device.cpp">
+      <Filter>RHI\D3D12</Filter>
+    </ClCompile>
+    <ClCompile Include="RHI\D3D12\D3D12Context.cpp">
+      <Filter>RHI\D3D12</Filter>
+    </ClCompile>
+    <ClCompile Include="RHI\D3D12\D3D12SwapChain.cpp">
+      <Filter>RHI\D3D12</Filter>
+    </ClCompile>
+    <ClCompile Include="RHI\D3D12\D3D12DescriptorHeap.cpp">
+      <Filter>RHI\D3D12</Filter>
+    </ClCompile>
   </ItemGroup>
 
   <ItemGroup>
@@ -49,6 +61,27 @@
     </ClInclude>
     <ClInclude Include="Math\MathUtil.h">
       <Filter>Math</Filter>
+    </ClInclude>
+    <ClInclude Include="RHI\RHIDevice.h">
+      <Filter>RHI</Filter>
+    </ClInclude>
+    <ClInclude Include="RHI\RHIBuffer.h">
+      <Filter>RHI</Filter>
+    </ClInclude>
+    <ClInclude Include="RHI\RHIContext.h">
+      <Filter>RHI</Filter>
+    </ClInclude>
+    <ClInclude Include="RHI\D3D12\D3D12Device.h">
+      <Filter>RHI\D3D12</Filter>
+    </ClInclude>
+    <ClInclude Include="RHI\D3D12\D3D12Context.h">
+      <Filter>RHI\D3D12</Filter>
+    </ClInclude>
+    <ClInclude Include="RHI\D3D12\D3D12SwapChain.h">
+      <Filter>RHI\D3D12</Filter>
+    </ClInclude>
+    <ClInclude Include="RHI\D3D12\D3D12DescriptorHeap.h">
+      <Filter>RHI\D3D12</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

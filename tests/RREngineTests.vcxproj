@@ -98,6 +98,11 @@
   <ItemGroup>
     <ClCompile Include="test_main.cpp" />
     <ClCompile Include="unit\test_MathUtil.cpp" />
+    <ClCompile Include="smoke\test_RHIBackend.cpp" />
+    <ClCompile Include="$(SolutionDir)src\RHI\D3D12\D3D12Device.cpp" />
+    <ClCompile Include="$(SolutionDir)src\RHI\D3D12\D3D12Context.cpp" />
+    <ClCompile Include="$(SolutionDir)src\RHI\D3D12\D3D12SwapChain.cpp" />
+    <ClCompile Include="$(SolutionDir)src\RHI\D3D12\D3D12DescriptorHeap.cpp" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

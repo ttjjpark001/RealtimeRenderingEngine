@@ -7,6 +7,7 @@ namespace RRE
 {
 
 class Win32Window;
+class IRHIDevice;
 
 struct EngineInitParams
 {
@@ -27,8 +28,10 @@ public:
 private:
     void Update(float deltaTime);
     void Render();
+    void OnResize(uint32 width, uint32 height);
 
     std::unique_ptr<Win32Window> m_window;
+    std::unique_ptr<IRHIDevice> m_rhiDevice;
     bool m_isInitialized = false;
 
     // High-resolution timer
