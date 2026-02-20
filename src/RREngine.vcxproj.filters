@@ -29,11 +29,23 @@
 
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Core\Engine.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Platform\Win32\Win32Window.cpp">
+      <Filter>Platform\Win32</Filter>
+    </ClCompile>
   </ItemGroup>
 
   <ItemGroup>
     <ClInclude Include="Core\Types.h">
       <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\Engine.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Platform\Win32\Win32Window.h">
+      <Filter>Platform\Win32</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

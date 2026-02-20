@@ -84,11 +84,15 @@
   <!-- Source Files -->
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Core\Engine.cpp" />
+    <ClCompile Include="Platform\Win32\Win32Window.cpp" />
   </ItemGroup>
 
   <!-- Header Files -->
   <ItemGroup>
     <ClInclude Include="Core\Types.h" />
+    <ClInclude Include="Core\Engine.h" />
+    <ClInclude Include="Platform\Win32\Win32Window.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

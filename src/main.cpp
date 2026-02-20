@@ -1,3 +1,4 @@
+#include "Core/Engine.h"
 #include <windows.h>
 
 int WINAPI WinMain(
@@ -9,6 +10,19 @@ int WINAPI WinMain(
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
 
-    // TODO: Engine::Initialize → Run → Shutdown
+    RRE::EngineInitParams params;
+    params.platformHandle = hInstance;
+    params.showCommand = nCmdShow;
+
+    RRE::Engine engine;
+
+    if (!engine.Initialize(params))
+    {
+        return -1;
+    }
+
+    engine.Run();
+    engine.Shutdown();
+
     return 0;
 }
