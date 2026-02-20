@@ -12,6 +12,7 @@ class IRHIDevice;
 class IRHIBuffer;
 class Mesh;
 class DebugHUD;
+class PointLight;
 enum class MeshType;
 
 struct EngineInitParams
@@ -58,6 +59,10 @@ private:
 
     // Debug HUD
     std::unique_ptr<DebugHUD> m_debugHUD;
+
+    // Point light
+    std::unique_ptr<PointLight> m_pointLight;
+    bool m_showLightInfo = true;
 
     // Animation
     float m_rotationAngle = 0.0f;

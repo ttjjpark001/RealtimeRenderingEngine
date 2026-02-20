@@ -39,7 +39,7 @@ bool D3D12PipelineState::CreateRootSignature(ID3D12Device* device)
     rootParam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
     rootParam.DescriptorTable.NumDescriptorRanges = 1;
     rootParam.DescriptorTable.pDescriptorRanges = &cbvRange;
-    rootParam.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+    rootParam.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
     D3D12_ROOT_SIGNATURE_DESC rsDesc = {};
     rsDesc.NumParameters = 1;

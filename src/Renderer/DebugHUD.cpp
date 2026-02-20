@@ -55,6 +55,19 @@ void DebugHUD::Render(IRHIContext& context)
     float polyPerSecM = m_lastStats.polygonsPerSec / 1000000.0f;
     snprintf(buf, sizeof(buf), "Poly/sec: %.1fM", polyPerSecM);
     context.DrawText(x, y, buf, green);
+    y += lineHeight;
+
+    // Light info (conditional)
+    if (m_lastStats.showLightInfo)
+    {
+        snprintf(buf, sizeof(buf), "Light: %s", m_lastStats.lightColorName);
+        context.DrawText(x, y, buf, green);
+        y += lineHeight;
+
+        snprintf(buf, sizeof(buf), "Light Pos: (%.1f, %.1f, %.1f)",
+            m_lastStats.lightPosition.x, m_lastStats.lightPosition.y, m_lastStats.lightPosition.z);
+        context.DrawText(x, y, buf, green);
+    }
 }
 
 } // namespace RRE

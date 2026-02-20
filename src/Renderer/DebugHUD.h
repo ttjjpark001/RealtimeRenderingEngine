@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Core/Types.h"
+#include <DirectXMath.h>
 
 namespace RRE
 {
@@ -15,6 +16,11 @@ struct RenderStats
     float aspectRatio;
     uint32 totalPolygons;
     float polygonsPerSec;
+
+    // Light info (Phase 9)
+    bool showLightInfo = false;
+    const char* lightColorName = "White";
+    DirectX::XMFLOAT3 lightPosition = { 0.0f, 0.0f, 0.0f };
 };
 
 class DebugHUD

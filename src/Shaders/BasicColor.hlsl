@@ -1,9 +1,21 @@
-// BasicColor.hlsl - Vertex/Pixel shader for colored geometry
+// BasicColor.hlsl - Vertex/Pixel shader for colored geometry with per-pixel lighting
 
 cbuffer PerObjectCB : register(b0)
 {
     float4x4 World;
     float4x4 ViewProj;
+    float3 LightPosition;
+    float _pad1;
+    float3 LightColor;
+    float _pad2;
+    float3 CameraPosition;
+    float _pad3;
+    float3 AmbientColor;
+    float _pad4;
+    float Kc;
+    float Kl;
+    float Kq;
+    float _pad5;
 };
 
 struct VSInput
@@ -36,6 +48,18 @@ PSInput VSMain(VSInput input)
 
 float4 PSMain(PSInput input) : SV_TARGET
 {
-    // Pass through face color (lighting added in Phase 8)
-    return input.color;
+    float3 normal = normalize(input.normal);
+    float3 lightDir = normalize(LightPosition - input.worldPos);
+
+    // Distance attenuation
+    float d = length(LightPosition - input.worldPos);
+    float attenuation = 1.0f / (Kc + Kl * d + Kq * d * d);
+
+    // Diffuse lighting
+    float diff = max(dot(normal, lightDir), 0.0f);
+    float3 diffuse = diff * LightColor * attenuation;
+
+    // Final color: (ambient + diffuse) * face color
+    float3 result = (AmbientColor + diffuse) * input.color.rgb;
+    return float4(result, input.color.a);
 }

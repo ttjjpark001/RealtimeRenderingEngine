@@ -45,6 +45,25 @@ bool Win32Menu::Initialize(HWND hwnd)
     CheckMenuRadioItem(m_animMenu, ID_ANIM_PLAY, ID_ANIM_PAUSE,
         ID_ANIM_PLAY, MF_BYCOMMAND);
 
+    // Light menu
+    m_lightMenu = CreatePopupMenu();
+    AppendMenuW(m_lightMenu, MF_STRING | MF_CHECKED, ID_LIGHT_SHOW_INFO, L"Show Info");
+    AppendMenuW(m_lightMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m_lightMenu, MF_STRING, ID_LIGHT_WHITE, L"White");
+    AppendMenuW(m_lightMenu, MF_STRING, ID_LIGHT_RED, L"Red");
+    AppendMenuW(m_lightMenu, MF_STRING, ID_LIGHT_GREEN, L"Green");
+    AppendMenuW(m_lightMenu, MF_STRING, ID_LIGHT_BLUE, L"Blue");
+    AppendMenuW(m_lightMenu, MF_STRING, ID_LIGHT_YELLOW, L"Yellow");
+    AppendMenuW(m_lightMenu, MF_STRING, ID_LIGHT_CYAN, L"Cyan");
+    AppendMenuW(m_lightMenu, MF_STRING, ID_LIGHT_MAGENTA, L"Magenta");
+    AppendMenuW(m_lightMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m_lightMenu, MF_STRING, ID_LIGHT_RESET_POS, L"Reset Position");
+    AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_lightMenu), L"Light");
+
+    // Default check: White
+    CheckMenuRadioItem(m_lightMenu, ID_LIGHT_WHITE, ID_LIGHT_MAGENTA,
+        ID_LIGHT_WHITE, MF_BYCOMMAND);
+
     SetMenu(hwnd, m_menuBar);
     return true;
 }
@@ -108,6 +127,49 @@ bool Win32Menu::HandleCommand(WPARAM wParam)
         CheckMenuRadioItem(m_animMenu, ID_ANIM_PLAY, ID_ANIM_PAUSE,
             ID_ANIM_PAUSE, MF_BYCOMMAND);
         if (m_animCallback) m_animCallback();
+        return true;
+
+    // Light commands
+    case ID_LIGHT_SHOW_INFO:
+    {
+        UINT state = GetMenuState(m_lightMenu, ID_LIGHT_SHOW_INFO, MF_BYCOMMAND);
+        CheckMenuItem(m_lightMenu, ID_LIGHT_SHOW_INFO,
+            MF_BYCOMMAND | ((state & MF_CHECKED) ? MF_UNCHECKED : MF_CHECKED));
+        if (m_lightToggleInfoCallback) m_lightToggleInfoCallback();
+        return true;
+    }
+
+    case ID_LIGHT_WHITE:
+        CheckMenuRadioItem(m_lightMenu, ID_LIGHT_WHITE, ID_LIGHT_MAGENTA, ID_LIGHT_WHITE, MF_BYCOMMAND);
+        if (m_lightColorCallback) m_lightColorCallback(1.0f, 1.0f, 1.0f);
+        return true;
+    case ID_LIGHT_RED:
+        CheckMenuRadioItem(m_lightMenu, ID_LIGHT_WHITE, ID_LIGHT_MAGENTA, ID_LIGHT_RED, MF_BYCOMMAND);
+        if (m_lightColorCallback) m_lightColorCallback(1.0f, 0.0f, 0.0f);
+        return true;
+    case ID_LIGHT_GREEN:
+        CheckMenuRadioItem(m_lightMenu, ID_LIGHT_WHITE, ID_LIGHT_MAGENTA, ID_LIGHT_GREEN, MF_BYCOMMAND);
+        if (m_lightColorCallback) m_lightColorCallback(0.0f, 1.0f, 0.0f);
+        return true;
+    case ID_LIGHT_BLUE:
+        CheckMenuRadioItem(m_lightMenu, ID_LIGHT_WHITE, ID_LIGHT_MAGENTA, ID_LIGHT_BLUE, MF_BYCOMMAND);
+        if (m_lightColorCallback) m_lightColorCallback(0.0f, 0.0f, 1.0f);
+        return true;
+    case ID_LIGHT_YELLOW:
+        CheckMenuRadioItem(m_lightMenu, ID_LIGHT_WHITE, ID_LIGHT_MAGENTA, ID_LIGHT_YELLOW, MF_BYCOMMAND);
+        if (m_lightColorCallback) m_lightColorCallback(1.0f, 1.0f, 0.0f);
+        return true;
+    case ID_LIGHT_CYAN:
+        CheckMenuRadioItem(m_lightMenu, ID_LIGHT_WHITE, ID_LIGHT_MAGENTA, ID_LIGHT_CYAN, MF_BYCOMMAND);
+        if (m_lightColorCallback) m_lightColorCallback(0.0f, 1.0f, 1.0f);
+        return true;
+    case ID_LIGHT_MAGENTA:
+        CheckMenuRadioItem(m_lightMenu, ID_LIGHT_WHITE, ID_LIGHT_MAGENTA, ID_LIGHT_MAGENTA, MF_BYCOMMAND);
+        if (m_lightColorCallback) m_lightColorCallback(1.0f, 0.0f, 1.0f);
+        return true;
+
+    case ID_LIGHT_RESET_POS:
+        if (m_lightResetCallback) m_lightResetCallback();
         return true;
 
     default:

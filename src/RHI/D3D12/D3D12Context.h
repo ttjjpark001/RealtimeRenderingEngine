@@ -18,9 +18,21 @@ namespace RRE
 // Constant buffer data passed to the GPU per draw call
 struct PerObjectConstants
 {
-    DirectX::XMFLOAT4X4 world;
-    DirectX::XMFLOAT4X4 viewProj;
-};
+    DirectX::XMFLOAT4X4 world;          // 64
+    DirectX::XMFLOAT4X4 viewProj;       // 64
+    DirectX::XMFLOAT3 lightPosition;    // 12
+    float _pad1;                         // 4
+    DirectX::XMFLOAT3 lightColor;       // 12
+    float _pad2;                         // 4
+    DirectX::XMFLOAT3 cameraPosition;   // 12
+    float _pad3;                         // 4
+    DirectX::XMFLOAT3 ambientColor;     // 12
+    float _pad4;                         // 4
+    float Kc;                            // 4
+    float Kl;                            // 4
+    float Kq;                            // 4
+    float _pad5;                         // 4
+};  // Total: 208 bytes → 256 aligned
 
 class D3D12SwapChain;
 
@@ -52,6 +64,18 @@ public:
 
     // Set View-Projection matrix for current frame
     void SetViewProjection(const DirectX::XMFLOAT4X4& viewProj) { m_viewProjection = viewProj; }
+
+    // Set lighting data for current frame
+    void SetLightData(const DirectX::XMFLOAT3& lightPos, const DirectX::XMFLOAT3& lightColor,
+        const DirectX::XMFLOAT3& cameraPos, const DirectX::XMFLOAT3& ambient,
+        float Kc, float Kl, float Kq)
+    {
+        m_lightPosition = lightPos;
+        m_lightColor = lightColor;
+        m_cameraPosition = cameraPos;
+        m_ambientColor = ambient;
+        m_Kc = Kc; m_Kl = Kl; m_Kq = Kq;
+    }
 
     // IRHIContext interface
     void BeginFrame() override;
@@ -100,6 +124,13 @@ private:
 
     // Current frame's view-projection matrix
     DirectX::XMFLOAT4X4 m_viewProjection;
+
+    // Current frame's lighting data
+    DirectX::XMFLOAT3 m_lightPosition = { 2.0f, 3.0f, -2.0f };
+    DirectX::XMFLOAT3 m_lightColor = { 1.0f, 1.0f, 1.0f };
+    DirectX::XMFLOAT3 m_cameraPosition = { 0.0f, 0.0f, 0.0f };
+    DirectX::XMFLOAT3 m_ambientColor = { 0.15f, 0.15f, 0.15f };
+    float m_Kc = 1.0f, m_Kl = 0.09f, m_Kq = 0.032f;
 
     // D3D11On12 / D2D / DirectWrite
     Microsoft::WRL::ComPtr<ID3D11On12Device> m_d3d11On12Device;

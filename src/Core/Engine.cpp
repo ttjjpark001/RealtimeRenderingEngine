@@ -8,6 +8,7 @@
 #include "Renderer/Mesh.h"
 #include "Renderer/MeshFactory.h"
 #include "Renderer/DebugHUD.h"
+#include "Lighting/PointLight.h"
 #include "Platform/Win32/Win32Menu.h"
 #include <DirectXMath.h>
 
@@ -76,6 +77,20 @@ bool Engine::Initialize(const EngineInitParams& params)
             OnAnimationToggle();
     });
 
+    // Create point light
+    m_pointLight = std::make_unique<PointLight>();
+
+    // Set light menu callbacks
+    m_menu->SetLightColorCallback([this](float r, float g, float b) {
+        m_pointLight->SetColor({ r, g, b });
+    });
+    m_menu->SetLightToggleInfoCallback([this]() {
+        m_showLightInfo = !m_showLightInfo;
+    });
+    m_menu->SetLightResetCallback([this]() {
+        m_pointLight->Reset();
+    });
+
     // Create debug HUD
     m_debugHUD = std::make_unique<DebugHUD>();
 
@@ -130,6 +145,7 @@ void Engine::Shutdown()
     m_tetrahedronMesh.reset();
     m_cubeMesh.reset();
     m_cylinderMesh.reset();
+    m_pointLight.reset();
     m_menu.reset();
     m_rhiDevice.reset();
     m_window.reset();
@@ -142,6 +158,22 @@ void Engine::Update(float deltaTime)
     if (m_isAnimating)
         m_rotationAngle += 1.0f * deltaTime;
 
+    // Move light with arrow keys and PgUp/PgDn
+    if (m_pointLight)
+    {
+        float speed = 3.0f * deltaTime;
+        XMFLOAT3 pos = m_pointLight->GetPosition();
+
+        if (GetAsyncKeyState(VK_LEFT) & 0x8000)   pos.x -= speed;
+        if (GetAsyncKeyState(VK_RIGHT) & 0x8000)  pos.x += speed;
+        if (GetAsyncKeyState(VK_UP) & 0x8000)     pos.z += speed;
+        if (GetAsyncKeyState(VK_DOWN) & 0x8000)   pos.z -= speed;
+        if (GetAsyncKeyState(VK_PRIOR) & 0x8000)  pos.y += speed;  // PgUp
+        if (GetAsyncKeyState(VK_NEXT) & 0x8000)   pos.y -= speed;  // PgDn
+
+        m_pointLight->SetPosition(pos);
+    }
+
     // Update debug HUD
     if (m_debugHUD)
     {
@@ -152,6 +184,12 @@ void Engine::Update(float deltaTime)
         stats.aspectRatio = static_cast<float>(stats.width) / static_cast<float>(stats.height);
         stats.totalPolygons = m_indexCount / 3;
         stats.polygonsPerSec = stats.totalPolygons * (1.0f / deltaTime);
+        stats.showLightInfo = m_showLightInfo;
+        if (m_pointLight)
+        {
+            stats.lightColorName = m_pointLight->GetColorName();
+            stats.lightPosition = m_pointLight->GetPosition();
+        }
         m_debugHUD->Update(deltaTime, stats);
     }
 }
@@ -181,6 +219,20 @@ void Engine::Render()
     XMFLOAT4X4 viewProjFloat;
     XMStoreFloat4x4(&viewProjFloat, viewProj);
     context->SetViewProjection(viewProjFloat);
+
+    // Set lighting data
+    if (m_pointLight)
+    {
+        XMFLOAT3 camPos;
+        XMStoreFloat3(&camPos, eyePos);
+        XMFLOAT3 ambient = { 0.15f, 0.15f, 0.15f };
+        context->SetLightData(
+            m_pointLight->GetPosition(), m_pointLight->GetColor(),
+            camPos, ambient,
+            m_pointLight->GetConstantAttenuation(),
+            m_pointLight->GetLinearAttenuation(),
+            m_pointLight->GetQuadraticAttenuation());
+    }
 
     context->BeginFrame();
 

@@ -124,6 +124,7 @@
     <ClInclude Include="Scene\Transform.h" />
     <ClInclude Include="Scene\SceneNode.h" />
     <ClInclude Include="Scene\SceneGraph.h" />
+    <ClInclude Include="Lighting\PointLight.h" />
   </ItemGroup>
 
   <!-- Shader Files (CustomBuild: compile VS and PS from single HLSL) -->
