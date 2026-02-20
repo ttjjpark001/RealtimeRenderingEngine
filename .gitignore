@@ -21,3 +21,4 @@ vcpkg_installed/
 # Temporary files
 *.tmp
 ~$*
+.claude/settings.local.json
