@@ -51,8 +51,9 @@ private:
     // Renderer & Scene Graph
     std::unique_ptr<Renderer> m_renderer;
     std::unique_ptr<SceneGraph> m_sceneGraph;
-    SceneNode* m_parentNode = nullptr;   // non-owning
-    SceneNode* m_childNode = nullptr;    // non-owning
+    SceneNode* m_parentNode = nullptr;      // non-owning
+    SceneNode* m_orbitPivotNode = nullptr;  // non-owning (controls child orbit speed)
+    SceneNode* m_childNode = nullptr;       // non-owning
 
     // Meshes (all 4 types pre-created)
     std::unique_ptr<Mesh> m_sphereMesh;
@@ -79,6 +80,8 @@ private:
 
     // Animation
     float m_rotationAngle = 0.0f;
+    float m_orbitAngle = 0.0f;
+    float m_childRotationAngle = 0.0f;
     bool m_isAnimating = true;
 
     bool m_isInitialized = false;

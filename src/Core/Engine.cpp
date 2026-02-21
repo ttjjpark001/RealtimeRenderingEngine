@@ -60,17 +60,22 @@ bool Engine::Initialize(const EngineInitParams& params)
     m_cylinderMesh = std::make_unique<Mesh>(MeshFactory::CreateCylinder());
     m_currentMesh = m_cubeMesh.get();
 
-    // Build scene graph: root -> parent (rotating) -> child (orbiting)
+    // Build scene graph:
+    //   Root -> Parent (self-rotation)
+    //   Root -> OrbitPivot (orbital rotation, no mesh) -> Child (offset + self-rotation)
     m_sceneGraph = std::make_unique<SceneGraph>();
     {
         auto parentNode = std::make_unique<SceneNode>();
         parentNode->SetMesh(m_currentMesh);
         m_parentNode = m_sceneGraph->GetRoot()->AddChild(std::move(parentNode));
 
+        auto orbitPivot = std::make_unique<SceneNode>();  // no mesh, controls orbit speed
+        m_orbitPivotNode = m_sceneGraph->GetRoot()->AddChild(std::move(orbitPivot));
+
         auto childNode = std::make_unique<SceneNode>();
         childNode->SetMesh(m_currentMesh);
         childNode->GetTransform().SetPosition({ 3.0f, 0.0f, 0.0f });
-        m_childNode = m_parentNode->AddChild(std::move(childNode));
+        m_childNode = m_orbitPivotNode->AddChild(std::move(childNode));
     }
 
     // Create renderer
@@ -196,6 +201,7 @@ void Engine::Shutdown()
 
     m_renderer.reset();
     m_parentNode = nullptr;
+    m_orbitPivotNode = nullptr;
     m_childNode = nullptr;
     m_sceneGraph.reset();
     m_currentMesh = nullptr;
@@ -216,11 +222,19 @@ void Engine::Shutdown()
 
 void Engine::Update(float deltaTime)
 {
-    // Rotate parent node (only when animating); child orbits via scene graph hierarchy
+    // Animate: parent self-rotation, orbit pivot, child self-rotation (all independent speeds)
     if (m_isAnimating)
-        m_rotationAngle += 1.0f * deltaTime;
+    {
+        m_rotationAngle += 1.0f * deltaTime;         // parent self-rotation
+        m_orbitAngle += 0.6f * deltaTime;             // child orbit (slower than parent spin)
+        m_childRotationAngle -= 1.5f * deltaTime;     // child self-rotation (opposite, faster)
+    }
     if (m_parentNode)
         m_parentNode->GetTransform().SetRotation({ 0.0f, m_rotationAngle, 0.0f });
+    if (m_orbitPivotNode)
+        m_orbitPivotNode->GetTransform().SetRotation({ 0.0f, m_orbitAngle, 0.0f });
+    if (m_childNode)
+        m_childNode->GetTransform().SetRotation({ 0.0f, m_childRotationAngle, 0.0f });
 
     // Move light with arrow keys and PgUp/PgDn
     if (m_pointLight)

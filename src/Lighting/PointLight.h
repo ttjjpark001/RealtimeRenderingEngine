@@ -44,8 +44,8 @@ private:
     DirectX::XMFLOAT3 m_position = { 2.0f, 3.0f, -2.0f };
     DirectX::XMFLOAT3 m_color = { 1.0f, 1.0f, 1.0f };
     float m_Kc = 1.0f;
-    float m_Kl = 0.09f;
-    float m_Kq = 0.032f;
+    float m_Kl = 0.045f;
+    float m_Kq = 0.0075f;
 };
 
 } // namespace RRE
