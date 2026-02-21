@@ -7,9 +7,12 @@
 #include "RHI/D3D12/D3D12Context.h"
 #include "Renderer/Mesh.h"
 #include "Renderer/MeshFactory.h"
+#include "Renderer/Renderer.h"
 #include "Renderer/DebugHUD.h"
 #include "Lighting/PointLight.h"
 #include "Scene/Camera.h"
+#include "Scene/SceneGraph.h"
+#include "Scene/SceneNode.h"
 #include "Platform/Win32/Win32Menu.h"
 #include <DirectXMath.h>
 
@@ -56,7 +59,27 @@ bool Engine::Initialize(const EngineInitParams& params)
     m_cubeMesh = std::make_unique<Mesh>(MeshFactory::CreateCube());
     m_cylinderMesh = std::make_unique<Mesh>(MeshFactory::CreateCylinder());
     m_currentMesh = m_cubeMesh.get();
-    UploadMesh(*m_currentMesh);
+
+    // Build scene graph: root -> parent (rotating) -> child (orbiting)
+    m_sceneGraph = std::make_unique<SceneGraph>();
+    {
+        auto parentNode = std::make_unique<SceneNode>();
+        parentNode->SetMesh(m_currentMesh);
+        m_parentNode = m_sceneGraph->GetRoot()->AddChild(std::move(parentNode));
+
+        auto childNode = std::make_unique<SceneNode>();
+        childNode->SetMesh(m_currentMesh);
+        childNode->GetTransform().SetPosition({ 3.0f, 0.0f, 0.0f });
+        m_childNode = m_parentNode->AddChild(std::move(childNode));
+    }
+
+    // Create renderer
+    m_renderer = std::make_unique<Renderer>();
+    {
+        auto* d3dDevice = static_cast<D3D12Device*>(m_rhiDevice.get());
+        auto* context = static_cast<D3D12Context*>(m_rhiDevice->GetContext());
+        m_renderer->SetContext(context, d3dDevice->GetD3DDevice());
+    }
 
     // Create menu
     m_menu = std::make_unique<Win32Menu>();
@@ -81,7 +104,7 @@ bool Engine::Initialize(const EngineInitParams& params)
     // Create point light
     m_pointLight = std::make_unique<PointLight>();
 
-    // Create light indicator sphere (low-poly)
+    // Create light indicator sphere (low-poly, uploaded separately from scene meshes)
     m_lightSphereMesh = std::make_unique<Mesh>(MeshFactory::CreateSphere(8, 8));
     {
         auto* d3dDevice = static_cast<D3D12Device*>(m_rhiDevice.get());
@@ -94,8 +117,6 @@ bool Engine::Initialize(const EngineInitParams& params)
         uint32 ibSize = static_cast<uint32>(m_lightSphereMesh->indices.size() * sizeof(uint32));
         ib->Initialize(d3dDevice->GetD3DDevice(), m_lightSphereMesh->indices.data(), ibSize, sizeof(uint32));
         m_lightSphereIB = std::move(ib);
-
-        m_lightSphereIndexCount = static_cast<uint32>(m_lightSphereMesh->indices.size());
     }
 
     // Set light menu callbacks
@@ -173,8 +194,10 @@ void Engine::Shutdown()
         m_rhiDevice->Shutdown();
     }
 
-    m_vertexBuffer.reset();
-    m_indexBuffer.reset();
+    m_renderer.reset();
+    m_parentNode = nullptr;
+    m_childNode = nullptr;
+    m_sceneGraph.reset();
     m_currentMesh = nullptr;
     m_sphereMesh.reset();
     m_tetrahedronMesh.reset();
@@ -193,9 +216,11 @@ void Engine::Shutdown()
 
 void Engine::Update(float deltaTime)
 {
-    // Rotate object (only when animating)
+    // Rotate parent node (only when animating); child orbits via scene graph hierarchy
     if (m_isAnimating)
         m_rotationAngle += 1.0f * deltaTime;
+    if (m_parentNode)
+        m_parentNode->GetTransform().SetRotation({ 0.0f, m_rotationAngle, 0.0f });
 
     // Move light with arrow keys and PgUp/PgDn
     if (m_pointLight)
@@ -237,7 +262,7 @@ void Engine::Update(float deltaTime)
         stats.width = m_window->GetWidth();
         stats.height = m_window->GetHeight();
         stats.aspectRatio = static_cast<float>(stats.width) / static_cast<float>(stats.height);
-        stats.totalPolygons = m_indexCount / 3;
+        stats.totalPolygons = m_sceneGraph ? m_sceneGraph->GetTotalPolygonCount() : 0;
         stats.polygonsPerSec = stats.totalPolygons * (1.0f / deltaTime);
         stats.showLightInfo = m_showLightInfo;
         if (m_pointLight)
@@ -259,35 +284,13 @@ void Engine::Update(float deltaTime)
 
 void Engine::Render()
 {
-    if (!m_rhiDevice)
+    if (!m_rhiDevice || !m_renderer || !m_sceneGraph)
         return;
 
     auto* context = static_cast<D3D12Context*>(m_rhiDevice->GetContext());
 
-    // Compute view and projection matrices from Camera
     float aspectRatio = static_cast<float>(m_window->GetWidth())
         / static_cast<float>(m_window->GetHeight());
-    XMMATRIX view = m_camera->GetViewMatrix();
-    XMMATRIX projection = m_camera->GetProjectionMatrix(aspectRatio);
-
-    // Transpose for HLSL column-major layout (standard D3D12 pattern)
-    XMMATRIX viewProj = XMMatrixTranspose(view * projection);
-    XMFLOAT4X4 viewProjFloat;
-    XMStoreFloat4x4(&viewProjFloat, viewProj);
-    context->SetViewProjection(viewProjFloat);
-
-    // Set lighting data
-    if (m_pointLight)
-    {
-        XMFLOAT3 camPos = m_camera->GetPosition();
-        XMFLOAT3 ambient = { 0.15f, 0.15f, 0.15f };
-        context->SetLightData(
-            m_pointLight->GetPosition(), m_pointLight->GetColor(),
-            camPos, ambient,
-            m_pointLight->GetConstantAttenuation(),
-            m_pointLight->GetLinearAttenuation(),
-            m_pointLight->GetQuadraticAttenuation());
-    }
 
     context->BeginFrame();
 
@@ -295,30 +298,12 @@ void Engine::Render()
     XMFLOAT4 cobaltBlue(0.0f, 0.28f, 0.67f, 1.0f);
     context->Clear(cobaltBlue);
 
-    // Draw cube with rotation
-    if (m_vertexBuffer && m_indexBuffer)
-    {
-        // Transpose for HLSL column-major layout
-        XMMATRIX world = XMMatrixTranspose(XMMatrixRotationY(m_rotationAngle));
-        XMFLOAT4X4 worldFloat;
-        XMStoreFloat4x4(&worldFloat, world);
+    // Render all scene objects via SceneGraph traversal
+    m_renderer->RenderScene(*m_sceneGraph, *m_camera, m_pointLight.get(), aspectRatio);
 
-        context->DrawPrimitives(m_vertexBuffer.get(), m_indexBuffer.get(), worldFloat);
-    }
-
-    // Draw light indicator sphere (only when light info is visible)
-    if (m_showLightInfo && m_lightSphereVB && m_lightSphereIB && m_pointLight)
-    {
-        XMFLOAT3 lp = m_pointLight->GetPosition();
-        XMMATRIX lightWorld = XMMatrixTranspose(
-            XMMatrixScaling(0.06f, 0.06f, 0.06f) * XMMatrixTranslation(lp.x, lp.y, lp.z));
-        XMFLOAT4X4 lightWorldFloat;
-        XMStoreFloat4x4(&lightWorldFloat, lightWorld);
-
-        context->SetUnlitMode(true, m_pointLight->GetColor());
-        context->DrawPrimitives(m_lightSphereVB.get(), m_lightSphereIB.get(), lightWorldFloat);
-        context->SetUnlitMode(false, { 1.0f, 1.0f, 1.0f });
-    }
+    // Render light indicator sphere (unlit, only when light info visible)
+    m_renderer->RenderLightIndicator(m_pointLight.get(), m_showLightInfo,
+        m_lightSphereVB.get(), m_lightSphereIB.get());
 
     // Render debug HUD (before EndFrame so text commands are queued)
     if (m_debugHUD)
@@ -337,24 +322,6 @@ void Engine::OnResize(uint32 width, uint32 height)
     }
 }
 
-void Engine::UploadMesh(const Mesh& mesh)
-{
-    auto* d3dDevice = static_cast<D3D12Device*>(m_rhiDevice.get());
-
-    // Create vertex buffer
-    auto vb = std::make_unique<D3D12Buffer>();
-    uint32 vbSize = static_cast<uint32>(mesh.vertices.size() * sizeof(Vertex));
-    vb->Initialize(d3dDevice->GetD3DDevice(), mesh.vertices.data(), vbSize, sizeof(Vertex));
-    m_vertexBuffer = std::move(vb);
-
-    // Create index buffer
-    auto ib = std::make_unique<D3D12Buffer>();
-    uint32 ibSize = static_cast<uint32>(mesh.indices.size() * sizeof(uint32));
-    ib->Initialize(d3dDevice->GetD3DDevice(), mesh.indices.data(), ibSize, sizeof(uint32));
-    m_indexBuffer = std::move(ib);
-
-    m_indexCount = static_cast<uint32>(mesh.indices.size());
-}
 
 void Engine::OnViewModeChanged(uint32 width, uint32 height, bool fullscreen)
 {
@@ -380,8 +347,12 @@ void Engine::OnMeshTypeChanged(MeshType type)
     case MeshType::Cylinder:    m_currentMesh = m_cylinderMesh.get(); break;
     }
 
-    if (m_currentMesh)
-        UploadMesh(*m_currentMesh);
+    // Update both parent and child scene nodes
+    if (m_parentNode) m_parentNode->SetMesh(m_currentMesh);
+    if (m_childNode)  m_childNode->SetMesh(m_currentMesh);
+
+    // Clear Renderer mesh cache so new mesh gets uploaded on next frame
+    if (m_renderer) m_renderer->ClearMeshCache();
 }
 
 void Engine::OnAnimationToggle()

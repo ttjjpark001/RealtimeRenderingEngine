@@ -94,6 +94,7 @@
     <ClCompile Include="RHI\D3D12\D3D12Buffer.cpp" />
     <ClCompile Include="RHI\D3D12\D3D12PipelineState.cpp" />
     <ClCompile Include="Renderer\MeshFactory.cpp" />
+    <ClCompile Include="Renderer\Renderer.cpp" />
     <ClCompile Include="Renderer\DebugHUD.cpp" />
     <ClCompile Include="Scene\Transform.cpp" />
     <ClCompile Include="Scene\SceneNode.cpp" />
@@ -121,6 +122,7 @@
     <ClInclude Include="Renderer\Mesh.h" />
     <ClInclude Include="Renderer\FaceColorPalette.h" />
     <ClInclude Include="Renderer\MeshFactory.h" />
+    <ClInclude Include="Renderer\Renderer.h" />
     <ClInclude Include="Renderer\DebugHUD.h" />
     <ClInclude Include="Scene\Transform.h" />
     <ClInclude Include="Scene\SceneNode.h" />

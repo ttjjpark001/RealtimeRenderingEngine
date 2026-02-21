@@ -14,6 +14,9 @@ class Mesh;
 class DebugHUD;
 class PointLight;
 class Camera;
+class Renderer;
+class SceneGraph;
+class SceneNode;
 enum class MeshType;
 
 struct EngineInitParams
@@ -36,7 +39,6 @@ private:
     void Update(float deltaTime);
     void Render();
     void OnResize(uint32 width, uint32 height);
-    void UploadMesh(const Mesh& mesh);
 
     void OnViewModeChanged(uint32 width, uint32 height, bool fullscreen);
     void OnMeshTypeChanged(MeshType type);
@@ -46,10 +48,11 @@ private:
     std::unique_ptr<Win32Menu> m_menu;
     std::unique_ptr<IRHIDevice> m_rhiDevice;
 
-    // Mesh buffers
-    std::unique_ptr<IRHIBuffer> m_vertexBuffer;
-    std::unique_ptr<IRHIBuffer> m_indexBuffer;
-    uint32 m_indexCount = 0;
+    // Renderer & Scene Graph
+    std::unique_ptr<Renderer> m_renderer;
+    std::unique_ptr<SceneGraph> m_sceneGraph;
+    SceneNode* m_parentNode = nullptr;   // non-owning
+    SceneNode* m_childNode = nullptr;    // non-owning
 
     // Meshes (all 4 types pre-created)
     std::unique_ptr<Mesh> m_sphereMesh;
@@ -69,7 +72,6 @@ private:
     std::unique_ptr<Mesh> m_lightSphereMesh;
     std::unique_ptr<IRHIBuffer> m_lightSphereVB;
     std::unique_ptr<IRHIBuffer> m_lightSphereIB;
-    uint32 m_lightSphereIndexCount = 0;
 
     // Camera
     std::unique_ptr<Camera> m_camera;
