@@ -31,8 +31,10 @@ struct PerObjectConstants
     float Kc;                            // 4
     float Kl;                            // 4
     float Kq;                            // 4
-    float _pad5;                         // 4
-};  // Total: 208 bytes → 256 aligned
+    float unlit;                         // 4
+    DirectX::XMFLOAT3 colorOverride;    // 12
+    float _pad6;                         // 4
+};  // Total: 224 bytes → 256 aligned
 
 class D3D12SwapChain;
 
@@ -77,6 +79,13 @@ public:
         m_Kc = Kc; m_Kl = Kl; m_Kq = Kq;
     }
 
+    // Set unlit mode for next draw call (solid color, no lighting)
+    void SetUnlitMode(bool unlit, const DirectX::XMFLOAT3& color)
+    {
+        m_unlit = unlit ? 1.0f : 0.0f;
+        m_colorOverride = color;
+    }
+
     // IRHIContext interface
     void BeginFrame() override;
     void EndFrame() override;
@@ -117,10 +126,13 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> m_depthBuffer;
     D3D12DescriptorHeap m_dsvHeap;
 
-    // Constant buffer (CBV)
+    // Constant buffer (CBV) — supports multiple draw calls per frame
+    static constexpr uint32 MAX_DRAW_CALLS = 16;
     Microsoft::WRL::ComPtr<ID3D12Resource> m_constantBuffer;
     D3D12DescriptorHeap m_cbvHeap;
     uint8* m_cbData = nullptr;
+    uint32 m_drawCallIndex = 0;
+    UINT m_cbAlignedSize = 0;
 
     // Current frame's view-projection matrix
     DirectX::XMFLOAT4X4 m_viewProjection;
@@ -131,6 +143,10 @@ private:
     DirectX::XMFLOAT3 m_cameraPosition = { 0.0f, 0.0f, 0.0f };
     DirectX::XMFLOAT3 m_ambientColor = { 0.15f, 0.15f, 0.15f };
     float m_Kc = 1.0f, m_Kl = 0.09f, m_Kq = 0.032f;
+
+    // Unlit mode (for light indicator)
+    float m_unlit = 0.0f;
+    DirectX::XMFLOAT3 m_colorOverride = { 1.0f, 1.0f, 1.0f };
 
     // D3D11On12 / D2D / DirectWrite
     Microsoft::WRL::ComPtr<ID3D11On12Device> m_d3d11On12Device;

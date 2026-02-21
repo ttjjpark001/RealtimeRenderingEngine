@@ -15,7 +15,9 @@ cbuffer PerObjectCB : register(b0)
     float Kc;
     float Kl;
     float Kq;
-    float _pad5;
+    float Unlit;
+    float3 ColorOverride;
+    float _pad6;
 };
 
 struct VSInput
@@ -48,6 +50,10 @@ PSInput VSMain(VSInput input)
 
 float4 PSMain(PSInput input) : SV_TARGET
 {
+    // Unlit mode: output solid color without lighting
+    if (Unlit > 0.5f)
+        return float4(ColorOverride, 1.0f);
+
     float3 normal = normalize(input.normal);
     float3 lightDir = normalize(LightPosition - input.worldPos);
 

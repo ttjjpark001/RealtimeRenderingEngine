@@ -80,6 +80,23 @@ bool Engine::Initialize(const EngineInitParams& params)
     // Create point light
     m_pointLight = std::make_unique<PointLight>();
 
+    // Create light indicator sphere (low-poly)
+    m_lightSphereMesh = std::make_unique<Mesh>(MeshFactory::CreateSphere(8, 8));
+    {
+        auto* d3dDevice = static_cast<D3D12Device*>(m_rhiDevice.get());
+        auto vb = std::make_unique<D3D12Buffer>();
+        uint32 vbSize = static_cast<uint32>(m_lightSphereMesh->vertices.size() * sizeof(Vertex));
+        vb->Initialize(d3dDevice->GetD3DDevice(), m_lightSphereMesh->vertices.data(), vbSize, sizeof(Vertex));
+        m_lightSphereVB = std::move(vb);
+
+        auto ib = std::make_unique<D3D12Buffer>();
+        uint32 ibSize = static_cast<uint32>(m_lightSphereMesh->indices.size() * sizeof(uint32));
+        ib->Initialize(d3dDevice->GetD3DDevice(), m_lightSphereMesh->indices.data(), ibSize, sizeof(uint32));
+        m_lightSphereIB = std::move(ib);
+
+        m_lightSphereIndexCount = static_cast<uint32>(m_lightSphereMesh->indices.size());
+    }
+
     // Set light menu callbacks
     m_menu->SetLightColorCallback([this](float r, float g, float b) {
         m_pointLight->SetColor({ r, g, b });
@@ -145,6 +162,9 @@ void Engine::Shutdown()
     m_tetrahedronMesh.reset();
     m_cubeMesh.reset();
     m_cylinderMesh.reset();
+    m_lightSphereVB.reset();
+    m_lightSphereIB.reset();
+    m_lightSphereMesh.reset();
     m_pointLight.reset();
     m_menu.reset();
     m_rhiDevice.reset();
@@ -249,6 +269,20 @@ void Engine::Render()
         XMStoreFloat4x4(&worldFloat, world);
 
         context->DrawPrimitives(m_vertexBuffer.get(), m_indexBuffer.get(), worldFloat);
+    }
+
+    // Draw light indicator sphere (only when light info is visible)
+    if (m_showLightInfo && m_lightSphereVB && m_lightSphereIB && m_pointLight)
+    {
+        XMFLOAT3 lp = m_pointLight->GetPosition();
+        XMMATRIX lightWorld = XMMatrixTranspose(
+            XMMatrixScaling(0.06f, 0.06f, 0.06f) * XMMatrixTranslation(lp.x, lp.y, lp.z));
+        XMFLOAT4X4 lightWorldFloat;
+        XMStoreFloat4x4(&lightWorldFloat, lightWorld);
+
+        context->SetUnlitMode(true, m_pointLight->GetColor());
+        context->DrawPrimitives(m_lightSphereVB.get(), m_lightSphereIB.get(), lightWorldFloat);
+        context->SetUnlitMode(false, { 1.0f, 1.0f, 1.0f });
     }
 
     // Render debug HUD (before EndFrame so text commands are queued)

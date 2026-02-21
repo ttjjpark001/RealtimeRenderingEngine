@@ -64,6 +64,12 @@ private:
     std::unique_ptr<PointLight> m_pointLight;
     bool m_showLightInfo = true;
 
+    // Light indicator sphere
+    std::unique_ptr<Mesh> m_lightSphereMesh;
+    std::unique_ptr<IRHIBuffer> m_lightSphereVB;
+    std::unique_ptr<IRHIBuffer> m_lightSphereIB;
+    uint32 m_lightSphereIndexCount = 0;
+
     // Animation
     float m_rotationAngle = 0.0f;
     bool m_isAnimating = true;
