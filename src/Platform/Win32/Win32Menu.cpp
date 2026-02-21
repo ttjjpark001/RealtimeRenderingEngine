@@ -64,6 +64,23 @@ bool Win32Menu::Initialize(HWND hwnd)
     CheckMenuRadioItem(m_lightMenu, ID_LIGHT_WHITE, ID_LIGHT_MAGENTA,
         ID_LIGHT_WHITE, MF_BYCOMMAND);
 
+    // Camera menu
+    m_cameraMenu = CreatePopupMenu();
+    AppendMenuW(m_cameraMenu, MF_STRING | MF_CHECKED, ID_CAMERA_SHOW_INFO, L"Show Info");
+    AppendMenuW(m_cameraMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m_cameraMenu, MF_STRING, ID_CAMERA_PERSPECTIVE, L"Perspective");
+    AppendMenuW(m_cameraMenu, MF_STRING, ID_CAMERA_ORTHOGRAPHIC, L"Orthographic");
+    AppendMenuW(m_cameraMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m_cameraMenu, MF_STRING, ID_CAMERA_FOV_UP, L"FOV+");
+    AppendMenuW(m_cameraMenu, MF_STRING, ID_CAMERA_FOV_DOWN, L"FOV-");
+    AppendMenuW(m_cameraMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m_cameraMenu, MF_STRING, ID_CAMERA_RESET, L"Reset");
+    AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_cameraMenu), L"Camera");
+
+    // Default check: Perspective
+    CheckMenuRadioItem(m_cameraMenu, ID_CAMERA_PERSPECTIVE, ID_CAMERA_ORTHOGRAPHIC,
+        ID_CAMERA_PERSPECTIVE, MF_BYCOMMAND);
+
     SetMenu(hwnd, m_menuBar);
     return true;
 }
@@ -170,6 +187,42 @@ bool Win32Menu::HandleCommand(WPARAM wParam)
 
     case ID_LIGHT_RESET_POS:
         if (m_lightResetCallback) m_lightResetCallback();
+        return true;
+
+    // Camera commands
+    case ID_CAMERA_SHOW_INFO:
+    {
+        UINT state = GetMenuState(m_cameraMenu, ID_CAMERA_SHOW_INFO, MF_BYCOMMAND);
+        CheckMenuItem(m_cameraMenu, ID_CAMERA_SHOW_INFO,
+            MF_BYCOMMAND | ((state & MF_CHECKED) ? MF_UNCHECKED : MF_CHECKED));
+        if (m_cameraToggleInfoCallback) m_cameraToggleInfoCallback();
+        return true;
+    }
+
+    case ID_CAMERA_PERSPECTIVE:
+        CheckMenuRadioItem(m_cameraMenu, ID_CAMERA_PERSPECTIVE, ID_CAMERA_ORTHOGRAPHIC,
+            ID_CAMERA_PERSPECTIVE, MF_BYCOMMAND);
+        if (m_cameraProjectionCallback) m_cameraProjectionCallback(true);
+        return true;
+
+    case ID_CAMERA_ORTHOGRAPHIC:
+        CheckMenuRadioItem(m_cameraMenu, ID_CAMERA_PERSPECTIVE, ID_CAMERA_ORTHOGRAPHIC,
+            ID_CAMERA_ORTHOGRAPHIC, MF_BYCOMMAND);
+        if (m_cameraProjectionCallback) m_cameraProjectionCallback(false);
+        return true;
+
+    case ID_CAMERA_FOV_UP:
+        if (m_cameraFovCallback) m_cameraFovCallback(5.0f);
+        return true;
+
+    case ID_CAMERA_FOV_DOWN:
+        if (m_cameraFovCallback) m_cameraFovCallback(-5.0f);
+        return true;
+
+    case ID_CAMERA_RESET:
+        CheckMenuRadioItem(m_cameraMenu, ID_CAMERA_PERSPECTIVE, ID_CAMERA_ORTHOGRAPHIC,
+            ID_CAMERA_PERSPECTIVE, MF_BYCOMMAND);
+        if (m_cameraResetCallback) m_cameraResetCallback();
         return true;
 
     default:

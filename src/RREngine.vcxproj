@@ -98,6 +98,7 @@
     <ClCompile Include="Scene\Transform.cpp" />
     <ClCompile Include="Scene\SceneNode.cpp" />
     <ClCompile Include="Scene\SceneGraph.cpp" />
+    <ClCompile Include="Scene\Camera.cpp" />
   </ItemGroup>
 
   <!-- Header Files -->
@@ -125,6 +126,7 @@
     <ClInclude Include="Scene\SceneNode.h" />
     <ClInclude Include="Scene\SceneGraph.h" />
     <ClInclude Include="Lighting\PointLight.h" />
+    <ClInclude Include="Scene\Camera.h" />
   </ItemGroup>
 
   <!-- Shader Files (CustomBuild: compile VS and PS from single HLSL) -->

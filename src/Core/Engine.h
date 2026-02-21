@@ -13,6 +13,7 @@ class IRHIBuffer;
 class Mesh;
 class DebugHUD;
 class PointLight;
+class Camera;
 enum class MeshType;
 
 struct EngineInitParams
@@ -69,6 +70,10 @@ private:
     std::unique_ptr<IRHIBuffer> m_lightSphereVB;
     std::unique_ptr<IRHIBuffer> m_lightSphereIB;
     uint32 m_lightSphereIndexCount = 0;
+
+    // Camera
+    std::unique_ptr<Camera> m_camera;
+    bool m_showCameraInfo = true;
 
     // Animation
     float m_rotationAngle = 0.0f;

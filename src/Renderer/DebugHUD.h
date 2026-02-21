@@ -21,6 +21,13 @@ struct RenderStats
     bool showLightInfo = false;
     const char* lightColorName = "White";
     DirectX::XMFLOAT3 lightPosition = { 0.0f, 0.0f, 0.0f };
+
+    // Camera info (Phase 10)
+    bool showCameraInfo = false;
+    const char* projectionModeName = "Perspective";
+    DirectX::XMFLOAT3 cameraPosition = { 0.0f, 0.0f, 0.0f };
+    DirectX::XMFLOAT3 cameraDirection = { 0.0f, 0.0f, 0.0f };
+    float fovDegrees = 45.0f;
 };
 
 class DebugHUD

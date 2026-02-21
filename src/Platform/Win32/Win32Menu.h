@@ -38,6 +38,13 @@ constexpr UINT ID_LIGHT_CYAN        = 4007;
 constexpr UINT ID_LIGHT_MAGENTA     = 4008;
 constexpr UINT ID_LIGHT_RESET_POS   = 4009;
 
+constexpr UINT ID_CAMERA_SHOW_INFO    = 5001;
+constexpr UINT ID_CAMERA_PERSPECTIVE  = 5002;
+constexpr UINT ID_CAMERA_ORTHOGRAPHIC = 5003;
+constexpr UINT ID_CAMERA_FOV_UP       = 5004;
+constexpr UINT ID_CAMERA_FOV_DOWN     = 5005;
+constexpr UINT ID_CAMERA_RESET        = 5006;
+
 class Win32Menu
 {
 public:
@@ -47,6 +54,10 @@ public:
     using LightColorCallback = std::function<void(float, float, float)>;
     using LightToggleInfoCallback = std::function<void()>;
     using LightResetCallback = std::function<void()>;
+    using CameraProjectionCallback = std::function<void(bool perspective)>;
+    using CameraToggleInfoCallback = std::function<void()>;
+    using CameraFovCallback = std::function<void(float deltaDegrees)>;
+    using CameraResetCallback = std::function<void()>;
 
     Win32Menu() = default;
     ~Win32Menu() = default;
@@ -61,6 +72,10 @@ public:
     void SetLightColorCallback(LightColorCallback callback) { m_lightColorCallback = std::move(callback); }
     void SetLightToggleInfoCallback(LightToggleInfoCallback callback) { m_lightToggleInfoCallback = std::move(callback); }
     void SetLightResetCallback(LightResetCallback callback) { m_lightResetCallback = std::move(callback); }
+    void SetCameraProjectionCallback(CameraProjectionCallback callback) { m_cameraProjectionCallback = std::move(callback); }
+    void SetCameraToggleInfoCallback(CameraToggleInfoCallback callback) { m_cameraToggleInfoCallback = std::move(callback); }
+    void SetCameraFovCallback(CameraFovCallback callback) { m_cameraFovCallback = std::move(callback); }
+    void SetCameraResetCallback(CameraResetCallback callback) { m_cameraResetCallback = std::move(callback); }
 
     void UpdateAnimCheckMark(bool isPlaying);
 
@@ -71,6 +86,7 @@ private:
     HMENU m_objectMenu = nullptr;
     HMENU m_animMenu = nullptr;
     HMENU m_lightMenu = nullptr;
+    HMENU m_cameraMenu = nullptr;
 
     ViewCallback m_viewCallback;
     MeshCallback m_meshCallback;
@@ -78,6 +94,10 @@ private:
     LightColorCallback m_lightColorCallback;
     LightToggleInfoCallback m_lightToggleInfoCallback;
     LightResetCallback m_lightResetCallback;
+    CameraProjectionCallback m_cameraProjectionCallback;
+    CameraToggleInfoCallback m_cameraToggleInfoCallback;
+    CameraFovCallback m_cameraFovCallback;
+    CameraResetCallback m_cameraResetCallback;
 };
 
 } // namespace RRE

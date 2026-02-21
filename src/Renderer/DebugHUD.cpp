@@ -67,6 +67,28 @@ void DebugHUD::Render(IRHIContext& context)
         snprintf(buf, sizeof(buf), "Light Pos: (%.1f, %.1f, %.1f)",
             m_lastStats.lightPosition.x, m_lastStats.lightPosition.y, m_lastStats.lightPosition.z);
         context.DrawText(x, y, buf, green);
+        y += lineHeight;
+    }
+
+    // Camera info (conditional)
+    if (m_lastStats.showCameraInfo)
+    {
+        snprintf(buf, sizeof(buf), "Camera: %s", m_lastStats.projectionModeName);
+        context.DrawText(x, y, buf, green);
+        y += lineHeight;
+
+        snprintf(buf, sizeof(buf), "Cam Pos: (%.1f, %.1f, %.1f)",
+            m_lastStats.cameraPosition.x, m_lastStats.cameraPosition.y, m_lastStats.cameraPosition.z);
+        context.DrawText(x, y, buf, green);
+        y += lineHeight;
+
+        snprintf(buf, sizeof(buf), "Cam Dir: (%.1f, %.1f, %.1f)",
+            m_lastStats.cameraDirection.x, m_lastStats.cameraDirection.y, m_lastStats.cameraDirection.z);
+        context.DrawText(x, y, buf, green);
+        y += lineHeight;
+
+        snprintf(buf, sizeof(buf), "FOV: %.1f%c", m_lastStats.fovDegrees, 0xB0);
+        context.DrawText(x, y, buf, green);
     }
 }
 

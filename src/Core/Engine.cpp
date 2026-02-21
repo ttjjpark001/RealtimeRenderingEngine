@@ -9,6 +9,7 @@
 #include "Renderer/MeshFactory.h"
 #include "Renderer/DebugHUD.h"
 #include "Lighting/PointLight.h"
+#include "Scene/Camera.h"
 #include "Platform/Win32/Win32Menu.h"
 #include <DirectXMath.h>
 
@@ -108,6 +109,23 @@ bool Engine::Initialize(const EngineInitParams& params)
         m_pointLight->Reset();
     });
 
+    // Create camera
+    m_camera = std::make_unique<Camera>();
+
+    // Set camera menu callbacks
+    m_menu->SetCameraProjectionCallback([this](bool perspective) {
+        m_camera->SetProjectionMode(perspective ? ProjectionMode::Perspective : ProjectionMode::Orthographic);
+    });
+    m_menu->SetCameraToggleInfoCallback([this]() {
+        m_showCameraInfo = !m_showCameraInfo;
+    });
+    m_menu->SetCameraFovCallback([this](float deltaDegrees) {
+        m_camera->AdjustFov(deltaDegrees);
+    });
+    m_menu->SetCameraResetCallback([this]() {
+        m_camera->Reset();
+    });
+
     // Create debug HUD
     m_debugHUD = std::make_unique<DebugHUD>();
 
@@ -166,6 +184,7 @@ void Engine::Shutdown()
     m_lightSphereIB.reset();
     m_lightSphereMesh.reset();
     m_pointLight.reset();
+    m_camera.reset();
     m_menu.reset();
     m_rhiDevice.reset();
     m_window.reset();
@@ -194,6 +213,22 @@ void Engine::Update(float deltaTime)
         m_pointLight->SetPosition(pos);
     }
 
+    // Move camera with WASD+QE, adjust FOV with +/-
+    if (m_camera)
+    {
+        float speed = 3.0f * deltaTime;
+
+        if (GetAsyncKeyState('W') & 0x8000) m_camera->MoveForward(speed);
+        if (GetAsyncKeyState('S') & 0x8000) m_camera->MoveForward(-speed);
+        if (GetAsyncKeyState('A') & 0x8000) m_camera->MoveRight(-speed);
+        if (GetAsyncKeyState('D') & 0x8000) m_camera->MoveRight(speed);
+        if (GetAsyncKeyState('Q') & 0x8000) m_camera->MoveUp(speed);
+        if (GetAsyncKeyState('E') & 0x8000) m_camera->MoveUp(-speed);
+
+        if (GetAsyncKeyState(VK_OEM_PLUS) & 0x8000)  m_camera->AdjustFov(5.0f * deltaTime);
+        if (GetAsyncKeyState(VK_OEM_MINUS) & 0x8000)  m_camera->AdjustFov(-5.0f * deltaTime);
+    }
+
     // Update debug HUD
     if (m_debugHUD)
     {
@@ -210,6 +245,14 @@ void Engine::Update(float deltaTime)
             stats.lightColorName = m_pointLight->GetColorName();
             stats.lightPosition = m_pointLight->GetPosition();
         }
+        stats.showCameraInfo = m_showCameraInfo;
+        if (m_camera)
+        {
+            stats.projectionModeName = m_camera->GetProjectionModeName();
+            stats.cameraPosition = m_camera->GetPosition();
+            stats.cameraDirection = m_camera->GetDirection();
+            stats.fovDegrees = m_camera->GetFovDegrees();
+        }
         m_debugHUD->Update(deltaTime, stats);
     }
 }
@@ -221,18 +264,11 @@ void Engine::Render()
 
     auto* context = static_cast<D3D12Context*>(m_rhiDevice->GetContext());
 
-    // Compute view and projection matrices
-    // Camera positioned at a comfortable distance to show the full cube
-    XMVECTOR eyePos = XMVectorSet(0.0f, 2.5f, -6.0f, 1.0f);
-    XMVECTOR lookAt = XMVectorSet(0.0f, 0.0f, 0.0f, 1.0f);
-    XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-    XMMATRIX view = XMMatrixLookAtLH(eyePos, lookAt, up);
-
+    // Compute view and projection matrices from Camera
     float aspectRatio = static_cast<float>(m_window->GetWidth())
         / static_cast<float>(m_window->GetHeight());
-    // Wider FOV (60°) gives more visible area and makes objects appear smaller
-    XMMATRIX projection = XMMatrixPerspectiveFovLH(
-        XMConvertToRadians(60.0f), aspectRatio, 0.1f, 100.0f);
+    XMMATRIX view = m_camera->GetViewMatrix();
+    XMMATRIX projection = m_camera->GetProjectionMatrix(aspectRatio);
 
     // Transpose for HLSL column-major layout (standard D3D12 pattern)
     XMMATRIX viewProj = XMMatrixTranspose(view * projection);
@@ -243,8 +279,7 @@ void Engine::Render()
     // Set lighting data
     if (m_pointLight)
     {
-        XMFLOAT3 camPos;
-        XMStoreFloat3(&camPos, eyePos);
+        XMFLOAT3 camPos = m_camera->GetPosition();
         XMFLOAT3 ambient = { 0.15f, 0.15f, 0.15f };
         context->SetLightData(
             m_pointLight->GetPosition(), m_pointLight->GetColor(),
