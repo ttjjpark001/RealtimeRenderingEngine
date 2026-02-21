@@ -39,7 +39,7 @@ public:
         {
             // Collect colors used by neighbors
             std::set<uint32> usedColors;
-            for (uint32 neighbor : adjacency[face])
+            for (const uint32 neighbor : adjacency[face])
             {
                 if (colors[neighbor] != UINT32_MAX)
                 {

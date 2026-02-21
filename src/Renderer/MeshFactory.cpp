@@ -3,7 +3,6 @@
 #include "Renderer/FaceColorPalette.h"
 #include <DirectXMath.h>
 #include <map>
-#include <set>
 #include <array>
 #include <algorithm>
 #include <cmath>
@@ -77,11 +76,11 @@ std::vector<std::vector<uint32>> BuildAdjacency(
         }
     }
 
-    // Remove duplicate adjacency entries
+    // Remove duplicate adjacency entries (sort+unique for cache locality)
     for (auto& adj : adjacency)
     {
-        std::set<uint32> unique(adj.begin(), adj.end());
-        adj.assign(unique.begin(), unique.end());
+        std::sort(adj.begin(), adj.end());
+        adj.erase(std::unique(adj.begin(), adj.end()), adj.end());
     }
 
     return adjacency;

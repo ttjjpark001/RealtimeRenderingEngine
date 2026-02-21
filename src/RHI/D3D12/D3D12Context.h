@@ -35,6 +35,7 @@ struct PerObjectConstants
     DirectX::XMFLOAT3 colorOverride;    // 12
     float _pad6;                         // 4
 };  // Total: 224 bytes → 256 aligned
+static_assert(sizeof(PerObjectConstants) <= 256, "PerObjectConstants exceeds 256-byte CB slot");
 
 class D3D12SwapChain;
 
@@ -102,7 +103,6 @@ public:
     void CreateDepthBuffer(uint32 width, uint32 height);
 
 private:
-    void MoveToNextFrame();
     bool CreateConstantBuffer();
     void FlushTextCommands();
 
@@ -133,6 +133,7 @@ private:
     uint8* m_cbData = nullptr;
     uint32 m_drawCallIndex = 0;
     UINT m_cbAlignedSize = 0;
+    UINT m_cbvDescriptorSize = 0;
 
     // Current frame's view-projection matrix
     DirectX::XMFLOAT4X4 m_viewProjection;

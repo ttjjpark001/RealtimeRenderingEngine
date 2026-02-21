@@ -58,7 +58,8 @@ tests/
 - Fence 기반 GPU 동기화
 - Depth Stencil Buffer (DXGI_FORMAT_D24_UNORM_S8_UINT) + DSV Heap 생성/관리, 리사이즈 시 재생성
 - CBV_SRV_UAV DescriptorHeap(shader-visible) + Upload Buffer(256바이트 정렬) 기반 Constant Buffer 관리
-- HLSL 셰이더: Position + Color + Normal 입력, WVP 변환 + Per-Pixel Diffuse 라이팅
+- **멀티 드로우콜**: 프레임당 최대 16회 DrawPrimitives 지원. CB를 16슬롯(각 256바이트)으로 분할하고 슬롯별 CBV 디스크립터를 생성. BeginFrame에서 인덱스 리셋, DrawPrimitives마다 다음 슬롯 사용
+- HLSL 셰이더: Position + Color + Normal 입력, WVP 변환 + Per-Pixel Diffuse 라이팅 + Unlit 모드 지원
 - 셰이더는 빌드 타임에 .cso 파일로 사전 컴파일 (VS HLSL Compiler), 런타임 D3DCompileFromFile 미사용
 
 ### 수학 (DirectXMath)
@@ -75,13 +76,23 @@ tests/
 ### Scene Graph
 - 트리 구조: 루트 노드 아래 부모-자식 계층
 - 각 SceneNode는 Transform(위치/회전/스케일)과 Mesh 참조를 보유
-- WorldMatrix = Parent.WorldMatrix × Local.TRS_Matrix
+- WorldMatrix = Local.TRS_Matrix × Parent.WorldMatrix (local * parent 순서)
 - 깊이 우선 순회로 렌더링
+- 데모 장면 구조: Root → Parent(원점, Y축 회전) → Child(3,0,0 오프셋, 부모 중심으로 공전)
+
+### Renderer
+- `Renderer` 클래스가 SceneGraph를 Traverse하며 각 노드의 Mesh를 DrawPrimitives로 렌더링
+- Mesh→VB/IB 캐시: `std::unordered_map<Mesh*, MeshBuffers>` — 처음 만나는 Mesh는 자동 업로드
+- `RenderScene()`: ViewProjection 설정 → LightData 설정 → SceneGraph 순회 → 각 노드 DrawPrimitives
+- `RenderLightIndicator()`: 광원 위치에 Unlit 모드로 작은 구를 렌더링
+- Engine은 Renderer를 통해 렌더링하며, 직접 VB/IB를 관리하지 않음 (광원 구 제외)
 
 ### 상태 표시 HUD (DebugHUD)
 - 화면 왼쪽 상단에 렌더링 통계를 텍스트 오버레이로 표시
-- 표시 항목: FPS, 해상도(WxH), 종횡비, 전체 폴리곤 수, 초당 폴리곤 처리 속도
-- D2D/DirectWrite interop 또는 GDI interop으로 텍스트 렌더링
+- 기본 표시: FPS, 해상도(WxH), 종횡비, 전체 폴리곤 수, 초당 폴리곤 처리 속도
+- 광원 정보 (토글): 광원 색상명, 광원 위치
+- 카메라 정보 (토글): 투영 모드, 카메라 위치/방향, FOV
+- D3D11On12 + D2D1 + DirectWrite interop으로 텍스트 렌더링
 
 ### 면 색상 규칙 (Face Coloring)
 - 8색 팔레트: Red, Green, Blue, Cyan, Magenta, Yellow, Black, White
@@ -119,6 +130,7 @@ tests/
 - 화면에 광원 정보(색상명, 위치) 표시 가능, "Light" 메뉴에서 on/off 토글
 - 메뉴에서 광원 색상 선택 (White/Red/Green/Blue/Yellow/Cyan/Magenta)
 - 방향키 + PgUp/PgDn으로 광원 위치 실시간 이동
+- 광원 인디케이터: 광원 정보 표시 시 광원 위치에 작은 구(스케일 0.06) 렌더링, Unlit 모드(광원 색상 그대로)
 
 ### 카메라 (Camera)
 - Scene/Camera.h/.cpp에 위치
@@ -150,10 +162,13 @@ tests/
 ## 링크 라이브러리
 
 ```
-d3d12.lib      — DirectX 12 core
-dxgi.lib       — DXGI (SwapChain, Adapter)
+d3d12.lib       — DirectX 12 core
+dxgi.lib        — DXGI (SwapChain, Adapter)
 d3dcompiler.lib — HLSL 런타임 컴파일
-dxguid.lib     — DirectX GUIDs
+dxguid.lib      — DirectX GUIDs
+d3d11.lib       — D3D11On12 (HUD 텍스트 렌더링용)
+d2d1.lib        — Direct2D (HUD 텍스트 렌더링용)
+dwrite.lib      — DirectWrite (HUD 텍스트 렌더링용)
 ```
 
 ## 테스트 규칙
@@ -163,6 +178,7 @@ dxguid.lib     — DirectX GUIDs
 - MeshFactory/색상 변경 시: `tests/unit/test_FaceColoring.cpp` 실행
 - Camera 변경 시: `tests/unit/test_Camera.cpp` 실행
 - RHI/D3D12 변경 시: `tests/smoke/test_RHIBackend.cpp` 실행
+- Renderer/Engine 통합 변경 시: `tests/smoke/test_EngineInit.cpp` 실행
 - 전체 통합 변경 시: 모든 테스트 실행
 - D3D12 스모크 테스트는 WARP 어댑터로 GPU 없이도 실행 가능
 

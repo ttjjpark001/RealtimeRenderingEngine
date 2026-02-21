@@ -111,6 +111,9 @@ bool D3D12Context::CreateConstantBuffer()
         m_device->CreateConstantBufferView(&cbvDesc, cbvHandle);
     }
 
+    // Cache CBV descriptor increment size for DrawPrimitives
+    m_cbvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
     // Keep the buffer persistently mapped
     hr = m_constantBuffer->Map(0, nullptr, reinterpret_cast<void**>(&m_cbData));
     if (FAILED(hr))
@@ -456,24 +459,19 @@ void D3D12Context::DrawPrimitives(IRHIBuffer* vb, IRHIBuffer* ib,
     auto* d3dVB = static_cast<D3D12Buffer*>(vb);
     auto* d3dIB = static_cast<D3D12Buffer*>(ib);
 
-    // Write constant buffer to the current slot
-    PerObjectConstants constants;
+    // Write constant buffer to the current slot (zero-init pads all padding fields)
+    PerObjectConstants constants = {};
     constants.world = worldMatrix;
     constants.viewProj = m_viewProjection;
     constants.lightPosition = m_lightPosition;
-    constants._pad1 = 0.0f;
     constants.lightColor = m_lightColor;
-    constants._pad2 = 0.0f;
     constants.cameraPosition = m_cameraPosition;
-    constants._pad3 = 0.0f;
     constants.ambientColor = m_ambientColor;
-    constants._pad4 = 0.0f;
     constants.Kc = m_Kc;
     constants.Kl = m_Kl;
     constants.Kq = m_Kq;
     constants.unlit = m_unlit;
     constants.colorOverride = m_colorOverride;
-    constants._pad6 = 0.0f;
     memcpy(m_cbData + m_drawCallIndex * m_cbAlignedSize, &constants, sizeof(PerObjectConstants));
 
     // Set PSO and root signature
@@ -484,7 +482,7 @@ void D3D12Context::DrawPrimitives(IRHIBuffer* vb, IRHIBuffer* ib,
     ID3D12DescriptorHeap* heaps[] = { m_cbvHeap.GetHeap() };
     m_commandList->SetDescriptorHeaps(1, heaps);
     D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle = m_cbvHeap.GetGPUStart();
-    gpuHandle.ptr += m_drawCallIndex * m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    gpuHandle.ptr += m_drawCallIndex * m_cbvDescriptorSize;
     m_commandList->SetGraphicsRootDescriptorTable(0, gpuHandle);
 
     // Set primitive topology
@@ -569,11 +567,6 @@ void D3D12Context::CreateDepthBuffer(uint32 width, uint32 height)
     m_dsvHeap.Reset();
     D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = m_dsvHeap.Allocate();
     m_device->CreateDepthStencilView(m_depthBuffer.Get(), &dsvDesc, dsvHandle);
-}
-
-void D3D12Context::MoveToNextFrame()
-{
-    WaitForGPU();
 }
 
 } // namespace RRE

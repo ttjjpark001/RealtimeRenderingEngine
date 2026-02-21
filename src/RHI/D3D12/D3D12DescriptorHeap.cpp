@@ -1,4 +1,5 @@
 #include "RHI/D3D12/D3D12DescriptorHeap.h"
+#include <cassert>
 
 namespace RRE
 {
@@ -25,6 +26,7 @@ bool D3D12DescriptorHeap::Initialize(ID3D12Device* device, D3D12_DESCRIPTOR_HEAP
 
 D3D12_CPU_DESCRIPTOR_HANDLE D3D12DescriptorHeap::Allocate()
 {
+    assert(m_currentIndex < m_numDescriptors && "DescriptorHeap overflow: no more descriptors available");
     D3D12_CPU_DESCRIPTOR_HANDLE handle = GetCPUStart();
     handle.ptr += static_cast<SIZE_T>(m_currentIndex) * m_descriptorSize;
     m_currentIndex++;
