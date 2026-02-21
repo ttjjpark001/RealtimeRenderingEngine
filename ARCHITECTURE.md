@@ -127,6 +127,26 @@ Engine::Render()
   │              ├─ UploadMesh() (캐시 miss 시)
   │              ├─ XMMatrixTranspose(worldMatrix)
   │              └─ D3D12Context::DrawPrimitives(vb, ib, world)
+  │                   ├─ [CPU] PerObjectConstants → CB 슬롯에 memcpy
+  │                   ├─ [CPU] SetPipelineState (PSO: VS + PS 바인딩)
+  │                   ├─ [CPU] SetGraphicsRootDescriptorTable (CBV → b0)
+  │                   ├─ [CPU] IASetVertexBuffers / IASetIndexBuffer
+  │                   ├─ [CPU] DrawIndexedInstanced  ─────────────────┐
+  │                   │                                                │
+  │                   │  ┌─── GPU 파이프라인 (DrawIndexedInstanced 실행 시) ──┐
+  │                   │  │  1. Input Assembler: VB/IB → Vertex 조립     │
+  │                   │  │  2. Vertex Shader (VSMain):                   │
+  │                   │  │     position × World → 월드 좌표              │
+  │                   │  │     worldPos × ViewProj → 클립 좌표(SV_POSITION)│
+  │                   │  │     normal × World3x3 → 월드 법선             │
+  │                   │  │     color pass-through                        │
+  │                   │  │  3. Rasterizer: 삼각형 → 픽셀 보간            │
+  │                   │  │  4. Pixel Shader (PSMain):                    │
+  │                   │  │     거리 감쇠 계산, Diffuse 라이팅             │
+  │                   │  │     (Ambient + Diffuse × attenuation) × color │
+  │                   │  │  5. Output Merger: 깊이 테스트 → RTV 기록     │
+  │                   │  └──────────────────────────────────────────────┘
+  │                   └─ m_drawCallIndex++ (다음 CB 슬롯으로 이동)
   │
   ├─ Renderer::RenderLightIndicator()       -- 광원 위치에 작은 구 (Unlit 모드)
   │
@@ -438,6 +458,82 @@ Win32 메뉴바를 통한 사용자 인터페이스.
 ## 4. HLSL 셰이더 (`Shaders/BasicColor.hlsl`)
 
 빌드 타임에 `VertexShader.cso`와 `PixelShader.cso`로 컴파일된다 (런타임 컴파일 없음).
+
+### 4.0 셰이더가 적용되는 시점 — GPU 파이프라인에서의 위치
+
+셰이더는 CPU 측 `DrawIndexedInstanced()` 호출 이후, GPU가 해당 커맨드를 실행할 때 동작한다.
+GPU 그래픽스 파이프라인 내에서 Vertex Shader와 Pixel Shader의 위치는 다음과 같다:
+
+```
+D3D12Context::DrawPrimitives()
+  │
+  ├─ [CPU] PSO 바인딩 (SetPipelineState)
+  │         PSO 안에 VS/PS가 포함되어 있음
+  │         (D3D12PipelineState::Initialize에서 .cso 로드 후 PSO 생성 시 지정)
+  │
+  ├─ [CPU] CB 데이터 기록 + CBV 바인딩
+  │         PerObjectConstants → register(b0) (World, ViewProj, Light, Camera 등)
+  │
+  ├─ [CPU] VB/IB 바인딩 + DrawIndexedInstanced 호출
+  │
+  └─ [GPU] 아래 파이프라인이 GPU에서 자동 실행됨
+           │
+           ▼
+     ┌─────────────────────────────────────────────────────────────┐
+     │  1. Input Assembler (IA)                                    │
+     │     VB에서 Vertex를 읽고, IB로 삼각형 단위로 조립           │
+     │     Input Layout: POSITION(float3) + COLOR(float4)          │
+     │                   + NORMAL(float3) = 40 bytes/vertex        │
+     │                                                             │
+     │  2. ★ Vertex Shader (VSMain) ← 여기서 적용                 │
+     │     - 입력: VSInput { position, color, normal }             │
+     │     - Constant Buffer(b0)에서 World, ViewProj 행렬 읽기     │
+     │     - position × World → 월드 좌표 (worldPos)               │
+     │     - worldPos × ViewProj → 클립 좌표 (SV_POSITION)         │
+     │     - normal × World 3x3 → 월드 공간 법선                   │
+     │     - color는 그대로 전달 (pass-through)                     │
+     │     - 출력: PSInput { SV_POSITION, color, normal, worldPos }│
+     │                                                             │
+     │  3. Rasterizer                                              │
+     │     - 클립 좌표 → 화면 좌표 변환 (뷰포트)                   │
+     │     - 삼각형 내부 픽셀 생성 (래스터화)                       │
+     │     - VS 출력값(color, normal, worldPos)을 픽셀별로 보간     │
+     │     - 후면 컬링 (Backface Culling) 적용                      │
+     │                                                             │
+     │  4. ★ Pixel Shader (PSMain) ← 여기서 적용                  │
+     │     - 입력: 보간된 PSInput { color, normal, worldPos }       │
+     │     - Constant Buffer(b0)에서 LightPosition, LightColor,    │
+     │       CameraPosition, AmbientColor, Kc/Kl/Kq, Unlit 읽기   │
+     │     - [Unlit 모드] ColorOverride를 그대로 출력               │
+     │     - [Lit 모드] 픽셀별 조명 계산:                           │
+     │         d = distance(LightPosition, worldPos)                │
+     │         attenuation = 1 / (Kc + Kl·d + Kq·d²)               │
+     │         diffuse = max(dot(normal, lightDir), 0) × LightColor │
+     │                   × attenuation                              │
+     │         finalColor = (AmbientColor + diffuse) × faceColor    │
+     │     - 출력: float4 → SV_TARGET (렌더 타겟에 기록)            │
+     │                                                             │
+     │  5. Output Merger (OM)                                      │
+     │     - 깊이 테스트 (D24_UNORM_S8_UINT) → 통과한 픽셀만 기록  │
+     │     - 최종 색상을 Back Buffer(RTV)에 기록                    │
+     └─────────────────────────────────────────────────────────────┘
+```
+
+**셰이더 로딩 및 PSO 바인딩 경로:**
+```
+빌드 타임:
+  BasicColor.hlsl → VS HLSL Compiler → VertexShader.cso + PixelShader.cso
+
+런타임 초기화 (한 번만):
+  D3D12PipelineState::Initialize()
+    ├─ LoadShaders()          -- .cso 파일을 메모리에 로드 (ID3DBlob)
+    ├─ CreateRootSignature()  -- CBV 1개 바인딩하는 루트 시그니처 생성
+    └─ CreatePipelineState()  -- VS + PS + Input Layout + Depth + Cull → PSO 생성
+
+매 드로우 콜:
+  D3D12Context::DrawPrimitives()
+    └─ SetPipelineState(m_pipelineState.GetPSO())  -- VS/PS 포함된 PSO 활성화
+```
 
 ### 4.1 Vertex Shader (VSMain)
 
