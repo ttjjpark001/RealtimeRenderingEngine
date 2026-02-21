@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{E8A3F6B1-4D2C-4F8A-9B3E-1C5D7A9F2E4B}</ProjectGuid>
+    <RootNamespace>RREngine</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>RREngine</ProjectName>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)bin\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)obj\$(ProjectName)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_WINDOWS;RRE_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>d3d12.lib;dxgi.lib;d3dcompiler.lib;dxguid.lib;d3d11.lib;d2d1.lib;dwrite.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>d3d12.lib;dxgi.lib;d3dcompiler.lib;dxguid.lib;d3d11.lib;d2d1.lib;dwrite.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- Source Files -->
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="Core\Engine.cpp" />
+    <ClCompile Include="Platform\Win32\Win32Window.cpp" />
+    <ClCompile Include="Platform\Win32\Win32Menu.cpp" />
+    <ClCompile Include="RHI\D3D12\D3D12Device.cpp" />
+    <ClCompile Include="RHI\D3D12\D3D12Context.cpp" />
+    <ClCompile Include="RHI\D3D12\D3D12SwapChain.cpp" />
+    <ClCompile Include="RHI\D3D12\D3D12DescriptorHeap.cpp" />
+    <ClCompile Include="RHI\D3D12\D3D12Buffer.cpp" />
+    <ClCompile Include="RHI\D3D12\D3D12PipelineState.cpp" />
+    <ClCompile Include="Renderer\MeshFactory.cpp" />
+    <ClCompile Include="Renderer\Renderer.cpp" />
+    <ClCompile Include="Renderer\DebugHUD.cpp" />
+    <ClCompile Include="Scene\Transform.cpp" />
+    <ClCompile Include="Scene\SceneNode.cpp" />
+    <ClCompile Include="Scene\SceneGraph.cpp" />
+    <ClCompile Include="Scene\Camera.cpp" />
+  </ItemGroup>
+
+  <!-- Header Files -->
+  <ItemGroup>
+    <ClInclude Include="Core\Types.h" />
+    <ClInclude Include="Core\Engine.h" />
+    <ClInclude Include="Platform\Win32\Win32Window.h" />
+    <ClInclude Include="Platform\Win32\Win32Menu.h" />
+    <ClInclude Include="Math\MathUtil.h" />
+    <ClInclude Include="RHI\RHIDevice.h" />
+    <ClInclude Include="RHI\RHIBuffer.h" />
+    <ClInclude Include="RHI\RHIContext.h" />
+    <ClInclude Include="RHI\D3D12\D3D12Device.h" />
+    <ClInclude Include="RHI\D3D12\D3D12Context.h" />
+    <ClInclude Include="RHI\D3D12\D3D12SwapChain.h" />
+    <ClInclude Include="RHI\D3D12\D3D12DescriptorHeap.h" />
+    <ClInclude Include="RHI\D3D12\D3D12Buffer.h" />
+    <ClInclude Include="RHI\D3D12\D3D12PipelineState.h" />
+    <ClInclude Include="Renderer\Vertex.h" />
+    <ClInclude Include="Renderer\Mesh.h" />
+    <ClInclude Include="Renderer\FaceColorPalette.h" />
+    <ClInclude Include="Renderer\MeshFactory.h" />
+    <ClInclude Include="Renderer\Renderer.h" />
+    <ClInclude Include="Renderer\DebugHUD.h" />
+    <ClInclude Include="Scene\Transform.h" />
+    <ClInclude Include="Scene\SceneNode.h" />
+    <ClInclude Include="Scene\SceneGraph.h" />
+    <ClInclude Include="Lighting\PointLight.h" />
+    <ClInclude Include="Scene\Camera.h" />
+  </ItemGroup>
+
+  <!-- Shader Files (CustomBuild: compile VS and PS from single HLSL) -->
+  <ItemGroup>
+    <CustomBuild Include="Shaders\BasicColor.hlsl">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">if not exist "$(OutDir)Shaders" mkdir "$(OutDir)Shaders"
+"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T vs_5_1 /E VSMain /Zi /Od /Fo "$(OutDir)Shaders\VertexShader.cso" "%(FullPath)"
+"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T ps_5_1 /E PSMain /Zi /Od /Fo "$(OutDir)Shaders\PixelShader.cso" "%(FullPath)"</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">if not exist "$(OutDir)Shaders" mkdir "$(OutDir)Shaders"
+"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T vs_5_1 /E VSMain /O2 /Fo "$(OutDir)Shaders\VertexShader.cso" "%(FullPath)"
+"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T ps_5_1 /E PSMain /O2 /Fo "$(OutDir)Shaders\PixelShader.cso" "%(FullPath)"</Command>
+      <Outputs>$(OutDir)Shaders\VertexShader.cso;$(OutDir)Shaders\PixelShader.cso</Outputs>
+      <Message>Compiling HLSL shaders (VS + PS)...</Message>
+    </CustomBuild>
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

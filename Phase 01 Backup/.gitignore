@@ -1,0 +1,24 @@
+# Build outputs
+bin/
+obj/
+x64/
+Debug/
+Release/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.sdf
+*.opensdf
+*.db
+*.opendb
+ipch/
+
+# vcpkg
+vcpkg_installed/
+
+# Temporary files
+*.tmp
+~$*
+.claude/settings.local.json

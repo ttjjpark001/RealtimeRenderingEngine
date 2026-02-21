@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="unit">
+      <UniqueIdentifier>{1A2B3C4D-5E6F-7890-AB12-CD34EF567890}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="smoke">
+      <UniqueIdentifier>{2B3C4D5E-6F78-9012-BC23-DE45FA678901}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClCompile Include="test_main.cpp" />
+    <ClCompile Include="unit\test_MathUtil.cpp">
+      <Filter>unit</Filter>
+    </ClCompile>
+    <ClCompile Include="unit\test_FaceColoring.cpp">
+      <Filter>unit</Filter>
+    </ClCompile>
+    <ClCompile Include="smoke\test_RHIBackend.cpp">
+      <Filter>smoke</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>
