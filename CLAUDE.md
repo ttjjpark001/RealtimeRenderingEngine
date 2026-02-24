@@ -44,7 +44,7 @@ src/
   Platform/     — Win32 윈도우/입력/메뉴 (플랫폼별 분리)
   RHI/          — 렌더링 하드웨어 추상화 인터페이스 (IRHIDevice, IRHIBuffer, IRHIContext)
     D3D12/      — DirectX 12 백엔드 (Device, Context, SwapChain, Buffer, PSO, DescriptorHeap)
-  Renderer/     — Vertex, Mesh, FaceColorPalette, MeshFactory, Renderer, DebugHUD
+  Renderer/     — Vertex, Mesh, FaceColorPalette, MeshFactory, Renderer, DebugHUD, FrustumCuller, LODSelector, InstanceBatcher
   Scene/        — SceneNode, SceneGraph, Transform, Camera
   Lighting/     — Light (Directional/Point/Spot), LightManager, PointLight(Phase 01 호환)
 tests/
@@ -248,6 +248,7 @@ src/Asset/
   Material.h/.cpp      — PBR Material 클래스 (baseColor, metallic, roughness, normal, emissive, occlusion)
   Texture.h/.cpp       — 텍스처 로딩 및 D3D12 GPU 리소스 관리 (비동기 로딩 지원)
   TextureCache.h/.cpp  — 텍스처 중복 로딩 방지 캐시 + 폴백 텍스처 관리
+  TextureStreamer.h/.cpp — Mip 레벨 기반 텍스처 스트리밍 관리
 ```
 
 ### 씬 파일 로딩 워크플로우
@@ -470,4 +471,81 @@ struct Light {
 - MAX_DRAW_CALLS(16) → 수백~수천 드로우콜 지원으로 확장
 - Constant Buffer 관리: 프레임당 동적 할당 또는 링 버퍼 방식
 - Material 기반 드로우콜 정렬로 GPU 상태 변경 최소화
-- Frustum Culling (P1): 시야 밖 오브젝트 스킵
+
+### 렌더링 최적화
+
+#### Frustum Culling
+
+- 카메라의 View-Projection 행렬로부터 View Frustum의 6개 평면(Left, Right, Top, Bottom, Near, Far) 추출
+- 각 SceneNode의 AABB(Axis-Aligned Bounding Box)를 월드 공간에서 계산
+- AABB vs Frustum 교차 검사: 6개 평면 모두에 대해 AABB가 완전히 바깥이면 culled
+- `DirectX::BoundingFrustum` + `BoundingBox::Intersects()` 활용 (DirectXCollision.h)
+- Scene Graph 순회 시 culled 노드는 DrawPrimitives 스킵
+- Shadow Depth Pass에도 적용 (광원 시점 frustum 기준, P1)
+- 구현 위치: `src/Renderer/` 또는 `src/Scene/`에 FrustumCuller 클래스
+
+#### LOD (Level of Detail)
+
+- **LOD 구조체**: Mesh별 LOD 단계(High, Medium, Low)를 배열로 보유
+  ```
+  struct LODMesh {
+      Mesh* meshLODs[MAX_LOD_LEVELS];  // LOD 0 = 최고 디테일
+      float switchDistances[MAX_LOD_LEVELS];  // 전환 거리 임계값
+      uint32 lodCount;
+  };
+  ```
+- **거리 기반 LOD 선택**: 카메라~오브젝트 거리를 계산하여 적절한 LOD 단계 선택
+- **glTF LOD 매핑**: glTF에 LOD 메시가 있으면 (`MSFT_lod` 확장 등) 자동 매핑, 없으면 단일 LOD
+- **폴백**: LOD 메시가 없으면 LOD 0(원본)으로 동작
+- 구현 위치: `src/Renderer/LODSelector.h/.cpp`
+
+#### Texture Streaming
+
+- **목적**: 대형 씬에서 모든 텍스처의 최대 해상도를 동시에 GPU에 올리면 메모리 초과 → 필요한 Mip만 로드
+- **Mip 요구 레벨 결정**: 카메라 거리 및 오브젝트의 화면 차지 비율(screen coverage)에 따라 필요한 Mip 레벨 계산
+- **스트리밍 흐름**:
+  1. 초기 로드: 하위 Mip(저해상도, 예: 64×64 이하)만 GPU에 업로드
+  2. 렌더링 중: 요구 Mip 레벨 계산 → 상위 Mip이 필요하면 비동기 로딩 요청
+  3. 비동기 로딩 완료: 메인 스레드에서 해당 Mip을 GPU 텍스처에 업로드 (부분 업데이트)
+  4. Mip 해제: 카메라가 멀어져 상위 Mip이 불필요하면 GPU 메모리에서 해제
+- **메모리 예산**: GPU 텍스처 메모리 사용량 상한 설정 (P1), 초과 시 LRU 기반 Mip 해제
+- **기존 비동기 텍스처 로딩과 통합**: TextureCache가 Mip 레벨별 로딩 상태를 관리
+- 구현 위치: `src/Asset/TextureStreamer.h/.cpp`
+
+#### Mip-Mapping
+
+- **Mip chain 생성**: 텍스처 생성 시 전체 Mip 레벨 수를 계산 (`floor(log2(max(width, height))) + 1`)
+- **D3D12 텍스처 리소스**: `MipLevels` 파라미터를 전체 Mip 수 또는 Texture Streaming에서 요구하는 수로 설정
+- **Mip 데이터 생성**: CPU에서 이미지 축소(box filter 등) 또는 GPU에서 compute shader로 생성
+- **Sampler 설정**:
+  - Trilinear: `D3D12_FILTER_MIN_MAG_MIP_LINEAR` — Mip 간 선형 보간
+  - Anisotropic: `D3D12_FILTER_ANISOTROPIC`, `MaxAnisotropy = 16` — 비등방성 필터링 (기본 권장)
+- 기존 Static Sampler(s0)를 Anisotropic으로 업그레이드
+
+#### Instanced Rendering
+
+- **목적**: 동일 Mesh + Material 조합이 여러 위치에 있을 때 단일 `DrawIndexedInstanced` 호출로 묶어 드로우콜 수 감소
+- **Instance Buffer**: 인스턴스별 World Matrix를 담는 추가 Vertex Buffer (per-instance data)
+  ```
+  struct InstanceData {
+      XMFLOAT4X4 world;  // 인스턴스별 월드 행렬 (전치 적용)
+  };
+  ```
+- **D3D12 Input Layout 확장**: 기존 per-vertex 슬롯(slot 0) + per-instance 슬롯(slot 1)
+  - slot 1: `INSTANCE_WORLD` (4×float4, `D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA`, InstanceDataStepRate=1)
+- **인스턴싱 수집**: Scene Graph 순회 시 동일 Mesh+Material 조합을 그룹핑 → InstanceData 배열 생성 → Instance Buffer 업로드
+- **DrawIndexedInstanced(indexCount, instanceCount, ...)**: instanceCount > 1일 때 인스턴싱 적용
+- **HLSL 셰이더**: VS에서 `SV_InstanceID`를 사용하여 Instance Buffer의 World Matrix를 인덱싱
+- **폴백**: 인스턴스가 1개인 경우 기존 단일 드로우콜과 동일하게 동작
+- 구현 위치: `src/Renderer/InstanceBatcher.h/.cpp`
+
+#### 렌더 파이프라인 통합 (최적화 적용 순서)
+
+1. **Scene Graph 순회** → 각 노드의 AABB + 월드 행렬 수집
+2. **Frustum Culling** → 시야 밖 오브젝트 제외
+3. **LOD 선택** → 카메라 거리에 따라 적절한 LOD Mesh 결정
+4. **Instance Batching** → 동일 Mesh+Material 그룹핑, Instance Buffer 생성
+5. **Texture Streaming** → 요구 Mip 레벨 업데이트, 비동기 로딩 요청
+6. **Material 정렬** → PSO 상태 변경 최소화를 위해 Material 기준 정렬
+7. **Shadow Depth Pass** → 그림자 생성 광원별 depth-only 렌더링
+8. **Main Pass** → Opaque (인스턴싱 적용) → Alpha Mask → Alpha Blend

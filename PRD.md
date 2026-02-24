@@ -254,6 +254,30 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | SH-15 | PCF(Percentage Closer Filtering)를 적용하여 부드러운 그림자 경계를 생성한다 | P0 |
 | SH-16 | Shadow depth 패스용 간소화 셰이더를 구현한다 (VS: position 변환만, PS: 없음 또는 depth 출력만) | P0 |
 
+### 3.19 렌더링 최적화
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| OPT-01 | Frustum Culling을 구현하여 카메라 시야(View Frustum) 밖의 오브젝트를 렌더링에서 제외한다 | P0 |
+| OPT-02 | 오브젝트의 AABB(Axis-Aligned Bounding Box)와 View Frustum의 6개 평면을 교차 검사한다 | P0 |
+| OPT-03 | Frustum Culling은 Shadow Depth Pass에도 적용한다 (광원 frustum 기준) | P1 |
+| OPT-04 | LOD(Level of Detail) 시스템을 구현하여 카메라 거리에 따라 메시 디테일을 전환한다 | P0 |
+| OPT-05 | LOD 단계: 최소 2단계 이상 (High, Low 또는 High, Medium, Low) | P0 |
+| OPT-06 | LOD 전환 거리 기준값을 오브젝트별 또는 전역으로 설정할 수 있다 | P1 |
+| OPT-07 | glTF 파일에 LOD 메시가 포함되어 있으면 자동으로 LOD 단계에 매핑한다 | P1 |
+| OPT-08 | LOD 메시가 없는 경우 단일 LOD로 동작한다 (폴백) | P0 |
+| OPT-09 | Texture Streaming을 구현하여 필요한 Mip 레벨만 GPU 메모리에 로드한다 | P0 |
+| OPT-10 | 카메라 거리/화면 차지 비율에 따라 요구되는 Mip 레벨을 결정한다 | P0 |
+| OPT-11 | 상위 Mip(고해상도)은 필요 시 비동기로 스트리밍 로드하고, 로드 전까지 하위 Mip으로 렌더링한다 | P0 |
+| OPT-12 | GPU 메모리 사용량 예산을 설정하고, 예산 초과 시 불필요한 상위 Mip을 해제한다 | P1 |
+| OPT-13 | Mip-Mapping을 지원하여 텍스처 생성 시 Mip chain을 자동 생성한다 | P0 |
+| OPT-14 | D3D12 텍스처 리소스 생성 시 MipLevels를 적절히 설정한다 (전체 Mip chain 또는 지정 레벨) | P0 |
+| OPT-15 | Sampler에서 Mip 필터링(Trilinear 또는 Anisotropic)을 활성화한다 | P0 |
+| OPT-16 | Instanced Rendering을 구현하여 동일 메시를 여러 위치에 단일 드로우콜로 렌더링한다 | P0 |
+| OPT-17 | 인스턴스 데이터(World Matrix 등)를 Instance Buffer로 GPU에 전달한다 | P0 |
+| OPT-18 | `DrawIndexedInstanced`를 사용하여 인스턴스 수만큼 한 번에 렌더링한다 | P0 |
+| OPT-19 | 씬 내 동일 Mesh+Material 조합을 자동으로 인스턴싱 후보로 수집한다 | P1 |
+| OPT-20 | DebugHUD에 최적화 통계를 표시한다: culled 오브젝트 수, 드로우콜 수, 인스턴스 수 | P1 |
+
 ## 4. 비기능 요구사항
 
 | ID | 요구사항 |
@@ -314,3 +338,9 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | Shadow Mapping | Shadow Map을 이용하여 픽셀이 그림자 안에 있는지 판정하는 기법 |
 | PCF (Percentage Closer Filtering) | Shadow Map의 주변 텍셀을 다중 샘플링하여 그림자 경계를 부드럽게 만드는 필터링 기법 |
 | Depth Bias | Shadow Map 렌더링 시 깊이 값에 미세 오프셋을 추가하여 shadow acne(자기 그림자 노이즈)를 방지하는 기법 |
+| Frustum Culling | 카메라 시야(View Frustum) 밖의 오브젝트를 렌더링에서 제외하는 최적화 기법 |
+| AABB | Axis-Aligned Bounding Box. 축 정렬 바운딩 박스. 오브젝트를 감싸는 최소 직육면체 |
+| LOD (Level of Detail) | 카메라 거리에 따라 메시의 디테일 수준을 전환하여 렌더링 부하를 줄이는 기법 |
+| Texture Streaming | 필요한 텍스처 Mip 레벨만 GPU 메모리에 동적으로 로드/해제하는 기법 |
+| Mip-Mapping | 텍스처의 축소 버전(Mip chain)을 미리 생성하여 원거리 렌더링 품질과 성능을 개선하는 기법 |
+| Instanced Rendering | 동일 메시를 여러 위치에 한 번의 드로우콜로 렌더링하는 기법. DrawIndexedInstanced 사용 |
