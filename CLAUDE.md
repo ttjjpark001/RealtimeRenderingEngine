@@ -1,5 +1,12 @@
 # CLAUDE.md — 실시간 렌더링 엔진 프로젝트 가이드
 
+> **Phase 01 완료 및 백업 안내**
+> Phase 01에서 구현한 모든 내용은 `Phase 01 Backup/` 폴더에 백업되었다.
+> 해당 폴더의 파일은 참조하거나 수정하지 않는다.
+> 이후 작업은 프로젝트 루트의 `src/`, `tests/` 등 현재 디렉토리에서 진행한다.
+
+---
+
 ## 프로젝트 개요
 
 Win32 API + DirectX 12 + C++17 기반 실시간 렌더링 엔진. RHI(Rendering Hardware Interface) 추상화 계층을 통해 렌더링 백엔드를 분리하고, Scene Graph로 오브젝트 계층을 관리한다. 수학 연산은 DirectXMath(SIMD 최적화)를 사용한다.
@@ -31,6 +38,7 @@ RealtimeRenderingEngine.sln
 
 ```
 src/
+  Asset/        — [Phase 02] glTF 로더, Material, Texture 관리
   Core/         — Engine 메인 루프, 공용 타입 (Types.h에 DirectXMath 별칭)
   Math/         — MathUtil.h (DirectXMath 헬퍼)
   Platform/     — Win32 윈도우/입력/메뉴 (플랫폼별 분리)
@@ -38,7 +46,7 @@ src/
     D3D12/      — DirectX 12 백엔드 (Device, Context, SwapChain, Buffer, PSO, DescriptorHeap)
   Renderer/     — Vertex, Mesh, FaceColorPalette, MeshFactory, Renderer, DebugHUD
   Scene/        — SceneNode, SceneGraph, Transform, Camera
-  Lighting/     — PointLight (위치, 색상, 감쇠)
+  Lighting/     — Light (Directional/Point/Spot), LightManager, PointLight(Phase 01 호환)
 tests/
   unit/         — DirectXMath 유틸리티, Scene Graph, 면 색상 규칙, 카메라 유닛 테스트
   smoke/        — 엔진 초기화, RHI 초기화 스모크 테스트
@@ -120,8 +128,8 @@ tests/
 - 멈춤 상태: 회전 각도 유지, 렌더링은 계속 (정지 프레임)
 - 기본 상태: Play (회전 애니메이션 재생)
 
-### 포인트 광원 (PointLight)
-- 장면에 1개의 포인트 광원이 존재
+### 광원 시스템 (Lighting)
+- **Phase 01**: 장면에 1개의 포인트 광원이 존재
 - 속성: 위치(XMFLOAT3), 색상(XMFLOAT3), 감쇠 계수 (constant/linear/quadratic)
 - 라이팅은 Pixel Shader에서 픽셀 단위(Per-Pixel Lighting)로 계산
 - 거리 기반 감쇠 수식: `attenuation = 1 / (Kc + Kl·d + Kq·d²)` (기본값: Kc=1.0, Kl=0.09, Kq=0.032)
@@ -135,12 +143,20 @@ tests/
 ### 카메라 (Camera)
 - Scene/Camera.h/.cpp에 위치
 - 투영 모드: Perspective (기본) / Orthographic 전환 가능
-- 속성: 위치(XMFLOAT3), 시선 대상(lookAt), FOV, near/far plane
+- 속성: 위치(XMFLOAT3), 시선 방향(Yaw/Pitch), FOV, near/far plane
 - GetViewMatrix(): XMMatrixLookAtLH로 뷰 행렬 생성
 - GetProjectionMatrix(aspectRatio): 투영 모드에 따라 Perspective/Orthographic 행렬 생성
-- WASD+QE 키로 카메라 위치 이동, +/- 키로 FOV 조절
+- **키보드 이동**: WASD+QE 키로 카메라 위치 이동, +/- 키로 FOV 조절
+- **마우스 네비게이션 (Phase 02)**:
+  - 우클릭 드래그: Yaw/Pitch 회전 (FPS 스타일 시선 제어)
+  - 마우스 휠: 전진/후진 (돌리 줌)
+  - 중클릭 드래그: 상하좌우 패닝 (P1)
+- **Fit to Scene**: 씬 바운딩 박스를 계산하여 카메라를 씬 전체가 보이는 위치로 자동 배치
+  - 바운딩 박스 중심을 lookAt 타겟으로, 대각선 길이 기반으로 적절한 거리 산출
+  - 씬 로드 시 자동 호출, "Camera" 메뉴의 "Fit to Scene" 항목으로도 수동 호출
+- **이동 속도 자동 조절**: 씬 바운딩 박스 크기에 비례하여 WASD/휠 이동 속도 조절 (P1)
 - DebugHUD에 카메라 정보(투영 종류, 위치, 방향, FOV) 표시 가능, "Camera" 메뉴에서 on/off 토글
-- 메뉴에서 투영 모드 전환, FOV 조절, Reset 가능
+- 메뉴에서 투영 모드 전환, FOV 조절, Reset, Fit to Scene 가능
 
 ### Vertex 데이터
 - `struct Vertex { XMFLOAT3 position; XMFLOAT4 color; XMFLOAT3 normal; }` — 연속 메모리 배치
@@ -169,6 +185,7 @@ dxguid.lib      — DirectX GUIDs
 d3d11.lib       — D3D11On12 (HUD 텍스트 렌더링용)
 d2d1.lib        — Direct2D (HUD 텍스트 렌더링용)
 dwrite.lib      — DirectWrite (HUD 텍스트 렌더링용)
+assimp-vc143-mt.lib — [Phase 02] Assimp (glTF/GLB 로딩)
 ```
 
 ## 테스트 규칙
@@ -197,3 +214,260 @@ dwrite.lib      — DirectWrite (HUD 텍스트 렌더링용)
 - D3D12 리소스 해제 전 GPU 작업 완료를 반드시 대기한다 (Fence).
 - **행렬을 Constant Buffer(CBV)로 GPU에 전달할 때 반드시 `XMMatrixTranspose()`로 전치한다.** DirectXMath(row-major)와 HLSL cbuffer(column-major) 간의 메모리 레이아웃 불일치로, 전치 없이 전달하면 변환이 깨져 오브젝트가 화면에 비정상적으로 표시된다.
 - MSBuild로 `.vcxproj`를 직접 빌드할 때 `$(SolutionDir)`이 `.sln` 위치가 아닌 `.vcxproj` 위치로 잡힌다. 올바른 출력 경로를 위해 `/p:SolutionDir=<루트경로>\`를 명시해야 한다.
+
+---
+
+## Phase 02: glTF 2.0 씬 로딩 및 PBR 렌더링
+
+### Phase 02 개요
+
+Phase 01의 기본 렌더링 엔진 위에 glTF 2.0 씬 로딩, Material/Texture 시스템, PBR 셰이더를 추가한다. 대형 벤치마크 씬(Sponza, Bistro 등)도 로딩하여 렌더링할 수 있어야 한다.
+
+- **glTF 로더**: Assimp 라이브러리 (vcpkg: `assimp:x64-windows`)
+- **새 디렉토리**: `src/Asset/` — glTF 로더, Material, Texture 클래스
+- **씬 파일 로딩**: "File" 메뉴에서 glTF/GLB 파일을 열어 씬 교체 + 카메라 네비게이션
+- Phase 01 기능(vertex-color 오브젝트, 메뉴, HUD 등)은 그대로 유지
+
+### Assimp 설치
+
+```bash
+vcpkg install assimp:x64-windows
+vcpkg integrate install
+```
+
+### Asset 모듈 구조 (`src/Asset/`)
+
+```
+src/Asset/
+  GLTFLoader.h/.cpp    — Assimp을 이용한 glTF/GLB 파일 로딩
+                          · Mesh 데이터 추출 (position, normal, UV, tangent, index)
+                          · Material 정보 추출 (PBR 파라미터 + 텍스처 경로)
+                          · Scene Graph 변환 (aiNode → SceneNode 트리)
+                          · 텍스처 비동기 로딩 트리거
+                          · 씬 바운딩 박스 계산 (카메라 Fit to Scene 용)
+  Material.h/.cpp      — PBR Material 클래스 (baseColor, metallic, roughness, normal, emissive, occlusion)
+  Texture.h/.cpp       — 텍스처 로딩 및 D3D12 GPU 리소스 관리 (비동기 로딩 지원)
+  TextureCache.h/.cpp  — 텍스처 중복 로딩 방지 캐시 + 폴백 텍스처 관리
+```
+
+### 씬 파일 로딩 워크플로우
+
+**메뉴에서 씬 열기:**
+1. "File" → "Open Scene..." 선택 → Win32 `GetOpenFileName` 파일 다이얼로그 표시 (필터: `*.gltf;*.glb`)
+2. 사용자가 파일 선택 → `GLTFLoader::LoadScene(filePath)` 호출
+3. 기존 씬 해제: SceneGraph 초기화, Mesh/Material/Texture 캐시 클리어, GPU 리소스 해제 (Fence 대기 후)
+4. 새 씬 구축: glTF 파싱 → SceneNode 트리 생성 → Material 객체 생성 → 텍스처 비동기 로딩 시작
+5. 씬 바운딩 박스 계산 → 카메라 Fit to Scene 자동 실행
+6. 렌더링 시작 (텍스처 로딩 완료 전에는 폴백 텍스처로 렌더링)
+
+**드래그 앤 드롭 (P1):**
+- Win32 `WM_DROPFILES` 메시지 처리 → 드롭된 파일 경로 추출 → 위 2~6 동일 흐름
+
+**씬 교체 시 주의사항:**
+- GPU 작업 완료 대기(`WaitForGPU`) 후 리소스 해제 (D3D12 리소스 lifetime 보장)
+- Renderer의 `m_meshCache` 전체 클리어
+- TextureCache도 클리어하여 이전 씬의 GPU 텍스처 해제
+
+### Vertex 포맷 확장
+
+Phase 01 Vertex: `{ XMFLOAT3 position; XMFLOAT4 color; XMFLOAT3 normal; }` (40 bytes)
+
+Phase 02에서 UV 좌표와 탄젠트를 추가:
+- `XMFLOAT2 texCoord` — 텍스처 매핑용 UV 좌표
+- `XMFLOAT4 tangent` — Normal Map 적용을 위한 탄젠트 벡터 (w: handedness)
+- D3D12 Input Layout, HLSL 입력 구조체, `static_assert` 모두 수정 필요
+
+### Material 시스템
+
+```
+Material {
+    // 텍스처 참조 (nullptr이면 factor만 사용)
+    Texture* baseColorTexture;
+    Texture* metallicRoughnessTexture;
+    Texture* normalTexture;
+    Texture* emissiveTexture;
+    Texture* occlusionTexture;
+
+    // Factor 값
+    XMFLOAT4 baseColorFactor = {1,1,1,1};
+    float metallicFactor = 1.0f;
+    float roughnessFactor = 1.0f;
+    XMFLOAT3 emissiveFactor = {0,0,0};
+
+    // 렌더링 상태
+    AlphaMode alphaMode = Opaque;  // Opaque, Mask, Blend
+    float alphaCutoff = 0.5f;
+    bool doubleSided = false;
+}
+```
+
+- 각 Mesh(또는 Sub-Mesh)가 Material 포인터를 보유
+- Material이 없으면 Phase 01의 vertex-color 방식으로 폴백
+
+### Texture 시스템
+
+- 이미지 데이터 → `ID3D12Resource` (TEXTURE2D, default heap) 생성
+- Upload buffer를 통해 CPU → GPU 복사 (`UpdateSubresources` 또는 직접 copy command)
+- 리소스 상태 전이: `COPY_DEST` → `PIXEL_SHADER_RESOURCE`
+- SRV(Shader Resource View) 디스크립터 생성
+- TextureCache: 파일 경로 기반 `std::unordered_map<string, Texture*>`으로 중복 방지
+- SRGB 포맷 처리: baseColor(albedo) = `DXGI_FORMAT_R8G8B8A8_UNORM_SRGB`, normal/roughness/metallic = `DXGI_FORMAT_R8G8B8A8_UNORM` (Linear)
+
+### 비동기 텍스처 로딩
+
+- **목적**: 대형 씬(Sponza 등)의 수십~수백 장 텍스처를 로딩하는 동안 렌더링이 멈추지 않도록 함
+- **워커 스레드**: `std::async` 또는 스레드 풀에서 이미지 디코딩(CPU 작업) 수행
+- **폴백 텍스처**: 로딩 완료 전까지 1×1 white 텍스처를 바인딩하여 factor 값만으로 렌더링
+- **GPU 업로드**: 이미지 디코딩 완료 후 메인 스레드(렌더 루프)에서 Upload Buffer → Default Heap 복사 및 SRV 생성
+- **교체**: Material의 텍스처 포인터를 폴백 → 실제 텍스처로 원자적 교체 (렌더링 중 race condition 방지)
+- **로딩 상태**: Material/Texture에 로딩 상태 플래그 (Pending, Loading, Ready)
+
+### 광원 시스템 확장 (Phase 02)
+
+**광원 타입:**
+```
+enum class LightType { Directional, Point, Spot };
+
+struct Light {
+    LightType type;
+    XMFLOAT3 color;        // 광원 색상
+    float intensity;        // 강도
+    XMFLOAT3 position;     // Point, Spot에서 사용
+    XMFLOAT3 direction;    // Directional, Spot에서 사용
+    float Kc, Kl, Kq;      // Point, Spot 감쇠 (constant/linear/quadratic)
+    float innerConeAngle;   // Spot 내부 원뿔각 (cos값)
+    float outerConeAngle;   // Spot 외부 원뿔각 (cos값)
+    bool castShadow;        // 그림자 생성 여부
+};
+```
+
+**다중 광원 (최대 8개 이상):**
+- `src/Lighting/` 디렉토리에 `Light.h` (공용 광원 구조체), `LightManager.h/.cpp` (광원 목록 관리)
+- GPU 전달: Structured Buffer (`StructuredBuffer<LightData>`, register t5) 또는 Constant Buffer 배열 (`cbuffer LightsCB : register(b1)`)
+- 활성 광원 개수를 별도 상수로 전달 (`numActiveLights`)
+- 픽셀 셰이더에서 `for (i = 0; i < numActiveLights; i++)` 루프로 각 광원 기여 합산
+
+**Spot Light 감쇠:**
+- 원뿔 페이드: `spotFactor = smoothstep(outerConeAngle, innerConeAngle, dot(-lightDir, spotDirection))`
+- 최종 감쇠 = 거리 감쇠 × spotFactor
+
+### Shadow Mapping
+
+**개요:**
+- 각 그림자를 생성하는 광원에 대해 광원 시점의 Depth-only 렌더 패스를 수행하여 Shadow Map을 생성
+- 라이팅 패스에서 Shadow Map을 SRV로 바인딩하여 픽셀이 그림자 안에 있는지 판정
+
+**Shadow Map 생성 (Depth Pass):**
+- Directional Light: Orthographic 투영으로 Shadow Map 렌더링
+- Spot Light: Perspective 투영 (FOV = outerConeAngle × 2)으로 Shadow Map 렌더링
+- Point Light: 6면 Cube Map (Omnidirectional Shadow Map), P1 우선순위
+- Shadow Map 해상도: 기본 1024×1024, 설정 가능
+- Depth 전용 렌더 타겟: `DXGI_FORMAT_D32_FLOAT` 또는 `D24_UNORM_S8_UINT`
+- Shadow depth 셰이더: VS에서 position 변환만 수행, PS 없음 또는 최소화
+
+**Shadow Map D3D12 리소스:**
+- `ID3D12Resource` (TEXTURE2D, D32_FLOAT), DSV + SRV 동시 생성
+- DSV: shadow depth 패스에서 depth write용
+- SRV: 라이팅 패스에서 depth 비교용 (`DXGI_FORMAT_R32_FLOAT`로 읽기)
+- 광원별 Shadow Map → 최대 8장의 Shadow Map 텍스처 (register t6~t13 또는 Texture2DArray)
+
+**Depth Bias (Shadow Acne 방지):**
+- 래스터라이저 상태에서 `DepthBias`, `DepthBiasClamp`, `SlopeScaledDepthBias` 설정
+- 기본값: DepthBias=1000, SlopeScaledDepthBias=1.0 (튜닝 필요)
+
+**Percentage Closer Filtering (PCF):**
+- Shadow Map 샘플링 시 주변 텍셀을 다중 비교하여 그림자 경계를 부드럽게 함
+- 커널 크기: 기본 3×3 (설정 가능, 5×5, 7×7 등)
+- 구현: texel 오프셋으로 주변 N×N 샘플을 `SampleCmpLevelZero`(comparison sampler) 또는 수동 depth 비교 후 평균
+- Comparison Sampler: `D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT`, `D3D12_COMPARISON_FUNC_LESS_EQUAL` (register s1)
+- HLSL 구현:
+  ```
+  float shadow = 0;
+  for (int y = -halfKernel; y <= halfKernel; y++)
+      for (int x = -halfKernel; x <= halfKernel; x++)
+          shadow += shadowMap.SampleCmpLevelZero(shadowSampler, uv + float2(x,y) * texelSize, depth);
+  shadow /= kernelSize * kernelSize;
+  ```
+
+**렌더링 파이프라인 순서:**
+1. Shadow Depth Pass (광원별): 장면을 광원 시점으로 depth-only 렌더링
+2. Main Lighting Pass: Shadow Map을 SRV로 바인딩, 라이팅 + 그림자 판정
+3. 그림자 영역: 해당 광원의 diffuse + specular 기여 차단, ambient는 유지
+
+**Light-View-Projection 행렬:**
+- Directional: `XMMatrixLookAtLH(lightPos, lightPos + lightDir, up)` × `XMMatrixOrthographicLH(width, height, near, far)`
+- Spot: `XMMatrixLookAtLH(lightPos, lightPos + lightDir, up)` × `XMMatrixPerspectiveFovLH(fov, 1.0, near, far)`
+- 이 행렬을 Constant Buffer로 shadow depth pass 및 라이팅 pass에 전달
+
+### RHI 확장 (D3D12)
+
+**Root Signature 확장:**
+- 기존: 루트 파라미터 1개 (CBV descriptor table, register b0)
+- 추가: SRV descriptor table (register t0~t4: baseColor, metallicRoughness, normal, emissive, occlusion)
+- 추가: SRV for Shadow Maps (register t5~t13: light structured buffer + shadow maps)
+- 추가: Static Sampler (register s0, Linear Wrap) + Comparison Sampler (register s1, PCF용)
+
+**Descriptor Heap 확장:**
+- 기존: CBV 전용 16 디스크립터
+- 변경: CBV + SRV 통합 관리, 드로우콜당 CBV 1개 + Material SRV N개 + Shadow Map SRV M개
+- MAX_DRAW_CALLS 제한(16)을 대형 씬 지원을 위해 확장 필요
+
+**PSO (Pipeline State Object) 추가:**
+- Phase 01 PSO (BasicColor): vertex-color 전용, 기존 유지
+- Phase 02 PSO (PBR): 텍스처 바인딩 + PBR 셰이더, 확장된 Input Layout
+- Shadow Depth PSO: depth-only 렌더링, color write 비활성화, depth bias 활성화
+- Alpha Mask용 PSO: depth write + alpha test
+- Alpha Blend용 PSO: 블렌딩 활성화, depth write 비활성화
+- Double-sided용: 래스터라이저 cull mode = none
+
+### 셰이더 확장 — Cook-Torrance BRDF
+
+**PBR 셰이더 (새 .hlsl 파일, 예: `PBR.hlsl`):**
+- Texture2D 바인딩: `t0`(albedo), `t1`(normal), `t2`(metallicRoughness), `t3`(emissive), `t4`(occlusion)
+- SamplerState: `s0` (Linear Wrap)
+- Vertex 입력에 TEXCOORD, TANGENT 추가
+
+**Cook-Torrance BRDF 구현 (HLSL):**
+- **법선 분포 함수 (NDF)**: GGX/Trowbridge-Reitz — `D = α² / (π · ((N·H)²·(α²-1)+1)²)` (α = roughness²)
+- **기하 감쇠 함수 (G)**: Smith-Schlick GGX — `G = G1(N,V) · G1(N,L)`, `G1 = N·X / (N·X·(1-k)+k)` (k = (roughness+1)²/8)
+- **프레넬 (F)**: Schlick 근사 — `F = F0 + (1-F0)·(1-V·H)^5`
+  - 비금속: `F0 = 0.04`, 금속: `F0 = albedo` (metallic으로 lerp)
+- **Specular**: `D × G × F / (4 · N·L · N·V)`
+- **Diffuse**: Lambertian — `(1-F) · (1-metallic) · albedo / π`
+- **다중 광원 루프**: `for (i = 0; i < numActiveLights; i++)` 로 각 광원 기여 합산
+- **광원 타입 분기**: Directional(감쇠 없음, 평행광), Point(거리 감쇠), Spot(거리 감쇠 × 원뿔 페이드)
+- **그림자 판정**: 각 광원의 Shadow Map을 PCF로 샘플링하여 shadow factor(0~1) 계산
+- **최종 출력**: `Σ (shadowFactor · (diffuse + specular) · lightColor · N·L · attenuation) + ambient`
+
+**Shadow Depth 셰이더 (별도 .hlsl, 예: `ShadowDepth.hlsl`):**
+- VS: position을 Light-View-Projection으로 변환
+- PS: 없음 (depth write만) 또는 Alpha Mask용 텍스처 샘플링 + clip
+
+**텍스처-factor 폴백:**
+- 텍스처가 바인딩되지 않은 채널은 Constant Buffer의 factor 값을 사용
+- `hasAlbedoMap`, `hasNormalMap`, `hasMetallicRoughnessMap` 등 플래그를 CB에 포함
+
+**기존 BasicColor.hlsl은 Phase 01 오브젝트용으로 유지 (변경 없음)**
+
+### Renderer 확장
+
+- **렌더 패스 순서:**
+  1. Shadow Depth Pass: 그림자 생성 광원별로 장면을 depth-only 렌더링
+  2. Main Pass (Opaque): PBR 셰이더 + Shadow Map SRV 바인딩
+  3. Main Pass (Alpha Mask): alpha test 적용
+  4. Main Pass (Alpha Blend): 블렌딩, back-to-front 정렬
+- Material 기반 PSO 선택 (BasicColor vs PBR, Opaque vs Mask vs Blend vs ShadowDepth)
+- 드로우콜 전 Material의 텍스처 SRV + Shadow Map SRV 바인딩
+- Mesh→VB/IB 캐시에 Material 정보 추가
+
+### SceneNode 확장
+
+- 기존 `Mesh*` 외에 `Material*` 참조 추가 (또는 Mesh 내부에 Material 포함)
+- glTF에서 가져온 노드는 자동으로 Material이 설정됨
+
+### 대형 씬 고려사항
+
+- MAX_DRAW_CALLS(16) → 수백~수천 드로우콜 지원으로 확장
+- Constant Buffer 관리: 프레임당 동적 할당 또는 링 버퍼 방식
+- Material 기반 드로우콜 정렬로 GPU 상태 변경 최소화
+- Frustum Culling (P1): 시야 밖 오브젝트 스킵

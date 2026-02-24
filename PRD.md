@@ -1,5 +1,12 @@
 # PRD: 실시간 렌더링 엔진 (Realtime Rendering Engine)
 
+> **Phase 01 완료 및 백업 안내**
+> Phase 01에서 구현한 모든 내용은 `Phase 01 Backup/` 폴더에 백업되었다.
+> 해당 폴더의 파일은 참조하거나 수정하지 않는다.
+> 이후 작업은 프로젝트 루트의 `src/`, `tests/` 등 현재 디렉토리에서 진행한다.
+
+---
+
 ## 1. 개요
 
 Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨어 추상화 계층(RHI)을 통해 렌더링 백엔드를 분리하고, Scene Graph 기반의 오브젝트 관리 체계를 갖춘다.
@@ -131,6 +138,11 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | CAM-10 | 키보드(WASD + Q/E)로 카메라 위치를 이동할 수 있다 | P0 |
 | CAM-11 | +/- 키로 FOV를 조절할 수 있다 | P0 |
 | CAM-12 | 카메라 속성 변경 시 렌더링 결과가 실시간 갱신된다 | P0 |
+| CAM-13 | 마우스 우클릭 드래그로 카메라 시선 방향(Yaw/Pitch)을 회전할 수 있다 | P0 |
+| CAM-14 | 마우스 휠로 카메라를 전진/후진(돌리) 이동할 수 있다 | P0 |
+| CAM-15 | 마우스 중클릭(휠 클릭) 드래그로 카메라를 상하좌우 패닝할 수 있다 | P1 |
+| CAM-16 | 로드된 씬의 바운딩 박스를 기반으로 카메라 이동 속도가 자동 조절된다 | P1 |
+| CAM-17 | "Camera" 메뉴에서 "Fit to Scene"을 선택하면 카메라가 씬 전체를 볼 수 있는 위치로 재배치된다 | P0 |
 
 ### 3.12 테스트
 | ID | 요구사항 | 우선순위 |
@@ -141,13 +153,114 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | Q-04 | RHI 백엔드 초기화/해제 스모크 테스트를 작성한다 | P0 |
 | Q-05 | MeshFactory의 면 색상 인접 규칙 위반 여부를 검증하는 유닛 테스트를 작성한다 | P0 |
 
+---
+
+## Phase 02: glTF 2.0 씬 로딩 및 PBR 렌더링
+
+### 3.13 glTF 2.0 씬 로딩
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| G-01 | glTF 2.0 (.gltf + .bin) 파일을 로딩할 수 있다 | P0 |
+| G-02 | GLB (.glb) 바이너리 포맷을 로딩할 수 있다 | P0 |
+| G-03 | Assimp 라이브러리를 사용하여 glTF 파싱을 수행한다 | P0 |
+| G-04 | Mesh 데이터를 로딩한다: position, normal, texcoord(UV), tangent, index | P0 |
+| G-05 | glTF node hierarchy를 엔진의 SceneNode 트리로 변환한다 | P0 |
+| G-06 | glTF material 정보를 추출하여 엔진의 Material 객체로 변환·저장한다 (baseColor, metallic, roughness, normal, emissive 등 모든 PBR 파라미터) | P0 |
+| G-07 | Material이 참조하는 텍스처(albedo, normal, roughness, metallic 등)를 비동기로 로드하여 엔진 전용 GPU 리소스(Texture 객체)로 변환·저장한다 | P0 |
+| G-07a | 비동기 텍스처 로딩 중에도 렌더링이 중단되지 않는다 (폴백 텍스처 또는 factor 값으로 렌더링) | P0 |
+| G-07b | embedded(glTF 내장) 및 external(외부 파일) 텍스처 이미지를 모두 지원한다 (PNG, JPEG 등) | P0 |
+| G-08 | Node transform 애니메이션(translation, rotation, scale 키프레임)을 로딩한다 | P1 |
+| G-09 | Skeletal animation(bone/skin)을 로딩한다 | P2 |
+| G-10 | 대형 씬(Sponza, Bistro 등)을 로딩하여 렌더링할 수 있다 | P0 |
+| G-11 | "File" 메뉴의 "Open Scene..." 항목을 선택하면 파일 다이얼로그(GetOpenFileName)가 열린다 | P0 |
+| G-12 | 파일 다이얼로그에서 glTF/GLB 파일을 선택하면 해당 씬을 로드하여 화면에 렌더링한다 | P0 |
+| G-13 | 씬 로드 시 기존 씬(Phase 01 데모 오브젝트 포함)을 해제하고 새 씬으로 교체한다 | P0 |
+| G-14 | 씬 로드 후 카메라를 씬의 바운딩 박스에 맞게 자동 배치한다 (씬 전체가 보이는 위치) | P0 |
+| G-15 | 로드된 씬을 카메라 네비게이션으로 자유롭게 탐색할 수 있다 | P0 |
+| G-16 | 드래그 앤 드롭으로 glTF/GLB 파일을 윈도우에 놓아도 씬이 로드된다 | P1 |
+
+### 3.14 Material 시스템
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| MAT-01 | PBR metallic-roughness 워크플로우를 지원하는 Material 클래스를 구현한다 | P0 |
+| MAT-02 | Base Color (텍스처 + factor)를 지원한다 | P0 |
+| MAT-03 | Metallic-Roughness (텍스처 + factor)를 지원한다 | P0 |
+| MAT-04 | Normal Map 텍스처를 지원한다 | P0 |
+| MAT-05 | Emissive (텍스처 + factor)를 지원한다 | P1 |
+| MAT-06 | Occlusion 텍스처를 지원한다 | P1 |
+| MAT-07 | Alpha 모드를 지원한다: Opaque, Mask(alphaCutoff), Blend | P0 |
+| MAT-08 | Double-sided 렌더링 플래그를 지원한다 | P0 |
+| MAT-09 | Material이 없는 Mesh는 기존 vertex-color 방식으로 폴백 렌더링한다 | P0 |
+
+### 3.15 Texture 시스템
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| TEX-01 | 이미지 데이터로부터 D3D12 텍스처 리소스(Texture2D)를 생성한다 | P0 |
+| TEX-02 | 텍스처에 대한 Shader Resource View(SRV)를 생성하고 바인딩한다 | P0 |
+| TEX-03 | Sampler 상태(Linear, Point, Anisotropic 등)를 관리한다 | P0 |
+| TEX-04 | 동일 텍스처의 중복 로딩을 방지하는 캐싱을 구현한다 | P0 |
+| TEX-05 | SRGB 포맷 텍스처를 올바르게 처리한다 (baseColor = SRGB, normal/roughness/metallic = Linear) | P0 |
+| TEX-06 | 텍스처 로딩을 별도 스레드에서 비동기로 수행한다 (메인 렌더 루프 블로킹 방지) | P0 |
+| TEX-07 | 비동기 로딩 완료 전까지 1x1 폴백 텍스처(white)를 바인딩한다 | P0 |
+| TEX-08 | 비동기 로딩 완료 시 GPU 리소스를 메인 스레드에서 안전하게 교체한다 | P0 |
+
+### 3.16 광원 시스템 확장 (Multi-Light)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| ML-01 | 광원 타입으로 Directional Light를 추가한다 (방향, 색상, 강도) | P0 |
+| ML-02 | 광원 타입으로 Spot Light를 추가한다 (위치, 방향, 색상, 내부/외부 원뿔각, 감쇠) | P0 |
+| ML-03 | 기존 Point Light는 그대로 유지한다 (위치, 색상, 감쇠) | P0 |
+| ML-04 | 셰이더에서 최대 8개 이상의 광원을 동시에 처리할 수 있다 | P0 |
+| ML-05 | 각 광원은 타입(Directional/Point/Spot), 색상, 강도, 위치, 방향, 감쇠 파라미터를 갖는다 | P0 |
+| ML-06 | Structured Buffer 또는 Constant Buffer 배열로 다중 광원 데이터를 GPU에 전달한다 | P0 |
+| ML-07 | 활성 광원 개수를 프레임마다 셰이더에 전달한다 | P0 |
+| ML-08 | Spot Light의 조명 감쇠는 내부/외부 원뿔각 사이에서 smoothstep으로 페이드한다 | P0 |
+| ML-09 | 광원 추가/제거/편집을 런타임에 수행할 수 있다 | P1 |
+
+### 3.17 Shadow Mapping
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| SM-01 | Shadow Mapping을 이용하여 그림자를 생성한다 | P0 |
+| SM-02 | Directional Light: Orthographic 투영 기반 Shadow Map을 생성한다 | P0 |
+| SM-03 | Spot Light: Perspective 투영 기반 Shadow Map을 생성한다 | P0 |
+| SM-04 | Point Light: Cube Map(6면) 기반 Omnidirectional Shadow Map을 생성한다 | P1 |
+| SM-05 | Shadow Map 해상도: 기본 1024×1024 (설정 가능) | P0 |
+| SM-06 | Shadow Map은 Depth-only 패스로 렌더링한다 (별도 렌더 패스) | P0 |
+| SM-07 | Shadow Map을 SRV로 바인딩하여 라이팅 셰이더에서 그림자 판정에 사용한다 | P0 |
+| SM-08 | 그림자 acne 방지를 위해 depth bias를 적용한다 | P0 |
+| SM-09 | Percentage Closer Filtering(PCF)을 적용하여 그림자 계단 현상을 완화한다 | P0 |
+| SM-10 | PCF 커널 크기: 최소 3×3 (설정 가능) | P0 |
+| SM-11 | PCF는 Shadow Map 텍셀 오프셋 기반으로 주변 샘플을 비교·평균한다 | P0 |
+| SM-12 | 그림자가 있는 영역은 해당 광원의 diffuse+specular 기여가 차단된다 (ambient는 유지) | P0 |
+| SM-13 | 여러 광원의 그림자가 독립적으로 계산된다 (광원별 Shadow Map) | P0 |
+
+### 3.18 셰이더 확장 (Cook-Torrance BRDF)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| SH-01 | Cook-Torrance BRDF 모델을 HLSL로 구현하여 물리 기반 렌더링을 수행한다 | P0 |
+| SH-02 | Cook-Torrance Specular: D(GGX/Trowbridge-Reitz) × G(Smith-Schlick) × F(Fresnel-Schlick) / (4·NdotL·NdotV) | P0 |
+| SH-03 | Diffuse 항은 Lambertian diffuse (albedo / π)를 사용한다 | P0 |
+| SH-04 | Metallic 파라미터로 diffuse/specular 비율을 결정한다 (metallic=1이면 diffuse=0, F0=albedo) | P0 |
+| SH-05 | Roughness 파라미터로 표면 거칠기를 제어한다 (GGX alpha = roughness²) | P0 |
+| SH-06 | Albedo, Normal, Metallic, Roughness 텍스처를 샘플링하여 BRDF 입력으로 사용한다 | P0 |
+| SH-07 | Vertex에 UV 좌표(TEXCOORD) 및 Tangent 입력을 지원한다 | P0 |
+| SH-08 | Normal Map을 탄젠트 공간(TBN 행렬)에서 월드 공간으로 변환하여 적용한다 | P0 |
+| SH-09 | 기존 vertex-color 전용 셰이더(BasicColor)와 공존한다 (Phase 01 오브젝트 호환) | P0 |
+| SH-10 | Alpha Test(Mask 모드)와 Alpha Blend를 셰이더에서 처리한다 | P0 |
+| SH-11 | 텍스처가 바인딩되지 않은 채널은 Material의 factor 값으로 폴백한다 | P0 |
+| SH-12 | 픽셀 셰이더에서 다중 광원(최대 8개 이상)을 루프로 순회하며 각 광원의 기여를 합산한다 | P0 |
+| SH-13 | 광원 타입(Directional/Point/Spot)에 따라 조명 방향, 감쇠, 원뿔 페이드를 분기 계산한다 | P0 |
+| SH-14 | 각 광원에 대해 Shadow Map을 샘플링하여 그림자 여부를 판정한다 | P0 |
+| SH-15 | PCF(Percentage Closer Filtering)를 적용하여 부드러운 그림자 경계를 생성한다 | P0 |
+| SH-16 | Shadow depth 패스용 간소화 셰이더를 구현한다 (VS: position 변환만, PS: 없음 또는 depth 출력만) | P0 |
+
 ## 4. 비기능 요구사항
 
 | ID | 요구사항 |
 |----|----------|
 | NF-01 | C++17 이상 표준 사용 |
 | NF-02 | Visual Studio 2022 Solution (v143 툴셋) |
-| NF-03 | 외부 라이브러리 의존성 최소화 (Win32 API + DirectX 12 + 표준 라이브러리 중심) |
+| NF-03 | 외부 라이브러리 의존성 최소화 (Win32 API + DirectX 12 + 표준 라이브러리 + Assimp 중심) |
 | NF-04 | 60fps 이상의 렌더 루프 유지 목표 |
 | NF-05 | 테스트 프레임워크: Google Test |
 | NF-06 | HLSL 셰이더는 앱 빌드 타임에 .cso(Compiled Shader Object) 파일로 사전 컴파일한다. 런타임 D3DCompileFromFile 호출은 사용하지 않는다 |
@@ -162,8 +275,9 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | 빌드 | Visual Studio 2022 Solution (.sln) |
 | 수학 라이브러리 | DirectXMath (Windows SDK 내장) |
 | 테스트 | Google Test (vcpkg) |
+| 3D 에셋 로더 | Assimp (vcpkg) |
 | 렌더링 백엔드 | DirectX 12 |
-| 링크 라이브러리 | d3d12.lib, dxgi.lib, d3dcompiler.lib, dxguid.lib |
+| 링크 라이브러리 | d3d12.lib, dxgi.lib, d3dcompiler.lib, dxguid.lib, assimp-vc143-mt.lib |
 
 ## 6. 용어 정의
 
@@ -184,3 +298,19 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | Orthographic Projection | 원근감 없이 평행 투영하는 카메라 모드 |
 | Perspective Projection | 원근법이 적용되는 카메라 모드 (기본) |
 | Full Screen | 데스크톱 전체를 차지하는 전체 화면 모드. DXGI SetFullscreenState 또는 Borderless Windowed로 구현 |
+| glTF 2.0 | GL Transmission Format. Khronos 표준 3D 에셋 포맷. JSON(.gltf) + 바이너리(.bin) 또는 단일 바이너리(.glb) |
+| PBR | Physically Based Rendering. 물리 기반 렌더링. metallic-roughness 워크플로우 사용 |
+| Assimp | Open Asset Import Library. 다양한 3D 포맷을 로딩하는 오픈소스 라이브러리 |
+| SRV | Shader Resource View. D3D12에서 텍스처를 셰이더에 바인딩하기 위한 디스크립터 |
+| Normal Map | 표면의 법선 벡터를 텍스처로 저장하여 세밀한 조명 효과를 표현하는 기법 |
+| Alpha Mask | 텍스처의 알파 값이 임계값(alphaCutoff) 이하이면 픽셀을 버리는 렌더링 모드 |
+| Cook-Torrance BRDF | 물리 기반 Specular 반사 모델. D(법선 분포) × G(기하 감쇠) × F(프레넬) / (4·NdotL·NdotV) |
+| GGX (Trowbridge-Reitz) | Cook-Torrance의 법선 분포 함수(NDF). roughness 기반 미세면 분포를 모델링 |
+| Fresnel-Schlick | 프레넬 효과 근사식. F0 + (1-F0)·(1-cosθ)^5. 시야각에 따른 반사율 변화 |
+| Smith-Schlick GGX | 기하 감쇠 함수. 미세면 간 상호 차폐(masking/shadowing)를 모델링 |
+| Directional Light | 무한 거리에서 평행하게 비추는 광원. 태양광 모사. 위치 없이 방향만 존재 |
+| Spot Light | 원뿔 형태로 비추는 광원. 위치, 방향, 내부/외부 원뿔각, 감쇠를 가짐 |
+| Shadow Map | 광원 시점에서 장면의 깊이를 렌더링한 텍스처. 그림자 판정에 사용 |
+| Shadow Mapping | Shadow Map을 이용하여 픽셀이 그림자 안에 있는지 판정하는 기법 |
+| PCF (Percentage Closer Filtering) | Shadow Map의 주변 텍셀을 다중 샘플링하여 그림자 경계를 부드럽게 만드는 필터링 기법 |
+| Depth Bias | Shadow Map 렌더링 시 깊이 값에 미세 오프셋을 추가하여 shadow acne(자기 그림자 노이즈)를 방지하는 기법 |
