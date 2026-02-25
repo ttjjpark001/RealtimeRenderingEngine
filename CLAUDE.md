@@ -225,7 +225,7 @@ Phase 01의 기본 렌더링 엔진 위에 glTF 2.0 씬 로딩, Material/Texture
 
 - **glTF 로더**: Assimp 라이브러리 (vcpkg: `assimp:x64-windows`)
 - **새 디렉토리**: `src/Asset/` — glTF 로더, Material, Texture 클래스
-- **씬 파일 로딩**: "File" 메뉴에서 glTF/GLB 파일을 열어 씬 교체 + 카메라 네비게이션
+- **씬 파일 로딩**: "File" 메뉴에서 glTF/GLB/FBX 파일을 열어 씬 교체 + 카메라 네비게이션
 - Phase 01 기능(vertex-color 오브젝트, 메뉴, HUD 등)은 그대로 유지
 
 ### Assimp 설치
@@ -239,7 +239,7 @@ vcpkg integrate install
 
 ```
 src/Asset/
-  GLTFLoader.h/.cpp    — Assimp을 이용한 glTF/GLB 파일 로딩
+  SceneLoader.h/.cpp   — Assimp을 이용한 glTF/GLB/FBX 파일 로딩 (포맷 추상화)
                           · Mesh 데이터 추출 (position, normal, UV, tangent, index)
                           · Material 정보 추출 (PBR 파라미터 + 텍스처 경로)
                           · Scene Graph 변환 (aiNode → SceneNode 트리)
@@ -254,8 +254,8 @@ src/Asset/
 ### 씬 파일 로딩 워크플로우
 
 **메뉴에서 씬 열기:**
-1. "File" → "Open Scene..." 선택 → Win32 `GetOpenFileName` 파일 다이얼로그 표시 (필터: `*.gltf;*.glb`)
-2. 사용자가 파일 선택 → `GLTFLoader::LoadScene(filePath)` 호출
+1. "File" → "Open Scene..." 선택 → Win32 `GetOpenFileName` 파일 다이얼로그 표시 (필터: `*.gltf;*.glb;*.fbx`)
+2. 사용자가 파일 선택 → `SceneLoader::LoadScene(filePath)` 호출 (Assimp이 포맷 자동 판별)
 3. 기존 씬 해제: SceneGraph 초기화, Mesh/Material/Texture 캐시 클리어, GPU 리소스 해제 (Fence 대기 후)
 4. 새 씬 구축: glTF 파싱 → SceneNode 트리 생성 → Material 객체 생성 → 텍스처 비동기 로딩 시작
 5. 씬 바운딩 박스 계산 → 카메라 Fit to Scene 자동 실행
@@ -469,7 +469,7 @@ struct Light {
 ### 대형 씬 고려사항
 
 - MAX_DRAW_CALLS(16) → 수백~수천 드로우콜 지원으로 확장
-- Constant Buffer 관리: 프레임당 동적 할당 또는 링 버퍼 방식
+- Constant Buffer 관리: Upload Heap 풀링 + 링 버퍼 방식
 - Material 기반 드로우콜 정렬로 GPU 상태 변경 최소화
 
 ### 렌더링 최적화
@@ -482,7 +482,16 @@ struct Light {
 - `DirectX::BoundingFrustum` + `BoundingBox::Intersects()` 활용 (DirectXCollision.h)
 - Scene Graph 순회 시 culled 노드는 DrawPrimitives 스킵
 - Shadow Depth Pass에도 적용 (광원 시점 frustum 기준, P1)
-- 구현 위치: `src/Renderer/` 또는 `src/Scene/`에 FrustumCuller 클래스
+- 구현 위치: `src/Renderer/FrustumCuller.h/.cpp`
+
+#### Occlusion Culling
+
+- **목적**: Frustum 안에 있지만 다른 오브젝트에 완전히 가려진 오브젝트의 CB 갱신 + 드로우콜을 모두 스킵
+- **Hi-Z 기반 (P1)**: 이전 프레임의 depth buffer를 축소 Mip chain으로 생성 → 오브젝트 AABB를 해당 Mip에서 depth 비교
+- **간이 방식 (P0)**: 이전 프레임의 depth buffer를 CPU로 readback하여 AABB의 screen-space 영역 depth 비교
+- **Occluded 판정 시**: Constant Buffer 갱신, 텍스처 바인딩, DrawCall 모두 스킵
+- **보수적 판정**: 경계 케이스에서는 visible로 판정 (과도한 popping 방지)
+- 구현 위치: `src/Renderer/OcclusionCuller.h/.cpp`
 
 #### LOD (Level of Detail)
 
@@ -495,32 +504,34 @@ struct Light {
   };
   ```
 - **거리 기반 LOD 선택**: 카메라~오브젝트 거리를 계산하여 적절한 LOD 단계 선택
-- **glTF LOD 매핑**: glTF에 LOD 메시가 있으면 (`MSFT_lod` 확장 등) 자동 매핑, 없으면 단일 LOD
+- **glTF/FBX LOD 매핑**: `MSFT_lod` 확장 등이 있으면 자동 매핑, 없으면 단일 LOD
 - **폴백**: LOD 메시가 없으면 LOD 0(원본)으로 동작
 - 구현 위치: `src/Renderer/LODSelector.h/.cpp`
 
-#### Texture Streaming
+#### Texture Streaming & Mip-Mapping
 
-- **목적**: 대형 씬에서 모든 텍스처의 최대 해상도를 동시에 GPU에 올리면 메모리 초과 → 필요한 Mip만 로드
-- **Mip 요구 레벨 결정**: 카메라 거리 및 오브젝트의 화면 차지 비율(screen coverage)에 따라 필요한 Mip 레벨 계산
-- **스트리밍 흐름**:
-  1. 초기 로드: 하위 Mip(저해상도, 예: 64×64 이하)만 GPU에 업로드
-  2. 렌더링 중: 요구 Mip 레벨 계산 → 상위 Mip이 필요하면 비동기 로딩 요청
-  3. 비동기 로딩 완료: 메인 스레드에서 해당 Mip을 GPU 텍스처에 업로드 (부분 업데이트)
-  4. Mip 해제: 카메라가 멀어져 상위 Mip이 불필요하면 GPU 메모리에서 해제
-- **메모리 예산**: GPU 텍스처 메모리 사용량 상한 설정 (P1), 초과 시 LRU 기반 Mip 해제
-- **기존 비동기 텍스처 로딩과 통합**: TextureCache가 Mip 레벨별 로딩 상태를 관리
+**텍스처 로딩 우선순위 결정:**
+- **가시성**: Frustum 내 오브젝트의 텍스처 > Frustum 밖 텍스처 (밖은 최하위 또는 일시 중단)
+- **카메라 거리**: 가까운 오브젝트 > 먼 오브젝트 (우선순위 점수 = 1 / distance)
+- **요구 Mip 레벨**: 가까울수록 고해상도 Mip(레벨 0에 가까운)을 요구, 멀수록 저해상도 Mip으로 충분
+- **우선순위 큐**: `priority = isVisible ? (1/distance) : 0` → 높은 순서로 스트리밍 대역폭 할당
+
+**스트리밍 흐름:**
+1. 초기 로드: 하위 Mip(저해상도, 예: 64×64 이하)만 GPU에 업로드
+2. 렌더링 중: 가시성 + 거리 기반 우선순위 계산 → 상위 Mip이 필요하면 비동기 로딩 요청
+3. 비동기 로딩 완료: 메인 스레드 또는 Copy Queue에서 해당 Mip을 GPU 텍스처에 업로드
+4. Mip 해제: 카메라가 멀어지거나 Frustum 밖으로 나가면 상위 Mip을 GPU 메모리에서 해제
+
+**메모리 예산:**
+- `IDXGIAdapter3::QueryVideoMemoryInfo`로 VRAM 사용량 실시간 모니터링
+- 텍스처 메모리 예산 상한 설정, 초과 시 LRU + 거리 기반 Mip 해제
 - 구현 위치: `src/Asset/TextureStreamer.h/.cpp`
 
-#### Mip-Mapping
-
-- **Mip chain 생성**: 텍스처 생성 시 전체 Mip 레벨 수를 계산 (`floor(log2(max(width, height))) + 1`)
-- **D3D12 텍스처 리소스**: `MipLevels` 파라미터를 전체 Mip 수 또는 Texture Streaming에서 요구하는 수로 설정
-- **Mip 데이터 생성**: CPU에서 이미지 축소(box filter 등) 또는 GPU에서 compute shader로 생성
-- **Sampler 설정**:
-  - Trilinear: `D3D12_FILTER_MIN_MAG_MIP_LINEAR` — Mip 간 선형 보간
-  - Anisotropic: `D3D12_FILTER_ANISOTROPIC`, `MaxAnisotropy = 16` — 비등방성 필터링 (기본 권장)
-- 기존 Static Sampler(s0)를 Anisotropic으로 업그레이드
+**Mip chain 생성:**
+- 텍스처 생성 시 전체 Mip 레벨 수 계산 (`floor(log2(max(width, height))) + 1`)
+- D3D12 텍스처 리소스: `MipLevels` 파라미터 설정
+- Mip 데이터 생성: CPU box filter 또는 GPU compute shader
+- Sampler: Anisotropic (`D3D12_FILTER_ANISOTROPIC`, `MaxAnisotropy = 16`) 기본 권장
 
 #### Instanced Rendering
 
@@ -539,13 +550,97 @@ struct Light {
 - **폴백**: 인스턴스가 1개인 경우 기존 단일 드로우콜과 동일하게 동작
 - 구현 위치: `src/Renderer/InstanceBatcher.h/.cpp`
 
+#### 멀티스레드 리소스 로딩
+
+- **스레드 풀**: `src/Core/ThreadPool.h/.cpp` — CPU 코어 수 기반 워커 스레드 관리
+- **씬 로딩 병렬화**:
+  - Assimp 파싱은 메인 스레드에서 수행 (Assimp은 thread-safe하지 않음)
+  - 파싱 완료 후 Mesh VB/IB 생성, 텍스처 디코딩을 워커 스레드에 분배
+  - 각 텍스처 이미지를 별도 태스크로 스레드 풀에 제출 → 병렬 디코딩
+- **GPU 업로드**: 디코딩 완료 데이터는 메인 스레드에서 Upload Buffer → Default Heap 복사
+- **Copy Queue (P1)**: D3D12 Copy Queue를 Graphics Queue와 별도로 운용하여 업로드와 렌더링을 병렬화
+  - Copy Queue 전용 Command Allocator + Command List
+  - Fence로 Copy 완료 동기화 후 Graphics Queue에서 사용
+- **로딩 중 렌더링**: 폴백 리소스(1×1 텍스처, 기본 Material)로 즉시 렌더링 가능
+
+#### GPU 메모리 관리 — Upload Heap 풀링
+
+**Constant Buffer 풀 (CBPool):**
+```
+class CBPool {
+    ComPtr<ID3D12Resource> m_uploadHeap;   // 하나의 큰 Upload Heap
+    uint8* m_mappedData;                    // 영구 맵핑 포인터
+    uint32 m_currentOffset;                 // 현재 할당 오프셋
+    uint32 m_totalSize;                     // 풀 전체 크기
+    uint32 m_frameIndex;                    // 더블 버퍼링용 프레임 인덱스
+
+    // 256바이트 정렬된 슬롯 할당
+    CBAllocation Allocate(uint32 size);
+    void ResetFrame(uint32 frameIndex);     // 프레임 시작 시 해당 프레임 영역 리셋
+};
+```
+- **링 버퍼**: 더블 버퍼링에 맞춰 프레임 0/1 영역을 번갈아 사용, 이전 프레임의 데이터를 GPU가 참조 중일 수 있으므로 덮어쓰지 않음
+- **풀 크기**: VRAM 가용량 대비 적절히 설정 (기본: 4MB~16MB, 대형 씬에서 자동 확장)
+- **개별 CB 할당 금지**: 오브젝트마다 `CreateCommittedResource`를 호출하지 않음
+- 구현 위치: `src/RHI/D3D12/D3D12CBPool.h/.cpp`
+
+**VRAM 모니터링 & 적응적 CB 갱신:**
+- `IDXGIAdapter3::QueryVideoMemoryInfo(DXGI_MEMORY_SEGMENT_GROUP_LOCAL)` 으로 VRAM 사용량/예산 조회
+- VRAM 사용률 > 80%: 우선순위 낮은 오브젝트의 CB 갱신 빈도를 N프레임마다 1회로 감소
+- **우선순위 기준**: 카메라 거리 (가까울수록 높음), 화면 차지 비율 (클수록 높음), 움직임 여부 (동적 > 정적)
+- DebugHUD에 VRAM 사용량(Used/Budget) 표시
+
+#### 재질 공유 Constant Buffer (Shared Material CB)
+
+**CB 분리 구조:**
+```
+// Per-Object CB (register b0) — 오브젝트마다 매 프레임 갱신
+struct PerObjectCB {
+    XMFLOAT4X4 world;
+    XMFLOAT4X4 viewProj;
+    // ... 오브젝트별 데이터
+};
+
+// Per-Material CB (register b2) — 재질 파라미터 변경 시에만 갱신
+struct PerMaterialCB {
+    XMFLOAT4 baseColorFactor;
+    float metallicFactor;
+    float roughnessFactor;
+    float alphaCutoff;
+    uint32 hasAlbedoMap;
+    uint32 hasNormalMap;
+    uint32 hasMetallicRoughnessMap;
+    // ... 기타 재질 플래그/파라미터
+};
+```
+- **공유 원리**: 동일 Material을 사용하는 모든 오브젝트는 같은 PerMaterialCB 슬롯을 참조
+- **Dirty Flag**: Material 파라미터가 변경될 때만 CB를 갱신 (`m_dirty = true` → 갱신 후 `false`)
+- **Root Signature**: register b0 (Per-Object), register b1 (Per-Frame/Light), register b2 (Per-Material) 로 분리
+- **드로우콜 시**: Material이 이전 드로우콜과 같으면 Per-Material CB 바인딩을 스킵
+
+#### Dirty Flag 기반 갱신 스킵
+
+- **Per-Object CB**: Transform이 변경되지 않았으면 이전 프레임의 CB 슬롯 데이터를 재사용 (memcpy 스킵)
+- **Per-Material CB**: Material 파라미터 미변경 시 갱신 스킵
+- **Light CB**: 광원 데이터 미변경 시 갱신 스킵
+- **Occluded 오브젝트**: CB 갱신 + Draw 모두 스킵 (Occlusion Culling 결과 활용)
+
+#### Opaque Front-to-Back 정렬
+
+- Opaque 패스에서 오브젝트를 카메라 거리 기준 앞→뒤(front-to-back)로 정렬
+- GPU의 Early-Z rejection을 극대화하여 overdraw 감소
+- 정렬 키: `distance = length(objectCenter - cameraPosition)`
+
 #### 렌더 파이프라인 통합 (최적화 적용 순서)
 
 1. **Scene Graph 순회** → 각 노드의 AABB + 월드 행렬 수집
 2. **Frustum Culling** → 시야 밖 오브젝트 제외
-3. **LOD 선택** → 카메라 거리에 따라 적절한 LOD Mesh 결정
-4. **Instance Batching** → 동일 Mesh+Material 그룹핑, Instance Buffer 생성
-5. **Texture Streaming** → 요구 Mip 레벨 업데이트, 비동기 로딩 요청
-6. **Material 정렬** → PSO 상태 변경 최소화를 위해 Material 기준 정렬
-7. **Shadow Depth Pass** → 그림자 생성 광원별 depth-only 렌더링
-8. **Main Pass** → Opaque (인스턴싱 적용) → Alpha Mask → Alpha Blend
+3. **Occlusion Culling** → 완전히 가려진 오브젝트 제외 (CB 갱신 + Draw 모두 스킵)
+4. **LOD 선택** → 카메라 거리에 따라 적절한 LOD Mesh 결정
+5. **Instance Batching** → 동일 Mesh+Material 그룹핑, Instance Buffer 생성
+6. **Texture Streaming** → 가시성+거리 기반 우선순위로 Mip 레벨 업데이트, 비동기 로딩 요청
+7. **CB 갱신** → Dirty Flag 체크, VRAM 예산 기반 적응적 갱신 빈도 조절, 풀에서 슬롯 할당
+8. **Material 정렬** → PSO 상태 변경 최소화를 위해 Material 기준 정렬
+9. **Opaque Front-to-Back 정렬** → Early-Z rejection 극대화
+10. **Shadow Depth Pass** → 그림자 생성 광원별 depth-only 렌더링
+11. **Main Pass** → Opaque (인스턴싱 적용) → Alpha Mask → Alpha Blend (back-to-front)

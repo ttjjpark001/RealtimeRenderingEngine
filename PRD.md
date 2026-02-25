@@ -157,12 +157,14 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 
 ## Phase 02: glTF 2.0 씬 로딩 및 PBR 렌더링
 
-### 3.13 glTF 2.0 씬 로딩
+### 3.13 3D 씬 파일 로딩
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
 | G-01 | glTF 2.0 (.gltf + .bin) 파일을 로딩할 수 있다 | P0 |
 | G-02 | GLB (.glb) 바이너리 포맷을 로딩할 수 있다 | P0 |
-| G-03 | Assimp 라이브러리를 사용하여 glTF 파싱을 수행한다 | P0 |
+| G-02a | FBX (.fbx) 파일을 로딩할 수 있다 | P0 |
+| G-02b | 파일 다이얼로그 필터에 FBX 포맷을 포함한다 (*.gltf;*.glb;*.fbx) | P0 |
+| G-03 | Assimp 라이브러리를 사용하여 glTF/FBX 파싱을 수행한다 (Assimp의 통합 씬 구조로 포맷 차이를 추상화) | P0 |
 | G-04 | Mesh 데이터를 로딩한다: position, normal, texcoord(UV), tangent, index | P0 |
 | G-05 | glTF node hierarchy를 엔진의 SceneNode 트리로 변환한다 | P0 |
 | G-06 | glTF material 정보를 추출하여 엔진의 Material 객체로 변환·저장한다 (baseColor, metallic, roughness, normal, emissive 등 모든 PBR 파라미터) | P0 |
@@ -255,28 +257,90 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | SH-16 | Shadow depth 패스용 간소화 셰이더를 구현한다 (VS: position 변환만, PS: 없음 또는 depth 출력만) | P0 |
 
 ### 3.19 렌더링 최적화
+
+#### Frustum Culling & Occlusion Culling
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
 | OPT-01 | Frustum Culling을 구현하여 카메라 시야(View Frustum) 밖의 오브젝트를 렌더링에서 제외한다 | P0 |
 | OPT-02 | 오브젝트의 AABB(Axis-Aligned Bounding Box)와 View Frustum의 6개 평면을 교차 검사한다 | P0 |
 | OPT-03 | Frustum Culling은 Shadow Depth Pass에도 적용한다 (광원 frustum 기준) | P1 |
-| OPT-04 | LOD(Level of Detail) 시스템을 구현하여 카메라 거리에 따라 메시 디테일을 전환한다 | P0 |
-| OPT-05 | LOD 단계: 최소 2단계 이상 (High, Low 또는 High, Medium, Low) | P0 |
-| OPT-06 | LOD 전환 거리 기준값을 오브젝트별 또는 전역으로 설정할 수 있다 | P1 |
-| OPT-07 | glTF 파일에 LOD 메시가 포함되어 있으면 자동으로 LOD 단계에 매핑한다 | P1 |
-| OPT-08 | LOD 메시가 없는 경우 단일 LOD로 동작한다 (폴백) | P0 |
-| OPT-09 | Texture Streaming을 구현하여 필요한 Mip 레벨만 GPU 메모리에 로드한다 | P0 |
-| OPT-10 | 카메라 거리/화면 차지 비율에 따라 요구되는 Mip 레벨을 결정한다 | P0 |
-| OPT-11 | 상위 Mip(고해상도)은 필요 시 비동기로 스트리밍 로드하고, 로드 전까지 하위 Mip으로 렌더링한다 | P0 |
-| OPT-12 | GPU 메모리 사용량 예산을 설정하고, 예산 초과 시 불필요한 상위 Mip을 해제한다 | P1 |
-| OPT-13 | Mip-Mapping을 지원하여 텍스처 생성 시 Mip chain을 자동 생성한다 | P0 |
-| OPT-14 | D3D12 텍스처 리소스 생성 시 MipLevels를 적절히 설정한다 (전체 Mip chain 또는 지정 레벨) | P0 |
-| OPT-15 | Sampler에서 Mip 필터링(Trilinear 또는 Anisotropic)을 활성화한다 | P0 |
-| OPT-16 | Instanced Rendering을 구현하여 동일 메시를 여러 위치에 단일 드로우콜로 렌더링한다 | P0 |
-| OPT-17 | 인스턴스 데이터(World Matrix 등)를 Instance Buffer로 GPU에 전달한다 | P0 |
-| OPT-18 | `DrawIndexedInstanced`를 사용하여 인스턴스 수만큼 한 번에 렌더링한다 | P0 |
-| OPT-19 | 씬 내 동일 Mesh+Material 조합을 자동으로 인스턴싱 후보로 수집한다 | P1 |
-| OPT-20 | DebugHUD에 최적화 통계를 표시한다: culled 오브젝트 수, 드로우콜 수, 인스턴스 수 | P1 |
+| OPT-04 | Occlusion Culling을 구현하여 다른 오브젝트에 완전히 가려진(occluded) 오브젝트의 상수 버퍼 업데이트 및 드로우콜을 스킵한다 | P0 |
+| OPT-05 | Hi-Z(Hierarchical-Z) 기반 또는 이전 프레임 depth buffer를 활용한 소프트웨어 Occlusion Culling을 구현한다 | P1 |
+| OPT-06 | Occluded 판정된 오브젝트는 Constant Buffer 갱신, 텍스처 바인딩, DrawCall 모두를 스킵한다 | P0 |
+
+#### LOD (Level of Detail)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| OPT-07 | LOD(Level of Detail) 시스템을 구현하여 카메라 거리에 따라 메시 디테일을 전환한다 | P0 |
+| OPT-08 | LOD 단계: 최소 2단계 이상 (High, Low 또는 High, Medium, Low) | P0 |
+| OPT-09 | LOD 전환 거리 기준값을 오브젝트별 또는 전역으로 설정할 수 있다 | P1 |
+| OPT-10 | glTF/FBX 파일에 LOD 메시가 포함되어 있으면 자동으로 LOD 단계에 매핑한다 | P1 |
+| OPT-11 | LOD 메시가 없는 경우 단일 LOD로 동작한다 (폴백) | P0 |
+
+#### Texture Streaming & Mip-Mapping
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| OPT-12 | Texture Streaming을 구현하여 필요한 Mip 레벨만 GPU 메모리에 로드한다 | P0 |
+| OPT-13 | 텍스처 로딩 우선순위를 카메라 Frustum 내 가시 여부와 카메라 거리로 결정한다 (가시 + 가까울수록 높은 우선순위) | P0 |
+| OPT-14 | Frustum 밖의 텍스처는 로딩 우선순위를 최하위로 내리거나 스트리밍을 일시 중단한다 | P0 |
+| OPT-15 | 카메라 거리에 따라 요구 Mip 레벨을 결정한다 (가까울수록 고해상도 Mip 요구) | P0 |
+| OPT-16 | 상위 Mip(고해상도)은 필요 시 비동기로 스트리밍 로드하고, 로드 전까지 하위 Mip으로 렌더링한다 | P0 |
+| OPT-17 | GPU 메모리 사용량 예산을 설정하고, 예산 초과 시 불필요한 상위 Mip을 해제한다 | P0 |
+| OPT-18 | Mip-Mapping을 지원하여 텍스처 생성 시 Mip chain을 자동 생성한다 | P0 |
+| OPT-19 | D3D12 텍스처 리소스 생성 시 MipLevels를 적절히 설정한다 (전체 Mip chain 또는 지정 레벨) | P0 |
+| OPT-20 | Sampler에서 Mip 필터링(Trilinear 또는 Anisotropic)을 활성화한다 | P0 |
+
+#### Instanced Rendering
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| OPT-21 | Instanced Rendering을 구현하여 동일 메시를 여러 위치에 단일 드로우콜로 렌더링한다 | P0 |
+| OPT-22 | 인스턴스 데이터(World Matrix 등)를 Instance Buffer로 GPU에 전달한다 | P0 |
+| OPT-23 | `DrawIndexedInstanced`를 사용하여 인스턴스 수만큼 한 번에 렌더링한다 | P0 |
+| OPT-24 | 씬 내 동일 Mesh+Material 조합을 자동으로 인스턴싱 후보로 수집한다 | P1 |
+
+#### 멀티스레드 리소스 로딩
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| OPT-25 | 씬 로딩 시 Mesh/Material/Texture 파싱을 멀티스레드로 병렬 수행한다 | P0 |
+| OPT-26 | 스레드 풀(thread pool)을 구현하여 워커 스레드 수를 CPU 코어 수에 맞게 관리한다 | P0 |
+| OPT-27 | 텍스처 이미지 디코딩(CPU 작업)을 복수 워커 스레드에 분배하여 병렬 디코딩한다 | P0 |
+| OPT-28 | GPU 업로드(Upload Buffer → Default Heap 복사)는 메인 스레드 또는 Copy Queue에서 수행한다 | P0 |
+| OPT-29 | D3D12 Copy Queue를 활용하여 Graphics Queue와 병렬로 리소스 업로드를 수행한다 | P1 |
+| OPT-30 | 멀티스레드 로딩 중에도 렌더 루프가 중단되지 않는다 (폴백 리소스로 렌더링) | P0 |
+
+#### GPU 메모리 관리 (Constant Buffer 풀링)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| OPT-31 | 개별 오브젝트마다 Constant Buffer를 생성하지 않고, 하나의 큰 Upload Heap을 풀링(pooling)하여 CB 슬롯을 동적 할당한다 | P0 |
+| OPT-32 | 프레임마다 풀의 오프셋을 리셋하여 링 버퍼 방식으로 CB 슬롯을 재사용한다 | P0 |
+| OPT-33 | CB 풀 크기는 VRAM 가용량을 고려하여 설정하며, 대형 씬에서도 충분한 슬롯을 확보한다 | P0 |
+| OPT-34 | VRAM 사용량을 `IDXGIAdapter3::QueryVideoMemoryInfo`로 모니터링한다 | P0 |
+| OPT-35 | VRAM 사용량이 예산의 일정 비율(예: 80%)을 초과하면 우선순위가 낮은 오브젝트의 CB 갱신 빈도를 낮춘다 (N프레임마다 1회) | P0 |
+| OPT-36 | CB 갱신 우선순위: 카메라 가까운 오브젝트 > 먼 오브젝트, 화면 차지 비율 큰 오브젝트 > 작은 오브젝트 | P0 |
+
+#### 재질 공유 상수 버퍼 (Shared Material CB)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| OPT-37 | PBR 재질 파라미터(metallic, roughness, baseColorFactor, emissiveFactor 등)를 재질별 공유 Constant Buffer로 묶어 전송한다 | P0 |
+| OPT-38 | 동일 Material을 사용하는 모든 오브젝트는 같은 Material CB를 참조하여 중복 전송을 제거한다 | P0 |
+| OPT-39 | Material CB는 재질 파라미터가 변경될 때만 갱신한다 (dirty flag 기반) | P0 |
+| OPT-40 | Per-Object CB(World Matrix 등)와 Per-Material CB를 분리하여 각각 독립적인 갱신 주기로 관리한다 | P0 |
+
+#### Opaque 패스 Front-to-Back 정렬
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| OPT-41 | Opaque 패스에서 오브젝트를 카메라 거리 기준 앞→뒤(front-to-back) 순으로 정렬하여 Early-Z rejection을 극대화한다 | P0 |
+
+#### Dirty Flag 기반 CB 갱신 스킵
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| OPT-42 | 오브젝트의 Transform이 변경되지 않았으면 해당 프레임의 Per-Object CB 갱신을 스킵한다 | P0 |
+| OPT-43 | 광원 데이터가 변경되지 않았으면 Light CB 갱신을 스킵한다 | P0 |
+
+#### DebugHUD 최적화 통계
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| OPT-44 | DebugHUD에 최적화 통계를 표시한다: frustum culled 수, occlusion culled 수, 드로우콜 수, 인스턴스 수, VRAM 사용량 | P1 |
 
 ## 4. 비기능 요구사항
 
@@ -344,3 +408,12 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | Texture Streaming | 필요한 텍스처 Mip 레벨만 GPU 메모리에 동적으로 로드/해제하는 기법 |
 | Mip-Mapping | 텍스처의 축소 버전(Mip chain)을 미리 생성하여 원거리 렌더링 품질과 성능을 개선하는 기법 |
 | Instanced Rendering | 동일 메시를 여러 위치에 한 번의 드로우콜로 렌더링하는 기법. DrawIndexedInstanced 사용 |
+| FBX | Autodesk 독점 3D 교환 포맷. 메시, 머티리얼, 애니메이션, 본 등을 포함. Assimp으로 로딩 |
+| Occlusion Culling | 다른 오브젝트에 완전히 가려진 오브젝트를 렌더링에서 제외하는 최적화 기법 |
+| Hi-Z (Hierarchical-Z) | Depth buffer의 축소 Mip chain을 이용한 빠른 가시성 판정 기법 |
+| Upload Heap Pooling | 개별 CB를 따로 할당하지 않고 하나의 큰 Upload Heap에서 슬롯을 동적 할당하는 메모리 관리 기법 |
+| Shared Material CB | 동일 재질의 PBR 파라미터를 하나의 CB로 공유하여 GPU 전송 횟수를 줄이는 기법 |
+| Dirty Flag | 데이터가 변경되었는지 추적하는 플래그. 변경 시에만 GPU로 재전송하여 불필요한 갱신을 방지 |
+| Copy Queue | D3D12의 별도 커맨드 큐. Graphics Queue와 병렬로 리소스 업로드를 수행 |
+| Early-Z Rejection | GPU가 픽셀 셰이더 실행 전에 depth test로 가려진 픽셀을 미리 제거하는 하드웨어 최적화 |
+| Thread Pool | 미리 생성된 워커 스레드 집합. 작업을 큐에 넣으면 유휴 스레드가 처리하는 병렬 실행 패턴 |
