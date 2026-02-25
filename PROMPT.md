@@ -1256,3 +1256,83 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 25를 구현
 
 문제가 있으면 수정하라.
 ```
+
+---
+
+## Prompt 26: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 26를 구현하라.
+이 단계는 Phase 02의 마지막 단계로, 전체 코드 품질을 점검하고 ARCHITECTURE.md를 작성한다.
+
+1. 전체 코드 리뷰를 수행한다.
+   - src/ 하위 모든 소스 파일(.h, .cpp, .hlsl)을 순회하며 코드 품질을 점검한다.
+   - 점검 항목:
+     a. 사용되지 않는 코드(dead code), 불필요한 #include, 중복 로직 → 제거
+     b. 네이밍 컨벤션 일관성: PascalCase(클래스/메서드), camelCase(변수), UPPER_SNAKE_CASE(상수)
+     c. 보안 점검: 버퍼 오버플로우, 범위 초과 접근, null 역참조, 초기화되지 않은 변수
+     d. COM 객체/GPU 리소스 해제 누락: Fence 대기 후 해제가 보장되는지 확인
+     e. 스마트 포인터(unique_ptr) 및 ComPtr 사용 일관성
+     f. HLSL 셰이더: 미사용 register, 불필요한 분기, 0으로 나누기 방지 (NdotL, NdotV 등)
+     g. 헤더 가드: 모든 .h 파일에 #pragma once 확인
+     h. include 순서: 자기 헤더 → 프로젝트 → DirectX/Windows → 표준 라이브러리
+   - 발견된 문제를 즉시 수정한다.
+
+2. 성능 최적화를 수행한다.
+   - D3D12 Debug Layer를 활성화하고 Warning/Error 메시지를 전수 확인한다.
+     모든 경고를 0건으로 만든다.
+   - D3D12 Live Object 리포트로 메모리 누수를 점검한다.
+     (ID3D12DebugDevice::ReportLiveDeviceObjects)
+   - CPU 측 핫 루프 점검: 불필요한 메모리 할당, 과도한 std::vector 복사,
+     매 프레임 반복되는 비효율적 연산 식별 및 최적화
+   - GPU 측 점검: 드로우콜 수, PSO 상태 전환 횟수가 Material 정렬로 최소화되었는지 확인
+   - 셰이더 최적화: 불필요한 동적 분기를 상수 분기로 대체 가능한 곳 확인
+
+3. 버그 수정 및 엣지 케이스를 처리한다.
+   - 모든 유닛 테스트 + 스모크 테스트를 재실행한다. 실패 항목이 있으면 수정한다.
+   - 엣지 케이스 검증:
+     a. 빈 씬 (메시 0개): 크래시 없이 빈 화면 렌더링
+     b. Material 없는 Mesh: vertex-color 폴백으로 정상 렌더링
+     c. 텍스처 없는 Material: factor 값으로 폴백 렌더링
+     d. 대형 씬 로딩 중 메모리 부족: 오류 메시지 출력 후 graceful 복구
+     e. 윈도우 리사이즈/모드 전환 중 씬 로딩: 크래시 없이 처리
+     f. 잘못된 파일 경로/손상된 파일 로딩: 오류 처리 및 사용자 알림
+   - 멀티스레드 안전성: 텍스처 교체, 상태 플래그 읽기/쓰기에 race condition 없는지 확인
+
+4. ARCHITECTURE.md를 프로젝트 루트에 작성한다.
+   다음 내용을 포함한다:
+
+   a. 프로젝트 개요 (1~2문단)
+   b. 전체 디렉토리 구조 (트리 형태) + 각 디렉토리/파일의 역할 설명
+   c. 모듈 의존성 다이어그램 (텍스트 기반):
+      Engine → Renderer → RHI(IRHIDevice/IRHIContext) → D3D12 백엔드
+      Engine → SceneGraph → SceneNode → Mesh + Material
+      Engine → Asset(SceneLoader/TextureCache/TextureStreamer)
+      Engine → Lighting(LightManager)
+      Engine → Platform(Win32Window/Win32Menu/Win32Input)
+   d. 엔진 라이프사이클:
+      Initialize → MainLoop(ProcessMessages → Update → Render) → Shutdown
+      각 단계에서 호출되는 주요 함수/클래스
+   e. 프레임당 렌더링 파이프라인 (11단계 상세):
+      각 단계의 입력/출력, 담당 클래스, 데이터 흐름
+   f. 주요 클래스 관계도 (텍스트 기반 UML 스타일):
+      Engine, Renderer, SceneGraph, Camera, LightManager,
+      SceneLoader, Material, Texture, TextureCache, TextureStreamer,
+      CBPool, FrustumCuller, OcclusionCuller, LODSelector, InstanceBatcher
+   g. D3D12 리소스 라이프사이클:
+      생성(CreateCommittedResource) → 상태 전이(Resource Barrier) → 사용(Draw) → 해제(Fence 대기)
+   h. 데이터 흐름 다이어그램:
+      파일(glTF/FBX) → Assimp 파싱 → SceneGraph/Material/Texture(CPU)
+      → Upload Buffer → Default Heap(GPU) → CB/VB/IB/SRV → 셰이더
+   i. 스레딩 모델:
+      메인 스레드(게임 루프, GPU 커맨드) vs 워커 스레드(텍스처 디코딩) vs Copy Queue(GPU 업로드)
+   j. 셰이더 바인딩 맵:
+      register b0~b2(CB), t0~t13(SRV), s0~s1(Sampler)
+      각 register에 바인딩되는 데이터 설명
+   k. 렌더링 모드별 파이프라인 차이:
+      Wireframe / Solid / BaseColor / FullPBR / FullPBR+Shadows
+   l. 참조 문서: PRD.md, PLAN.md, PROMPT.md, CLAUDE.md 역할 설명
+
+빌드하여 모든 테스트가 통과하고, D3D12 Debug Layer 경고가 0건이며,
+ARCHITECTURE.md가 프로젝트 루트에 생성되었는지 확인하라.
+```

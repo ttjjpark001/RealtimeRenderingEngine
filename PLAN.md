@@ -557,6 +557,46 @@ tests/
 
 **완료 기준**: Sponza급 씬을 PBR+Shadow+최적화로 60fps 이상 렌더링, 모든 테스트 통과
 
+### Phase 26: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
+**목표**: 전체 코드 품질 점검, 성능 최적화, 버그 수정, ARCHITECTURE.md 작성
+
+1. **전체 코드 리뷰**:
+   - 모든 소스 파일을 순회하며 코드 품질 점검
+   - 사용되지 않는 코드(dead code), 불필요한 include, 중복 로직 제거
+   - 네이밍 컨벤션 일관성 검증 (PascalCase/camelCase/UPPER_SNAKE_CASE)
+   - OWASP 취약점 점검: 버퍼 오버플로우, 범위 초과 접근, null 역참조 등
+   - COM 객체/GPU 리소스 해제 누락 검사 (Fence 대기 후 해제 보장)
+   - 스마트 포인터/ComPtr 사용 일관성 검증
+
+2. **성능 최적화**:
+   - GPU 프로파일링: PIX 또는 타임스탬프 쿼리로 병목 구간 식별
+   - CPU 프로파일링: 핫 루프, 불필요한 메모리 할당, 과도한 복사 제거
+   - D3D12 Warning/Error 메시지 전수 확인 (Debug Layer)
+   - 셰이더 최적화: 불필요한 분기 제거, 상수 폴딩, 레지스터 압력 점검
+   - 드로우콜 수, 상태 전환 횟수 최소화 확인
+   - 메모리 누수 점검 (D3D12 Live Object 리포트)
+
+3. **버그 수정 및 엣지 케이스 처리**:
+   - 모든 유닛 테스트 + 스모크 테스트 재실행, 실패 항목 수정
+   - 윈도우 리사이즈/모드 전환 중 안정성 확인
+   - 빈 씬(메시 0개), Material 없는 Mesh, 텍스처 없는 Material 등 엣지 케이스 처리
+   - 대형 씬 로딩 중 메모리 부족 시 graceful 처리
+   - 멀티스레드 race condition 검증 (ThreadSanitizer 또는 수동 검증)
+
+4. **ARCHITECTURE.md 작성**:
+   - 프로젝트 전체 디렉토리 구조 + 각 파일의 역할 설명
+   - 모듈 간 의존성 다이어그램 (텍스트 기반)
+   - 엔진 초기화 → 메인 루프 → 종료까지의 동작 흐름
+   - 프레임당 렌더링 파이프라인 흐름 (11단계 상세)
+   - 주요 클래스 관계도 (Engine, Renderer, SceneGraph, RHI, Asset 등)
+   - D3D12 리소스 라이프사이클 (생성 → 사용 → 해제)
+   - 데이터 흐름: CPU(SceneLoader) → Memory(SceneGraph/Material/Texture) → GPU(CB/VB/IB/SRV)
+   - 스레딩 모델: 메인 스레드 vs 워커 스레드 vs Copy Queue
+   - 셰이더 파이프라인: 입력 레이아웃, CB 레지스터 맵, 텍스처 바인딩 포인트
+   - 기존 PRD/PLAN/CLAUDE와의 참조 관계 명시
+
+**완료 기준**: 전체 코드 리뷰 완료, 모든 테스트 통과, D3D12 Debug Layer 경고 0건, ARCHITECTURE.md 작성 완료
+
 ## Phase 02 의존성 그래프
 
 ```
@@ -580,6 +620,8 @@ Phase 11 (Phase 01 완료)
     ├── Phase 24 (GPU 메모리 최적화) ────────────────────────────────────────┤
     │                                                                        │
     └────────────────────────────────────────────────────── Phase 25 (통합) ─┘
+                                                                             │
+                                                            Phase 26 (코드 리뷰 + ARCHITECTURE.md) ─┘
 ```
 
 ## Phase 02 리스크 & 대응
