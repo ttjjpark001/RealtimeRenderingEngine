@@ -244,6 +244,7 @@ src/Asset/
                           · Material 정보 추출 (PBR 파라미터 + 텍스처 경로)
                           · Scene Graph 변환 (aiNode → SceneNode 트리)
                           · 텍스처 비동기 로딩 트리거
+                          · 카메라 노드 추출 (aiCamera → 시작 위치/방향, 없으면 Fit to Scene 폴백)
                           · 씬 바운딩 박스 계산 (카메라 Fit to Scene 용)
   Material.h/.cpp      — PBR Material 클래스 (baseColor, metallic, roughness, normal, emissive, occlusion)
   Texture.h/.cpp       — 텍스처 로딩 및 D3D12 GPU 리소스 관리 (비동기 로딩 지원)
@@ -258,7 +259,7 @@ src/Asset/
 2. 사용자가 파일 선택 → `SceneLoader::LoadScene(filePath)` 호출 (Assimp이 포맷 자동 판별)
 3. 기존 씬 해제: SceneGraph 초기화, Mesh/Material/Texture 캐시 클리어, GPU 리소스 해제 (Fence 대기 후)
 4. 새 씬 구축: glTF 파싱 → SceneNode 트리 생성 → Material 객체 생성 → 텍스처 비동기 로딩 시작
-5. 씬 바운딩 박스 계산 → 카메라 Fit to Scene 자동 실행
+5. 카메라 배치: 씬 파일에 카메라 노드가 있으면 해당 위치/방향 사용, 없으면 씬 바운딩 박스 기반 Fit to Scene 자동 실행
 6. 렌더링 시작 (텍스처 로딩 완료 전에는 폴백 텍스처로 렌더링)
 
 **드래그 앤 드롭 (P1):**
@@ -468,6 +469,30 @@ struct Light {
 - Material 기반 PSO 선택 (BasicColor vs PBR, Opaque vs Mask vs Blend vs ShadowDepth)
 - 드로우콜 전 Material의 텍스처 SRV + Shadow Map SRV 바인딩
 - Mesh→VB/IB 캐시에 Material 정보 추가
+
+### 렌더링 모드 선택 (Render Mode)
+
+"Render" 메뉴에서 렌더링 복잡도를 단계별로 전환한다. 간단한 디버깅부터 최종 품질까지 5단계:
+
+| 모드 | 설명 | PSO / 셰이더 |
+|------|------|---------------|
+| **Wireframe** | 엣지만 표시, 라이팅/텍스처 없음 | 래스터라이저 `D3D12_FILL_MODE_WIREFRAME`, 단색 셰이더 |
+| **Solid (No Texture)** | factor 값 + 라이팅만 적용, 텍스처 미사용 | PBR 셰이더, 텍스처 플래그 모두 0 강제 |
+| **Base Color Only** | Albedo 텍스처만 적용, 나머지 PBR 텍스처는 기본값 | PBR 셰이더, hasAlbedoMap만 활성 |
+| **Full PBR** | 모든 PBR 텍스처 적용, 그림자 미적용 | PBR 셰이더, Shadow 샘플링 스킵 |
+| **Full PBR + Shadows** | 완전한 PBR + Shadow Mapping (기본) | PBR 셰이더 + Shadow Map 바인딩 |
+
+**구현 방식:**
+- `enum class RenderMode { Wireframe, Solid, BaseColorOnly, FullPBR, FullPBRShadows };`
+- `Renderer`에 `m_renderMode` 멤버, `SetRenderMode()` 메서드
+- **Wireframe**: 별도 PSO (FillMode = Wireframe, 단색 PS)
+- **Solid ~ FullPBR**: 동일 PBR PSO, Constant Buffer의 텍스처 활성화 플래그로 제어
+  - Solid: `hasAlbedoMap=0, hasNormalMap=0, hasMetallicRoughnessMap=0` 강제
+  - BaseColorOnly: `hasAlbedoMap=원래값, hasNormalMap=0, hasMetallicRoughnessMap=0` 강제
+  - FullPBR: 모든 플래그 원래값, Shadow Pass 스킵
+- **FullPBRShadows**: Shadow Depth Pass 수행 + Shadow Map 바인딩
+- 메뉴: `CheckMenuRadioItem`으로 현재 모드 체크 표시
+- DebugHUD에 현재 모드명 표시 (P1)
 
 ### SceneNode 확장
 

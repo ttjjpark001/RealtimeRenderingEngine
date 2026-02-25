@@ -177,7 +177,8 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | G-11 | "File" 메뉴의 "Open Scene..." 항목을 선택하면 파일 다이얼로그(GetOpenFileName)가 열린다 | P0 |
 | G-12 | 파일 다이얼로그에서 glTF/GLB 파일을 선택하면 해당 씬을 로드하여 화면에 렌더링한다 | P0 |
 | G-13 | 씬 로드 시 기존 씬(Phase 01 데모 오브젝트 포함)을 해제하고 새 씬으로 교체한다 | P0 |
-| G-14 | 씬 로드 후 카메라를 씬의 바운딩 박스에 맞게 자동 배치한다 (씬 전체가 보이는 위치) | P0 |
+| G-14 | 씬 로드 후 씬 파일에 카메라 시작 위치가 지정되어 있으면 해당 위치/방향으로 카메라를 배치한다 | P0 |
+| G-14a | 씬 파일에 카메라 정보가 없으면 씬의 바운딩 박스를 기반으로 씬 전체를 조망할 수 있는 위치에 카메라를 자동 배치한다 (Fit to Scene) | P0 |
 | G-15 | 로드된 씬을 카메라 네비게이션으로 자유롭게 탐색할 수 있다 | P0 |
 | G-16 | 드래그 앤 드롭으로 glTF/GLB 파일을 윈도우에 놓아도 씬이 로드된다 | P1 |
 
@@ -350,6 +351,20 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | OPT-46 | Constant Buffer 슬롯 할당 시 D3D12 하드웨어 정렬 요구사항(256바이트 경계)을 준수한다. CBPool의 `Allocate()` 호출마다 반환 오프셋이 256의 배수임을 보장한다 | P0 |
 | OPT-47 | CB 데이터 크기가 256바이트 미만이더라도 다음 슬롯까지 256바이트 단위로 패딩한다 (`alignedSize = (size + 255) & ~255`) | P0 |
 
+### 3.20 렌더링 모드 선택 (Render Mode)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| RM-01 | "Render" 메뉴에서 렌더링 모드를 선택하여 단계별로 렌더링 복잡도를 전환할 수 있다 | P0 |
+| RM-02 | **Wireframe** 모드: 메시의 엣지만 와이어프레임으로 표시한다 (래스터라이저 FillMode = Wireframe, 라이팅/텍스처 미적용) | P0 |
+| RM-03 | **Solid (No Texture)** 모드: 텍스처 없이 Material의 factor 값(baseColorFactor 등)과 라이팅만 적용하여 렌더링한다 | P0 |
+| RM-04 | **Base Color Only** 모드: Base Color(Albedo) 텍스처만 적용하고, metallic/roughness/normal 등 기타 PBR 텍스처는 기본값(factor)으로 렌더링한다 | P0 |
+| RM-05 | **Full PBR** 모드: 모든 PBR 텍스처(albedo, normal, metallic, roughness, emissive, occlusion)를 적용한 완전한 PBR 렌더링을 수행한다 (그림자 미적용) | P0 |
+| RM-06 | **Full PBR + Shadows** 모드: Full PBR에 Shadow Mapping(PCF)까지 적용한 최종 렌더링을 수행한다 (기본 모드) | P0 |
+| RM-07 | 현재 선택된 렌더링 모드에 체크 표시를 한다 (CheckMenuRadioItem) | P0 |
+| RM-08 | 렌더링 모드 전환 시 PSO(Pipeline State Object) 및 셰이더 바인딩을 즉시 교체한다 | P0 |
+| RM-09 | DebugHUD에 현재 렌더링 모드 이름을 표시한다 | P1 |
+| RM-10 | 기본 렌더링 모드는 "Full PBR + Shadows"이다 | P0 |
+
 ## 4. 비기능 요구사항
 
 | ID | 요구사항 |
@@ -427,3 +442,4 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | Thread Pool | 미리 생성된 워커 스레드 집합. 작업을 큐에 넣으면 유휴 스레드가 처리하는 병렬 실행 패턴 |
 | Gamma Correction | 리니어 공간에서 계산한 색상을 sRGB 감마 곡선(pow 1/2.2)으로 변환하여 모니터에 올바른 밝기로 출력하는 과정 |
 | CB Alignment (256-byte) | D3D12 Constant Buffer는 256바이트 경계 정렬이 필수. 할당 오프셋과 크기 모두 256의 배수여야 한다 |
+| Render Mode | 렌더링 복잡도를 단계별로 전환하는 기능. Wireframe → Solid → Base Color → Full PBR → Full PBR + Shadows 순으로 복잡도 증가 |
