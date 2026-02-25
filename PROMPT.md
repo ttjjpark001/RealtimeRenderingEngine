@@ -664,3 +664,595 @@ PRD.md와 PLAN.md를 참조하여 Phase 11를 구현하라.
 
 문제가 있으면 수정하라.
 ```
+
+---
+
+## Phase 02: glTF 2.0 씬 로딩 및 PBR 렌더링
+
+> Phase 01 완료 코드는 `Phase 01 Backup/` 폴더에 백업됨. 해당 폴더는 참조/수정하지 않는다.
+> Phase 02 프롬프트에서는 PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 함께 참조한다.
+
+---
+
+## Prompt 12: Assimp 설정 + SceneLoader 기본
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 12를 구현하라.
+
+1. vcpkg로 Assimp을 설치한다.
+   vcpkg install assimp:x64-windows
+   vcpkg integrate install
+   RREngine.vcxproj에 assimp-vc143-mt.lib 링크 추가.
+
+2. src/Asset/SceneLoader.h/.cpp를 만든다.
+   - class SceneLoader
+   - LoadScene(const std::string& filePath) → SceneData 반환
+   - SceneData 구조체:
+     - std::vector<Mesh> meshes
+     - std::vector<Material> materials
+     - std::unique_ptr<SceneNode> rootNode
+     - BoundingBox sceneBounds
+     - std::optional<CameraInfo> camera (씬 파일 내 카메라)
+   - 내부에서 Assimp::Importer 사용:
+     - aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_CalcTangentSpace
+       | aiProcess_FlipUVs
+   - aiMesh → Mesh 변환: position, normal, UV, tangent, index 추출
+   - aiNode 계층 → SceneNode 트리 재귀 변환
+   - aiCamera → CameraInfo (위치, lookAt, FOV) 추출 (없으면 std::nullopt)
+   - 씬 전체 AABB(바운딩 박스) 계산
+
+3. tests/smoke/test_SceneLoader.cpp를 만든다.
+   - 테스트용 간단한 glTF 파일을 assets/ 폴더에 준비
+   - LoadScene() 호출 후 meshes.size() > 0, rootNode != nullptr 확인
+   - 바운딩 박스가 유효한지 확인
+
+빌드하여 Assimp 링크가 정상이고, glTF 파일을 파싱하여
+Mesh + SceneNode 트리가 생성되는지 확인하라.
+```
+
+---
+
+## Prompt 13: Vertex 포맷 확장 + Material 시스템
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 13를 구현하라.
+
+1. src/Renderer/Vertex.h를 확장한다.
+   - struct Vertex에 추가:
+     XMFLOAT2 texCoord;  // UV 좌표
+     XMFLOAT4 tangent;   // 탄젠트 (w = handedness)
+   - D3D12 Input Layout에 TEXCOORD, TANGENT 시맨틱 추가
+   - static_assert로 새 멤버 오프셋과 sizeof(Vertex) 검증
+
+2. src/Asset/Material.h/.cpp를 만든다.
+   - class Material
+   - 텍스처 참조: baseColorTexture, metallicRoughnessTexture, normalTexture,
+     emissiveTexture, occlusionTexture (모두 Texture* nullable)
+   - Factor 값: baseColorFactor(XMFLOAT4), metallicFactor(float),
+     roughnessFactor(float), emissiveFactor(XMFLOAT3)
+   - 렌더 상태: AlphaMode(Opaque/Mask/Blend), alphaCutoff, doubleSided
+   - Dirty Flag: bool m_dirty = true
+   - SetDirty(), IsDirty(), ClearDirty()
+
+3. SceneLoader를 확장한다.
+   - aiMaterial → Material 객체 변환
+   - PBR metallic-roughness 파라미터 추출:
+     AI_MATKEY_BASE_COLOR, AI_MATKEY_METALLIC_FACTOR, AI_MATKEY_ROUGHNESS_FACTOR
+   - 텍스처 경로 추출 (aiTextureType_DIFFUSE, _NORMALS, _METALNESS 등)
+
+4. SceneNode에 Material* 참조를 추가한다.
+   - Material이 nullptr이면 Phase 01의 vertex-color 방식으로 폴백
+
+5. tests/unit/test_Material.cpp를 만든다.
+   - Material 기본값 검증 (baseColorFactor = {1,1,1,1}, metallic = 1.0 등)
+   - Dirty flag 동작: 생성 시 dirty, ClearDirty 후 isDirty=false, Set 후 isDirty=true
+
+빌드하여 확장된 Vertex 크기가 Input Layout과 일치하고,
+Material 파라미터가 정상 추출되는지 확인하라.
+```
+
+---
+
+## Prompt 14: Texture 시스템 + 비동기 로딩
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 14를 구현하라.
+
+1. src/Asset/Texture.h/.cpp를 만든다.
+   - class Texture
+   - 이미지 데이터 → ID3D12Resource (TEXTURE2D, default heap) 생성
+   - Upload Buffer를 통해 CPU → GPU 복사
+   - 리소스 상태 전이: COPY_DEST → PIXEL_SHADER_RESOURCE
+   - SRV 디스크립터 생성
+   - SRGB 처리:
+     baseColor(albedo) = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
+     normal/roughness/metallic = DXGI_FORMAT_R8G8B8A8_UNORM
+
+2. src/Asset/TextureCache.h/.cpp를 만든다.
+   - std::unordered_map<std::string, std::unique_ptr<Texture>> 캐시
+   - GetOrLoad(filePath, isSRGB) → Texture*
+   - 동일 파일 경로면 기존 텍스처 반환 (중복 로딩 방지)
+   - 폴백 텍스처: 1×1 white 텍스처 (생성자에서 미리 생성)
+   - Clear(): 모든 캐시된 텍스처 해제
+
+3. 비동기 텍스처 로딩을 구현한다.
+   - 워커 스레드(std::async)에서 이미지 파일 디코딩 (stb_image 또는 WIC)
+   - 디코딩 완료 후 메인 스레드에서 Upload Buffer → Default Heap 복사
+   - Material의 텍스처 포인터를 폴백 → 실제 텍스처로 원자적 교체
+   - 로딩 상태: Pending → Loading → Ready
+
+4. SceneLoader에서 Material의 텍스처를 비동기 로딩 트리거한다.
+   - LoadScene 시 각 Material의 텍스처 경로 → TextureCache에 비동기 요청
+
+빌드하여 텍스처가 GPU에 정상 업로드되고 SRV로 바인딩 가능한지,
+로딩 중 폴백 텍스처가 표시되는지 확인하라.
+```
+
+---
+
+## Prompt 15: RHI 확장 (Root Signature, Descriptor Heap, PSO, CBPool)
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 15를 구현하라.
+
+1. Root Signature를 확장한다.
+   - register b0: Per-Object CB (descriptor table)
+   - register b1: Per-Frame/Light CB (descriptor table)
+   - register b2: Per-Material CB (descriptor table)
+   - register t0~t4: Material SRV (baseColor, normal, metallicRoughness, emissive, occlusion)
+   - register t5: Light Structured Buffer (또는 CB 배열)
+   - register t6~t13: Shadow Maps
+   - Static Sampler s0: Linear Wrap (Anisotropic, MaxAnisotropy=16)
+   - Comparison Sampler s1: PCF용 (LESS_EQUAL)
+
+2. Descriptor Heap을 확장한다.
+   - CBV + SRV 통합 관리
+   - MAX_DRAW_CALLS 제한(16)을 수백~수천으로 확장
+   - 프레임당 디스크립터 할당 관리
+
+3. src/RHI/D3D12/D3D12CBPool.h/.cpp를 만든다.
+   - 하나의 큰 Upload Heap (기본 4MB~16MB)
+   - 영구 맵핑 (Map / 비해제)
+   - Allocate(uint32 size) → CBAllocation {gpuAddress, cpuPtr, offset}
+     - alignedSize = (size + 255) & ~255  (256바이트 정렬 필수)
+   - ResetFrame(frameIndex) — 링 버퍼 방식으로 프레임 영역 리셋
+   - 더블 버퍼링: 프레임 0/1 영역을 번갈아 사용
+
+4. PSO를 추가한다.
+   - PBR PSO: 확장 Input Layout + PBR VS/PS
+   - Shadow Depth PSO: depth-only, color write off, DepthBias=1000, SlopeScaledDepthBias=1.0
+   - Wireframe PSO: FillMode = WIREFRAME, 단색 PS
+   - Alpha Mask PSO: depth write + alpha test
+   - Alpha Blend PSO: 블렌딩 ON, depth write OFF
+   - Double-sided 변형: CullMode = NONE
+
+빌드하여 확장된 Root Signature/Descriptor Heap이 정상 생성되고,
+CBPool에서 256바이트 정렬 슬롯이 할당/리셋되며,
+복수 PSO가 오류 없이 생성되는지 확인하라.
+```
+
+---
+
+## Prompt 16: Cook-Torrance BRDF 셰이더 + Gamma Correction
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 16를 구현하라.
+
+1. src/Shaders/PBR.hlsl를 만든다.
+   - cbuffer PerObjectCB : register(b0) { matrix World; matrix ViewProj; ... };
+   - cbuffer LightsCB : register(b1) { LightData lights[MAX_LIGHTS]; uint numActiveLights; ... };
+   - cbuffer PerMaterialCB : register(b2) {
+       float4 baseColorFactor; float metallicFactor; float roughnessFactor;
+       float alphaCutoff; uint hasAlbedoMap; uint hasNormalMap;
+       uint hasMetallicRoughnessMap; ... };
+   - Texture2D: t0(albedo), t1(normal), t2(metallicRoughness), t3(emissive), t4(occlusion)
+   - SamplerState: s0 (Anisotropic Wrap)
+
+2. Cook-Torrance BRDF를 구현한다.
+   - NDF (D): GGX/Trowbridge-Reitz
+     α = roughness²
+     D = α² / (π · ((N·H)²·(α²-1)+1)²)
+   - Geometry (G): Smith-Schlick GGX
+     k = (roughness+1)² / 8
+     G1(N,X) = N·X / (N·X·(1-k)+k)
+     G = G1(N,V) · G1(N,L)
+   - Fresnel (F): Schlick 근사
+     F0 = lerp(0.04, albedo, metallic)
+     F = F0 + (1-F0) · (1-V·H)^5
+   - Specular = D × G × F / (4 · N·L · N·V + 0.0001)
+   - Diffuse = (1-F) · (1-metallic) · albedo / π
+
+3. Normal Map 변환을 구현한다.
+   - VS에서 TBN 행렬 구축: T(tangent), B(bitangent = cross(N,T)*T.w), N(normal)
+   - PS에서 Normal Map 샘플 → TBN으로 월드 공간 변환
+
+4. 텍스처-factor 폴백 분기를 구현한다.
+   - if (hasAlbedoMap) albedo = tex.Sample(sampler, uv).rgb; else albedo = baseColorFactor.rgb;
+   - normal, metallicRoughness 등도 동일 패턴
+
+5. Gamma Correction을 적용한다.
+   - 방법 A (권장): 렌더 타겟을 DXGI_FORMAT_R8G8B8A8_UNORM_SRGB로 설정
+   - 방법 B: PS 최종 출력에 pow(color, 1.0/2.2) 적용
+   - 주의: 방법 A와 B를 동시에 적용하면 이중 감마, 하나만 선택
+
+6. 기존 BasicColor.hlsl은 변경 없이 유지한다.
+
+빌드하여 PBR 텍스처가 적용된 오브젝트가 Cook-Torrance 라이팅으로
+정상 렌더링되고, Gamma Correction이 적용되어 밝기가 자연스러운지 확인하라.
+```
+
+---
+
+## Prompt 17: 다중 광원 시스템
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 17를 구현하라.
+
+1. src/Lighting/Light.h를 만든다.
+   - enum class LightType { Directional, Point, Spot };
+   - struct Light {
+       LightType type;
+       XMFLOAT3 color; float intensity;
+       XMFLOAT3 position;      // Point, Spot
+       XMFLOAT3 direction;     // Directional, Spot
+       float Kc, Kl, Kq;       // 감쇠 (Point, Spot)
+       float innerConeAngle;   // Spot (cos값)
+       float outerConeAngle;   // Spot (cos값)
+       bool castShadow;
+     };
+
+2. src/Lighting/LightManager.h/.cpp를 만든다.
+   - std::vector<Light> 관리
+   - AddLight(), RemoveLight(), GetLight(), GetActiveLightCount()
+   - GetLightBuffer() → GPU에 전달할 구조체 배열 반환
+   - 기존 Phase 01 PointLight를 Light 구조체로 마이그레이션
+
+3. GPU 전달 방식을 구현한다.
+   - LightsCB (register b1): LightData 배열(최대 MAX_LIGHTS=16) + numActiveLights
+   - 또는 StructuredBuffer<LightData> (register t5)
+
+4. PBR.hlsl을 확장한다.
+   - for (uint i = 0; i < numActiveLights; i++) { ... } 루프
+   - 타입별 분기:
+     Directional: 감쇠 없음, lightDir = -light.direction
+     Point: 거리 감쇠, lightDir = normalize(lightPos - worldPos)
+     Spot: 거리 감쇠 × smoothstep(outer, inner, dot(-lightDir, spotDir))
+   - 각 광원 기여를 합산: Σ (diffuse + specular) × lightColor × attenuation
+
+5. 기존 Phase 01 메뉴 (Light → Color/Position)와 호환을 유지한다.
+
+빌드하여 Directional + Point + Spot 광원이 동시에 오브젝트를 비추고,
+셰이더에서 합산 렌더링되는지 확인하라.
+```
+
+---
+
+## Prompt 18: Shadow Mapping
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 18를 구현하라.
+
+1. Shadow Map D3D12 리소스를 생성한다.
+   - ID3D12Resource (TEXTURE2D, DXGI_FORMAT_D32_FLOAT), 1024×1024
+   - DSV: shadow depth pass에서 depth write
+   - SRV: DXGI_FORMAT_R32_FLOAT로 라이팅 pass에서 읽기
+   - 광원당 1장, 최대 8장 (register t6~t13)
+
+2. src/Shaders/ShadowDepth.hlsl를 만든다.
+   - cbuffer: LightViewProj matrix
+   - VS: position × LightViewProj 변환
+   - PS: 없음 (depth write만) 또는 Alpha Mask용 텍스처 clip
+
+3. Shadow Depth PSO를 사용하여 depth-only 렌더링한다.
+   - Directional Light: XMMatrixOrthographicLH 투영
+   - Spot Light: XMMatrixPerspectiveFovLH 투영
+   - Depth Bias 설정: DepthBias=1000, SlopeScaledDepthBias=1.0
+
+4. Light-View-Projection 행렬을 계산하여 CB로 전달한다.
+   - Directional: LookAtLH(lightPos, lightPos+lightDir, up) × OrthoLH(w,h,n,f)
+   - Spot: LookAtLH(lightPos, lightPos+lightDir, up) × PerspectiveFovLH(fov,1,n,f)
+   - GPU 전달 시 반드시 XMMatrixTranspose() 적용
+
+5. PBR.hlsl에 PCF를 구현한다.
+   - Comparison Sampler (s1): D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT
+   - 3×3 PCF 커널:
+     float shadow = 0;
+     for (int y = -1; y <= 1; y++)
+       for (int x = -1; x <= 1; x++)
+         shadow += shadowMap.SampleCmpLevelZero(shadowSampler, uv + float2(x,y)*texelSize, depth);
+     shadow /= 9.0;
+   - 그림자 영역: 해당 광원의 diffuse+specular 차단, ambient 유지
+
+6. 렌더 패스 순서를 구현한다.
+   - Pass 1: Shadow Depth Pass (castShadow=true인 광원별)
+   - Pass 2: Main Lighting Pass (Shadow Map SRV 바인딩)
+
+빌드하여 그림자가 정확히 생성되고, PCF로 부드러운 경계를 보이며,
+shadow acne가 없는지 확인하라.
+```
+
+---
+
+## Prompt 19: 씬 파일 로딩 UI + 카메라 네비게이션
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 19를 구현하라.
+
+1. Win32Menu에 "File" 메뉴를 추가한다.
+   - "Open Scene..." (ID_FILE_OPEN_SCENE)
+   - Win32 GetOpenFileName 파일 다이얼로그:
+     필터: "3D Scene Files (*.gltf;*.glb;*.fbx)\0*.gltf;*.glb;*.fbx\0All Files\0*.*\0"
+
+2. 씬 로딩 워크플로우를 구현한다.
+   - 파일 선택 → GPU 작업 완료 대기(WaitForGPU)
+   - 기존 씬 해제: SceneGraph 초기화, Mesh/Material/Texture 캐시 클리어
+   - SceneLoader::LoadScene(filePath) 호출
+   - 새 씬 구축: SceneNode 트리 + Material + 텍스처 비동기 로딩
+   - 카메라 배치:
+     씬 파일에 카메라 노드가 있으면 → 해당 위치/방향으로 카메라 설정
+     없으면 → Fit to Scene (바운딩 박스 기반 카메라 자동 배치)
+   - 렌더링 시작 (폴백 텍스처로 즉시 렌더링)
+
+3. Fit to Scene을 구현한다.
+   - 씬 바운딩 박스의 중심을 lookAt 타겟으로 설정
+   - 대각선 길이 기반 적절한 카메라 거리 산출
+   - "Camera" 메뉴에 "Fit to Scene" 항목으로 수동 호출 가능
+
+4. 드래그 앤 드롭을 구현한다 (P1).
+   - DragAcceptFiles(hwnd, TRUE) 호출
+   - WM_DROPFILES → DragQueryFile로 파일 경로 추출 → 위 2와 동일 흐름
+
+5. 카메라 마우스 네비게이션을 구현한다.
+   - 우클릭 드래그 (WM_RBUTTONDOWN + WM_MOUSEMOVE):
+     마우스 이동량 → Yaw/Pitch 회전 (FPS 스타일)
+   - 마우스 휠 (WM_MOUSEWHEEL):
+     전진/후진 (돌리 줌)
+   - 중클릭 드래그 (WM_MBUTTONDOWN + WM_MOUSEMOVE, P1):
+     상하좌우 패닝
+   - 이동 속도 자동 조절: 씬 바운딩 박스 크기에 비례 (P1)
+
+빌드하여 메뉴에서 glTF/FBX 파일을 열어 씬이 교체되고,
+카메라가 자동 배치되며, 마우스로 네비게이션 가능한지 확인하라.
+```
+
+---
+
+## Prompt 20: 렌더링 모드 선택
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 20를 구현하라.
+
+1. enum class RenderMode를 정의한다.
+   - Wireframe, Solid, BaseColorOnly, FullPBR, FullPBRShadows
+
+2. Win32Menu에 "Render" 메뉴를 추가한다.
+   - "Wireframe"           (ID_RENDER_WIREFRAME)
+   - "Solid (No Texture)"  (ID_RENDER_SOLID)
+   - "Base Color Only"     (ID_RENDER_BASECOLOR)
+   - "Full PBR"            (ID_RENDER_FULLPBR)
+   - "Full PBR + Shadows"  (ID_RENDER_FULLPBR_SHADOWS)  ← 기본 선택
+   - CheckMenuRadioItem으로 현재 선택 체크 표시
+
+3. src/Shaders/Wireframe.hlsl를 만든다.
+   - VS: position × WVP 변환
+   - PS: 단색 출력 (예: float4(0.8, 0.8, 0.8, 1.0))
+
+4. Renderer에 렌더링 모드를 적용한다.
+   - SetRenderMode(RenderMode mode)
+   - 모드별 동작:
+     Wireframe: Wireframe PSO 사용, 라이팅/텍스처 미적용
+     Solid: PBR PSO, CB에서 모든 텍스처 플래그 = 0 강제 → factor 값만으로 렌더링
+     BaseColorOnly: PBR PSO, hasAlbedoMap만 원래값, 나머지 텍스처 플래그 = 0
+     FullPBR: PBR PSO, 모든 텍스처 활성, Shadow Pass 스킵
+     FullPBRShadows: Shadow Depth Pass + PBR PSO + Shadow Map 바인딩
+
+5. DebugHUD에 현재 렌더링 모드 이름을 표시한다 (P1).
+   - "Render: Full PBR + Shadows" 등
+
+빌드하여 메뉴에서 5단계 렌더링 모드를 전환할 수 있고,
+각 모드별로 정상 렌더링되는지 확인하라.
+```
+
+---
+
+## Prompt 21: 렌더링 최적화 — Culling + LOD
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 21를 구현하라.
+
+1. src/Renderer/FrustumCuller.h/.cpp를 만든다.
+   - DirectX::BoundingFrustum을 View-Projection 행렬에서 생성
+   - IsVisible(const BoundingBox& aabb) → bool
+   - BoundingBox vs Frustum 6-plane 교차 검사 (BoundingBox::Intersects)
+   - Scene Graph 순회 시 culled 노드는 DrawPrimitives 스킵
+   - Shadow Depth Pass에도 적용 (광원 시점 frustum, P1)
+
+2. src/Renderer/OcclusionCuller.h/.cpp를 만든다.
+   - P0 (간이 방식): 이전 프레임의 depth buffer를 CPU readback
+     → AABB를 screen-space로 투영 → 해당 영역 depth 비교
+   - IsOccluded(const BoundingBox& aabb) → bool
+   - Occluded 판정: CB 갱신 + Draw 모두 스킵
+   - 보수적 판정: 경계 케이스는 visible로 처리 (popping 방지)
+
+3. src/Renderer/LODSelector.h/.cpp를 만든다.
+   - struct LODMesh { Mesh* meshLODs[MAX_LOD]; float switchDistances[MAX_LOD]; uint32 lodCount; }
+   - SelectLOD(float cameraDistance) → Mesh* (적절한 LOD 반환)
+   - glTF/FBX LOD 매핑: MSFT_lod 확장이 있으면 자동, 없으면 LOD 0 사용
+
+4. tests/unit/test_FrustumCuller.cpp를 만든다.
+   - Frustum 안의 AABB → visible
+   - Frustum 밖의 AABB → not visible
+   - Frustum 경계의 AABB → visible (보수적)
+
+5. Renderer 파이프라인에 Culling + LOD를 통합한다.
+   - Scene Graph 순회 → Frustum Culling → Occlusion Culling → LOD 선택 → Draw
+
+빌드하여 Frustum 밖 오브젝트가 culled되고,
+거리별 LOD가 전환되는지 확인하라.
+DebugHUD에 culled 수를 표시하라.
+```
+
+---
+
+## Prompt 22: Texture Streaming + Mip-Mapping
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 22를 구현하라.
+
+1. src/Asset/TextureStreamer.h/.cpp를 만든다.
+   - 텍스처별 요구 Mip 레벨 관리
+   - 우선순위 계산: priority = isVisible ? (1/distance) : 0
+   - 우선순위 큐: 높은 순서로 스트리밍 대역폭 할당
+
+2. 스트리밍 흐름을 구현한다.
+   - 초기 로드: 하위 Mip(64×64 이하)만 GPU 업로드
+   - 렌더링 중: 가시성 + 거리 기반 우선순위 → 상위 Mip 비동기 로딩
+   - 로딩 완료: Copy Queue 또는 메인 스레드에서 GPU 업로드
+   - Mip 해제: Frustum 밖 또는 카메라 멀어짐 → 상위 Mip 해제
+
+3. Mip chain 생성을 구현한다.
+   - 전체 Mip 수: floor(log2(max(width, height))) + 1
+   - D3D12 텍스처: MipLevels 파라미터 설정
+   - Mip 데이터: CPU box filter (또는 GPU compute shader, P1)
+
+4. Sampler를 업그레이드한다.
+   - s0: D3D12_FILTER_ANISOTROPIC, MaxAnisotropy = 16
+
+5. 메모리 예산을 구현한다.
+   - IDXGIAdapter3::QueryVideoMemoryInfo로 VRAM 모니터링
+   - 예산 초과 시 LRU + 거리 기반 Mip 해제
+
+6. DebugHUD에 스트리밍 통계를 추가한다.
+   - 현재 스트리밍 중인 리소스 개수
+   - 남은 스트리밍 대역폭(큐 잔량 또는 MB/s)
+
+빌드하여 카메라 접근 시 고해상도 Mip이 로딩되고,
+멀어지면 저해상도로 대체되는지 확인하라.
+```
+
+---
+
+## Prompt 23: Instanced Rendering + 멀티스레드 로딩
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 23를 구현하라.
+
+1. src/Renderer/InstanceBatcher.h/.cpp를 만든다.
+   - Scene Graph에서 동일 Mesh+Material 조합을 그룹핑
+   - struct InstanceData { XMFLOAT4X4 world; }; (전치 적용)
+   - Instance Buffer 생성: InstanceData 배열 → Upload Buffer → GPU
+
+2. D3D12 Input Layout에 per-instance 슬롯을 추가한다.
+   - slot 0: per-vertex (position, color, normal, texCoord, tangent)
+   - slot 1: per-instance (INSTANCE_WORLD, 4×float4, InstanceDataStepRate=1)
+
+3. DrawIndexedInstanced를 사용한다.
+   - instanceCount > 1: 인스턴싱
+   - instanceCount == 1: 기존 단일 드로우콜과 동일 동작
+
+4. PBR.hlsl의 VS에서 SV_InstanceID로 World Matrix를 인덱싱한다.
+
+5. src/Core/ThreadPool.h/.cpp를 만든다.
+   - CPU 코어 수 기반 워커 스레드 생성 (std::thread::hardware_concurrency())
+   - Submit(task) → std::future<T> 반환
+   - 텍스처 이미지 디코딩을 워커 스레드에 분배
+
+6. Copy Queue를 구현한다 (P1).
+   - D3D12 Copy Queue 전용 Command Allocator + Command List
+   - Graphics Queue와 병렬로 리소스 업로드
+   - Fence로 Copy 완료 동기화
+
+빌드하여 동일 메시 인스턴싱으로 드로우콜이 감소하고,
+멀티스레드 텍스처 디코딩이 동작하는지 확인하라.
+```
+
+---
+
+## Prompt 24: GPU 메모리 최적화
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 24를 구현하라.
+
+1. CBPool을 Renderer에 통합한다.
+   - 매 프레임 ResetFrame(frameIndex) 호출
+   - DrawPrimitives마다 Allocate()로 CB 슬롯 획득
+   - 개별 CreateCommittedResource 호출 제거
+
+2. VRAM 모니터링을 구현한다.
+   - IDXGIAdapter3::QueryVideoMemoryInfo(DXGI_MEMORY_SEGMENT_GROUP_LOCAL)
+   - Budget 필드의 80%를 임계값으로 설정
+   - 임계값 초과 시: 우선순위 낮은 오브젝트 CB 갱신 빈도를 N프레임마다 1회로 감소
+   - 우선순위: 카메라 거리, 화면 차지 비율, 움직임 여부
+
+3. Shared Material CB를 구현한다.
+   - PerObjectCB (register b0): world, viewProj (오브젝트별)
+   - PerMaterialCB (register b2): baseColorFactor, metallic, roughness 등 (재질별)
+   - 동일 Material의 오브젝트는 같은 PerMaterialCB 슬롯 참조
+   - 드로우콜 시 이전과 같은 Material이면 b2 바인딩 스킵
+
+4. Dirty Flag 기반 갱신 스킵을 구현한다.
+   - Per-Object: Transform 미변경 → memcpy 스킵
+   - Per-Material: 파라미터 미변경 → 갱신 스킵
+   - Light: 광원 데이터 미변경 → 갱신 스킵
+   - Occluded 오브젝트: CB + Draw 모두 스킵
+
+5. Opaque Front-to-Back 정렬을 구현한다.
+   - Opaque 패스 오브젝트를 카메라 거리 기준 앞→뒤 정렬
+   - GPU Early-Z rejection 극대화
+
+6. DebugHUD에 최적화 통계를 추가한다.
+   - VRAM 사용량 (Used / Budget)
+   - frustum culled 수, occlusion culled 수
+   - 드로우콜 수, 인스턴스 수
+   - 현재 렌더링 모드
+
+빌드하여 CBPool에서 슬롯이 정상 할당되고,
+Dirty Flag로 불필요한 갱신이 스킵되며,
+VRAM 사용량이 HUD에 표시되는지 확인하라.
+```
+
+---
+
+## Prompt 25: Phase 02 통합 & 최종 검증
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 25를 구현하라.
+
+1. 전체 렌더 파이프라인을 11단계로 통합한다.
+   ① Scene Graph 순회 → AABB + 월드 행렬 수집
+   ② Frustum Culling → 시야 밖 제외
+   ③ Occlusion Culling → 가려진 오브젝트 제외 (CB + Draw 스킵)
+   ④ LOD 선택 → 거리 기반 Mesh 결정
+   ⑤ Instance Batching → 동일 Mesh+Material 그룹핑
+   ⑥ Texture Streaming → 가시성+거리 우선순위로 Mip 업데이트
+   ⑦ CB 갱신 → Dirty Flag + VRAM 예산 기반 적응적 갱신
+   ⑧ Material 정렬 → PSO 전환 최소화
+   ⑨ Opaque Front-to-Back 정렬
+   ⑩ Shadow Depth Pass → 광원별 depth-only 렌더링
+   ⑪ Main Pass → Opaque(인스턴싱) → Alpha Mask → Alpha Blend(back-to-front)
+
+2. 대형 씬 벤치마크를 수행한다.
+   - Sponza (glTF): 로딩 → PBR + Shadow + 최적화 렌더링
+   - Bistro (glTF): 대규모 씬 로딩 및 네비게이션
+   - 60fps 이상 유지 확인 (DebugHUD FPS 모니터링)
+
+3. 5단계 렌더링 모드를 전체 검증한다.
+   - Wireframe → Solid → Base Color → Full PBR → Full PBR + Shadows
+   - 각 모드에서 정상 렌더링되는지 확인
+
+4. 전체 기능을 통합 검증한다.
+   - File 메뉴에서 glTF/FBX 파일 열기 (다이얼로그 + 드래그앤드롭)
+   - 씬 파일 내 카메라 있으면 해당 위치, 없으면 Fit to Scene
+   - 마우스 네비게이션 (우클릭 회전, 휠 줌, 중클릭 패닝)
+   - WASD+QE 키보드 이동, Render 메뉴 모드 전환
+   - 다중 광원 (Directional + Point + Spot), 그림자
+   - DebugHUD: FPS, 해상도, 폴리곤, culled/occluded, 드로우콜,
+     인스턴스, VRAM, 스트리밍, 렌더모드
+   - Phase 01 오브젝트(vertex-color)도 BasicColor PSO로 정상 렌더링
+
+5. 모든 테스트를 실행한다.
+   - 기존 Phase 01 유닛/스모크 테스트 통과 확인
+   - Phase 02 테스트: test_Material, test_FrustumCuller, test_SceneLoader
+
+문제가 있으면 수정하라.
+```
