@@ -255,6 +255,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | SH-14 | 각 광원에 대해 Shadow Map을 샘플링하여 그림자 여부를 판정한다 | P0 |
 | SH-15 | PCF(Percentage Closer Filtering)를 적용하여 부드러운 그림자 경계를 생성한다 | P0 |
 | SH-16 | Shadow depth 패스용 간소화 셰이더를 구현한다 (VS: position 변환만, PS: 없음 또는 depth 출력만) | P0 |
+| SH-17 | 최종 픽셀 출력에 Gamma Correction을 적용한다. 셰이더 내부 라이팅 연산은 리니어 공간에서 수행하고, 최종 결과에 `pow(color, 1/2.2)` 변환을 적용하여 sRGB 출력한다 (SRGB 렌더 타겟 또는 셰이더 수동 변환) | P0 |
 
 ### 3.19 렌더링 최적화
 
@@ -315,7 +316,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | OPT-32 | 프레임마다 풀의 오프셋을 리셋하여 링 버퍼 방식으로 CB 슬롯을 재사용한다 | P0 |
 | OPT-33 | CB 풀 크기는 VRAM 가용량을 고려하여 설정하며, 대형 씬에서도 충분한 슬롯을 확보한다 | P0 |
 | OPT-34 | VRAM 사용량을 `IDXGIAdapter3::QueryVideoMemoryInfo`로 모니터링한다 | P0 |
-| OPT-35 | VRAM 사용량이 예산의 일정 비율(예: 80%)을 초과하면 우선순위가 낮은 오브젝트의 CB 갱신 빈도를 낮춘다 (N프레임마다 1회) | P0 |
+| OPT-35 | VRAM 사용량이 OS가 보고하는 현재 가용 전용 비디오 메모리(Dedicated Video Memory)의 80%를 초과하면 우선순위가 낮은 오브젝트의 CB 갱신 빈도를 낮춘다 (N프레임마다 1회). 기준값은 `IDXGIAdapter3::QueryVideoMemoryInfo(DXGI_MEMORY_SEGMENT_GROUP_LOCAL)`의 `Budget` 필드의 80%로 한다 | P0 |
 | OPT-36 | CB 갱신 우선순위: 카메라 가까운 오브젝트 > 먼 오브젝트, 화면 차지 비율 큰 오브젝트 > 작은 오브젝트 | P0 |
 
 #### 재질 공유 상수 버퍼 (Shared Material CB)
@@ -340,7 +341,14 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 #### DebugHUD 최적화 통계
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
-| OPT-44 | DebugHUD에 최적화 통계를 표시한다: frustum culled 수, occlusion culled 수, 드로우콜 수, 인스턴스 수, VRAM 사용량 | P1 |
+| OPT-44 | DebugHUD에 최적화 통계를 표시한다: frustum culled 수, occlusion culled 수, 드로우콜 수, 인스턴스 수, VRAM 사용량(Used/Budget) | P1 |
+| OPT-45 | DebugHUD에 현재 스트리밍 중인 리소스 개수와 남은 스트리밍 대역폭(MB/s 또는 큐 잔량)을 표시한다 | P1 |
+
+#### CB 슬롯 하드웨어 정렬
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| OPT-46 | Constant Buffer 슬롯 할당 시 D3D12 하드웨어 정렬 요구사항(256바이트 경계)을 준수한다. CBPool의 `Allocate()` 호출마다 반환 오프셋이 256의 배수임을 보장한다 | P0 |
+| OPT-47 | CB 데이터 크기가 256바이트 미만이더라도 다음 슬롯까지 256바이트 단위로 패딩한다 (`alignedSize = (size + 255) & ~255`) | P0 |
 
 ## 4. 비기능 요구사항
 
@@ -417,3 +425,5 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | Copy Queue | D3D12의 별도 커맨드 큐. Graphics Queue와 병렬로 리소스 업로드를 수행 |
 | Early-Z Rejection | GPU가 픽셀 셰이더 실행 전에 depth test로 가려진 픽셀을 미리 제거하는 하드웨어 최적화 |
 | Thread Pool | 미리 생성된 워커 스레드 집합. 작업을 큐에 넣으면 유휴 스레드가 처리하는 병렬 실행 패턴 |
+| Gamma Correction | 리니어 공간에서 계산한 색상을 sRGB 감마 곡선(pow 1/2.2)으로 변환하여 모니터에 올바른 밝기로 출력하는 과정 |
+| CB Alignment (256-byte) | D3D12 Constant Buffer는 256바이트 경계 정렬이 필수. 할당 오프셋과 크기 모두 256의 배수여야 한다 |

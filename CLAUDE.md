@@ -448,6 +448,14 @@ struct Light {
 - 텍스처가 바인딩되지 않은 채널은 Constant Buffer의 factor 값을 사용
 - `hasAlbedoMap`, `hasNormalMap`, `hasMetallicRoughnessMap` 등 플래그를 CB에 포함
 
+**Gamma Correction:**
+- 셰이더 내부 라이팅 연산은 리니어 공간(linear space)에서 수행
+- 최종 픽셀 출력 시 sRGB 변환 적용:
+  - **방법 A (권장)**: 렌더 타겟을 `DXGI_FORMAT_R8G8B8A8_UNORM_SRGB`로 설정 → GPU가 자동으로 리니어→sRGB 변환
+  - **방법 B**: 셰이더에서 수동 변환 — `finalColor.rgb = pow(finalColor.rgb, 1.0/2.2)`
+- 입력 텍스처: albedo(baseColor)는 `_SRGB` 포맷으로 로드하여 샘플링 시 자동 sRGB→리니어 변환, normal/roughness/metallic은 리니어(`_UNORM`) 포맷 유지
+- Gamma Correction이 없으면 PBR 라이팅 결과가 과도하게 밝거나 어둡게 표시됨
+
 **기존 BasicColor.hlsl은 Phase 01 오브젝트용으로 유지 (변경 없음)**
 
 ### Renderer 확장
@@ -574,21 +582,25 @@ class CBPool {
     uint32 m_totalSize;                     // 풀 전체 크기
     uint32 m_frameIndex;                    // 더블 버퍼링용 프레임 인덱스
 
-    // 256바이트 정렬된 슬롯 할당
-    CBAllocation Allocate(uint32 size);
+    // 256바이트 정렬된 슬롯 할당 (D3D12 하드웨어 요구사항)
+    // alignedSize = (size + 255) & ~255
+    CBAllocation Allocate(uint32 size);     // 반환 오프셋은 항상 256의 배수
     void ResetFrame(uint32 frameIndex);     // 프레임 시작 시 해당 프레임 영역 리셋
 };
 ```
 - **링 버퍼**: 더블 버퍼링에 맞춰 프레임 0/1 영역을 번갈아 사용, 이전 프레임의 데이터를 GPU가 참조 중일 수 있으므로 덮어쓰지 않음
 - **풀 크기**: VRAM 가용량 대비 적절히 설정 (기본: 4MB~16MB, 대형 씬에서 자동 확장)
 - **개별 CB 할당 금지**: 오브젝트마다 `CreateCommittedResource`를 호출하지 않음
+- **256바이트 정렬 필수**: D3D12는 CBV의 GPU 가상 주소(BufferLocation)가 256바이트 경계에 정렬되어야 함. SizeInBytes도 256의 배수여야 함. `Allocate()` 내부에서 `alignedSize = (requestedSize + 255) & ~255` 적용
 - 구현 위치: `src/RHI/D3D12/D3D12CBPool.h/.cpp`
 
 **VRAM 모니터링 & 적응적 CB 갱신:**
 - `IDXGIAdapter3::QueryVideoMemoryInfo(DXGI_MEMORY_SEGMENT_GROUP_LOCAL)` 으로 VRAM 사용량/예산 조회
-- VRAM 사용률 > 80%: 우선순위 낮은 오브젝트의 CB 갱신 빈도를 N프레임마다 1회로 감소
+- **80% 임계값 기준**: `QueryVideoMemoryInfo`가 반환하는 `Budget` 필드(OS가 보고하는 현재 가용 전용 비디오 메모리)의 80%
+- VRAM 사용률 > 80% of Budget: 우선순위 낮은 오브젝트의 CB 갱신 빈도를 N프레임마다 1회로 감소
 - **우선순위 기준**: 카메라 거리 (가까울수록 높음), 화면 차지 비율 (클수록 높음), 움직임 여부 (동적 > 정적)
 - DebugHUD에 VRAM 사용량(Used/Budget) 표시
+- DebugHUD에 현재 스트리밍 중인 리소스 개수 및 남은 대역폭(큐 잔량 또는 MB/s) 표시
 
 #### 재질 공유 Constant Buffer (Shared Material CB)
 
