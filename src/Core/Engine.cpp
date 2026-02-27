@@ -10,6 +10,8 @@
 #include "Renderer/Renderer.h"
 #include "Renderer/DebugHUD.h"
 #include "Lighting/PointLight.h"
+#include "Lighting/LightManager.h"
+#include "Lighting/Light.h"
 #include "Scene/Camera.h"
 #include "Scene/SceneGraph.h"
 #include "Scene/SceneNode.h"
@@ -109,6 +111,20 @@ bool Engine::Initialize(const EngineInitParams& params)
     // Create point light
     m_pointLight = std::make_unique<PointLight>();
 
+    // Create light manager and add the point light
+    m_lightManager = std::make_unique<LightManager>();
+    {
+        Light mainLight;
+        mainLight.type = LightType::Point;
+        mainLight.position = m_pointLight->GetPosition();
+        mainLight.color = m_pointLight->GetColor();
+        mainLight.intensity = 1.0f;
+        mainLight.Kc = m_pointLight->GetConstantAttenuation();
+        mainLight.Kl = m_pointLight->GetLinearAttenuation();
+        mainLight.Kq = m_pointLight->GetQuadraticAttenuation();
+        m_lightManager->AddLight(mainLight);
+    }
+
     // Create light indicator sphere (low-poly, uploaded separately from scene meshes)
     m_lightSphereMesh = std::make_unique<Mesh>(MeshFactory::CreateSphere(8, 8));
     {
@@ -127,12 +143,20 @@ bool Engine::Initialize(const EngineInitParams& params)
     // Set light menu callbacks
     m_menu->SetLightColorCallback([this](float r, float g, float b) {
         m_pointLight->SetColor({ r, g, b });
+        if (m_lightManager && m_lightManager->GetActiveLightCount() > 0)
+            m_lightManager->GetLightMutable(0).color = { r, g, b };
     });
     m_menu->SetLightToggleInfoCallback([this]() {
         m_showLightInfo = !m_showLightInfo;
     });
     m_menu->SetLightResetCallback([this]() {
         m_pointLight->Reset();
+        if (m_lightManager && m_lightManager->GetActiveLightCount() > 0)
+        {
+            Light& light = m_lightManager->GetLightMutable(0);
+            light.position = m_pointLight->GetPosition();
+            light.color = m_pointLight->GetColor();
+        }
     });
 
     // Create camera
@@ -213,6 +237,7 @@ void Engine::Shutdown()
     m_lightSphereIB.reset();
     m_lightSphereMesh.reset();
     m_pointLight.reset();
+    m_lightManager.reset();
     m_camera.reset();
     m_menu.reset();
     m_rhiDevice.reset();
@@ -250,6 +275,8 @@ void Engine::Update(float deltaTime)
         if (GetAsyncKeyState(VK_NEXT) & 0x8000)   pos.y -= speed;  // PgDn
 
         m_pointLight->SetPosition(pos);
+        if (m_lightManager && m_lightManager->GetActiveLightCount() > 0)
+            m_lightManager->GetLightMutable(0).position = pos;
     }
 
     // Move camera with WASD+QE, adjust FOV with +/-
@@ -313,7 +340,8 @@ void Engine::Render()
     context->Clear(cobaltBlue);
 
     // Render all scene objects via SceneGraph traversal
-    m_renderer->RenderScene(*m_sceneGraph, *m_camera, m_pointLight.get(), aspectRatio);
+    m_renderer->RenderScene(*m_sceneGraph, *m_camera, m_pointLight.get(), aspectRatio,
+        m_lightManager.get());
 
     // Render light indicator sphere (unlit, only when light info visible)
     m_renderer->RenderLightIndicator(m_pointLight.get(), m_showLightInfo,

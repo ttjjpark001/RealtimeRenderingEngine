@@ -15,6 +15,7 @@ class Mesh;
 class SceneGraph;
 class Camera;
 class PointLight;
+class LightManager;
 class TextureCache;
 
 class Renderer
@@ -31,7 +32,7 @@ public:
 
     // Render entire scene graph
     void RenderScene(SceneGraph& graph, Camera& camera, PointLight* light,
-        float aspectRatio);
+        float aspectRatio, LightManager* lightManager = nullptr);
 
     // Render light indicator sphere (unlit)
     void RenderLightIndicator(PointLight* light, bool show,

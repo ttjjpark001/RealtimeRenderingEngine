@@ -7,6 +7,7 @@
 #include "Scene/SceneNode.h"
 #include "Scene/Camera.h"
 #include "Lighting/PointLight.h"
+#include "Lighting/LightManager.h"
 #include "Asset/Material.h"
 #include "Asset/TextureCache.h"
 #include <DirectXMath.h>
@@ -51,7 +52,7 @@ void Renderer::ClearMeshCache()
 }
 
 void Renderer::RenderScene(SceneGraph& graph, Camera& camera, PointLight* light,
-    float aspectRatio)
+    float aspectRatio, LightManager* lightManager)
 {
     if (!m_context)
         return;
@@ -75,13 +76,21 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera, PointLight* light,
             light->GetConstantAttenuation(),
             light->GetLinearAttenuation(),
             light->GetQuadraticAttenuation());
+    }
 
-        // Set PBR light data
+    // Set PBR light data from LightManager (or fallback to PointLight)
+    if (lightManager && lightManager->GetActiveLightCount() > 0)
+    {
+        m_context->SetPBRLightData(lightManager->BuildLightConstants());
+    }
+    else if (light)
+    {
         LightConstants pbrLights = {};
         pbrLights.numActiveLights = 1;
         pbrLights.lights[0].position = light->GetPosition();
         pbrLights.lights[0].color = light->GetColor();
         pbrLights.lights[0].intensity = 1.0f;
+        pbrLights.lights[0].type = 1; // Point
         pbrLights.lights[0].Kc = light->GetConstantAttenuation();
         pbrLights.lights[0].Kl = light->GetLinearAttenuation();
         pbrLights.lights[0].Kq = light->GetQuadraticAttenuation();

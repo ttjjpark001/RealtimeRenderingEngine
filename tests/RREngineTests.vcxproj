@@ -124,6 +124,7 @@
     <ClCompile Include="$(SolutionDir)src\Scene\SceneNode.cpp" />
     <ClCompile Include="$(SolutionDir)src\Scene\SceneGraph.cpp" />
     <ClCompile Include="$(SolutionDir)src\Scene\Camera.cpp" />
+    <ClCompile Include="$(SolutionDir)src\Lighting\LightManager.cpp" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

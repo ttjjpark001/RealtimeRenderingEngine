@@ -1,7 +1,7 @@
 // PBR.hlsl - Cook-Torrance BRDF with multi-light support and Normal Mapping
 
 static const float PI = 3.14159265359f;
-static const uint MAX_LIGHTS = 8;
+static const uint MAX_LIGHTS = 16;
 
 // ---------------------------------------------------------------------------
 // Constant Buffers
@@ -23,7 +23,11 @@ struct LightData
     float Kc;
     float Kl;
     float Kq;
-    float _pad1;
+    uint type;            // 0=Directional, 1=Point, 2=Spot
+    float3 direction;
+    float innerConeAngle;
+    float outerConeAngle;
+    float _pad1[3];
 };
 
 cbuffer LightsCB : register(b1)
@@ -204,16 +208,34 @@ float4 PSMain(PSInput input) : SV_TARGET
 
     for (uint i = 0; i < numActiveLights; i++)
     {
-        float3 lightPos = lights[i].position;
         float3 lightColor = lights[i].color * lights[i].intensity;
 
-        float3 L = normalize(lightPos - input.worldPos);
+        float3 L;
+        float attenuation;
+
+        if (lights[i].type == 0)
+        {
+            // Directional: no attenuation, L = -direction
+            L = normalize(-lights[i].direction);
+            attenuation = 1.0f;
+        }
+        else
+        {
+            // Point or Spot: distance-based attenuation
+            float3 lightPos = lights[i].position;
+            L = normalize(lightPos - input.worldPos);
+            float d = length(lightPos - input.worldPos);
+            attenuation = 1.0f / (lights[i].Kc + lights[i].Kl * d + lights[i].Kq * d * d);
+
+            if (lights[i].type == 2)
+            {
+                // Spot: additional cone attenuation
+                float theta = dot(-L, normalize(lights[i].direction));
+                attenuation *= smoothstep(lights[i].outerConeAngle, lights[i].innerConeAngle, theta);
+            }
+        }
+
         float3 H = normalize(V + L);
-
-        // Distance attenuation
-        float d = length(lightPos - input.worldPos);
-        float attenuation = 1.0f / (lights[i].Kc + lights[i].Kl * d + lights[i].Kq * d * d);
-
         float NdotL = max(dot(N, L), 0.0f);
 
         // Cook-Torrance BRDF

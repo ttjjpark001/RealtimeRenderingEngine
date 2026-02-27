@@ -48,7 +48,7 @@ struct PerObjectPBR
 };  // Total: 144 bytes → 256 aligned
 static_assert(sizeof(PerObjectPBR) <= 256, "PerObjectPBR exceeds 256-byte CB slot");
 
-// Light data for PBR (matches HLSL LightData struct)
+// Light data for PBR (matches HLSL LightData struct exactly)
 struct GPULightData
 {
     DirectX::XMFLOAT3 position;  // 12
@@ -58,18 +58,22 @@ struct GPULightData
     float Kc;                     // 4
     float Kl;                     // 4
     float Kq;                     // 4
-    float _pad1;                  // 4
-};  // 48 bytes per light
+    uint32 type;                  // 4  (0=Directional, 1=Point, 2=Spot)
+    DirectX::XMFLOAT3 direction; // 12
+    float innerConeAngle;         // 4
+    float outerConeAngle;         // 4
+    float _pad1[3];               // 12
+};  // 80 bytes per light
 
 // Lights constant buffer (b1)
-static constexpr uint32 MAX_PBR_LIGHTS = 8;
+static constexpr uint32 MAX_PBR_LIGHTS = 16;
 struct LightConstants
 {
-    GPULightData lights[MAX_PBR_LIGHTS]; // 48 * 8 = 384
+    GPULightData lights[MAX_PBR_LIGHTS]; // 80 * 16 = 1280
     uint32 numActiveLights;              // 4
     float _pad[3];                        // 12
-};  // Total: 400 bytes → 512 aligned
-static_assert(sizeof(LightConstants) <= 512, "LightConstants exceeds 512-byte CB slot");
+};  // Total: 1296 bytes → 1536 aligned (256 * 6)
+static_assert(sizeof(LightConstants) <= 1536, "LightConstants exceeds 1536-byte CB slot");
 
 // Per-material constants (b2)
 struct PerMaterialConstants
