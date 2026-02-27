@@ -8,6 +8,7 @@ namespace RRE
 {
 
 struct LightConstants;
+struct ShadowConstants;
 
 class LightManager
 {
@@ -24,12 +25,17 @@ public:
     size_t GetActiveLightCount() const { return m_lights.size(); }
 
     // Build GPU-ready LightConstants (capped at MAX_PBR_LIGHTS)
+    // Also assigns shadowMapIndex for castShadow lights
     LightConstants BuildLightConstants() const;
 
-    void Clear() { m_lights.clear(); }
+    // Get count of shadow-casting lights (after BuildLightConstants)
+    uint32 GetShadowCasterCount() const { return m_shadowCasterCount; }
+
+    void Clear() { m_lights.clear(); m_shadowCasterCount = 0; }
 
 private:
     std::vector<Light> m_lights;
+    mutable uint32 m_shadowCasterCount = 0;
 };
 
 } // namespace RRE

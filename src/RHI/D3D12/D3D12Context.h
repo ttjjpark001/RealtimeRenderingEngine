@@ -62,7 +62,8 @@ struct GPULightData
     DirectX::XMFLOAT3 direction; // 12
     float innerConeAngle;         // 4
     float outerConeAngle;         // 4
-    float _pad1[3];               // 12
+    int32 shadowMapIndex;         // 4  (-1 = no shadow, 0~7 = shadow map index)
+    float _pad1[2];               // 8
 };  // 80 bytes per light
 
 // Lights constant buffer (b1)
@@ -91,6 +92,27 @@ struct PerMaterialConstants
     float _padMat;                        // 4
 };  // Total: 64 bytes → 256 aligned
 static_assert(sizeof(PerMaterialConstants) <= 256, "PerMaterialConstants exceeds 256-byte CB slot");
+
+// Shadow mapping constants
+static constexpr uint32 MAX_SHADOW_MAPS = 8;
+static constexpr uint32 SHADOW_MAP_SIZE = 1024;
+
+// Shadow constant buffer (b3)
+struct ShadowConstants
+{
+    DirectX::XMFLOAT4X4 lightViewProj[MAX_SHADOW_MAPS]; // 64 * 8 = 512
+    uint32 shadowMapCount;                                // 4
+    float _pad[3];                                         // 12
+};  // Total: 528 bytes → 768 aligned (256 * 3)
+static_assert(sizeof(ShadowConstants) <= 768, "ShadowConstants exceeds 768-byte CB slot");
+
+// Shadow depth pass per-object CB (b0)
+struct ShadowPassConstants
+{
+    DirectX::XMFLOAT4X4 lightViewProj;   // 64
+    DirectX::XMFLOAT4X4 world;           // 64
+};  // Total: 128 bytes → 256 aligned
+static_assert(sizeof(ShadowPassConstants) <= 256, "ShadowPassConstants exceeds 256-byte CB slot");
 
 class Material;
 class TextureCache;
@@ -147,10 +169,21 @@ public:
     // Set PBR light data for current frame
     void SetPBRLightData(const LightConstants& lights) { m_pbrLightConstants = lights; }
 
-    // PBR draw call: binds 3 CBs (PerObject, Lights, Material) + 5 texture SRVs
+    // Set shadow data for current frame
+    void SetShadowData(const ShadowConstants& data) { m_shadowConstants = data; }
+
+    // PBR draw call: binds 3 CBs (PerObject, Lights, Material) + 5 texture SRVs + shadow data
     void DrawPrimitivesPBR(IRHIBuffer* vb, IRHIBuffer* ib,
         const DirectX::XMFLOAT4X4& worldMatrix,
         Material* material, TextureCache* textureCache);
+
+    // Shadow mapping methods
+    void CreateShadowMaps();
+    void BeginShadowPass(uint32 shadowIndex);
+    void EndShadowPass(uint32 shadowIndex);
+    void DrawShadowDepth(IRHIBuffer* vb, IRHIBuffer* ib,
+        const DirectX::XMFLOAT4X4& worldMatrix,
+        const DirectX::XMFLOAT4X4& lightViewProj);
 
     // IRHIContext interface
     void BeginFrame() override;
@@ -193,6 +226,13 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> m_depthBuffer;
     D3D12DescriptorHeap m_dsvHeap;
 
+    // Shadow map resources
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_shadowMaps[MAX_SHADOW_MAPS];
+    D3D12DescriptorHeap m_shadowDsvHeap;
+    D3D12_CPU_DESCRIPTOR_HANDLE m_shadowSrvCpu[MAX_SHADOW_MAPS] = {};
+    D3D12_GPU_DESCRIPTOR_HANDLE m_shadowSrvGpu[MAX_SHADOW_MAPS] = {};
+    bool m_shadowMapsCreated = false;
+
     // Constant buffer pool (replaces fixed 16-slot CB)
     D3D12CBPool m_cbPool;
 
@@ -223,6 +263,9 @@ private:
 
     // PBR lighting data (set via SetPBRLightData)
     LightConstants m_pbrLightConstants = {};
+
+    // Shadow data (set via SetShadowData)
+    ShadowConstants m_shadowConstants = {};
 
     // D3D11On12 / D2D / DirectWrite
     Microsoft::WRL::ComPtr<ID3D11On12Device> m_d3d11On12Device;

@@ -25,6 +25,7 @@ LightConstants LightManager::BuildLightConstants() const
         (std::min)(m_lights.size(), static_cast<size_t>(MAX_PBR_LIGHTS)));
     constants.numActiveLights = count;
 
+    uint32 shadowIdx = 0;
     for (uint32 i = 0; i < count; i++)
     {
         const Light& src = m_lights[i];
@@ -40,8 +41,20 @@ LightConstants LightManager::BuildLightConstants() const
         dst.direction = src.direction;
         dst.innerConeAngle = src.innerConeAngle;
         dst.outerConeAngle = src.outerConeAngle;
+
+        // Assign shadow map index for castShadow lights (max 8)
+        if (src.castShadow && shadowIdx < MAX_SHADOW_MAPS)
+        {
+            dst.shadowMapIndex = static_cast<int32>(shadowIdx);
+            shadowIdx++;
+        }
+        else
+        {
+            dst.shadowMapIndex = -1;
+        }
     }
 
+    m_shadowCasterCount = shadowIdx;
     return constants;
 }
 

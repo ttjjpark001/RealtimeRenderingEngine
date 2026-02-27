@@ -19,11 +19,17 @@ bool D3D12PipelineState::Initialize(ID3D12Device* device)
     if (LoadPBRShaders())
         CreatePBRPipelineState(device);
 
+    // Shadow Depth PSO is optional
+    if (LoadShadowDepthShaders())
+        CreateShadowDepthPipelineState(device);
+
     return true;
 }
 
 void D3D12PipelineState::Shutdown()
 {
+    m_shadowDepthPipelineState.Reset();
+    m_shadowDepthVertexShader.Reset();
     m_pbrPipelineState.Reset();
     m_pbrVertexShader.Reset();
     m_pbrPixelShader.Reset();
@@ -67,7 +73,23 @@ bool D3D12PipelineState::CreateRootSignature(ID3D12Device* device)
     cbvRange2.RegisterSpace = 0;
     cbvRange2.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    D3D12_ROOT_PARAMETER rootParams[4] = {};
+    // Root Parameter 4: SRV descriptor table at register t5~t12 (Shadow Maps)
+    D3D12_DESCRIPTOR_RANGE shadowSrvRange = {};
+    shadowSrvRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    shadowSrvRange.NumDescriptors = 8;
+    shadowSrvRange.BaseShaderRegister = 5;  // t5~t12
+    shadowSrvRange.RegisterSpace = 0;
+    shadowSrvRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    // Root Parameter 5: CBV descriptor table at register b3 (ShadowCB)
+    D3D12_DESCRIPTOR_RANGE cbvRange3 = {};
+    cbvRange3.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+    cbvRange3.NumDescriptors = 1;
+    cbvRange3.BaseShaderRegister = 3;
+    cbvRange3.RegisterSpace = 0;
+    cbvRange3.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_ROOT_PARAMETER rootParams[6] = {};
 
     // Param 0: CBV table (b0)
     rootParams[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -93,26 +115,54 @@ bool D3D12PipelineState::CreateRootSignature(ID3D12Device* device)
     rootParams[3].DescriptorTable.pDescriptorRanges = &cbvRange2;
     rootParams[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
-    // Static sampler s0: Anisotropic Wrap
-    D3D12_STATIC_SAMPLER_DESC sampler = {};
-    sampler.Filter = D3D12_FILTER_ANISOTROPIC;
-    sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-    sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-    sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-    sampler.MaxAnisotropy = 16;
-    sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
-    sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK;
-    sampler.MinLOD = 0.0f;
-    sampler.MaxLOD = D3D12_FLOAT32_MAX;
-    sampler.ShaderRegister = 0;  // s0
-    sampler.RegisterSpace = 0;
-    sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    // Param 4: SRV table (t5~t12, Shadow Maps)
+    rootParams[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParams[4].DescriptorTable.NumDescriptorRanges = 1;
+    rootParams[4].DescriptorTable.pDescriptorRanges = &shadowSrvRange;
+    rootParams[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    // Param 5: CBV table (b3, ShadowCB)
+    rootParams[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParams[5].DescriptorTable.NumDescriptorRanges = 1;
+    rootParams[5].DescriptorTable.pDescriptorRanges = &cbvRange3;
+    rootParams[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    // Static samplers
+    D3D12_STATIC_SAMPLER_DESC samplers[2] = {};
+
+    // s0: Anisotropic Wrap (material textures)
+    samplers[0].Filter = D3D12_FILTER_ANISOTROPIC;
+    samplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    samplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    samplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    samplers[0].MaxAnisotropy = 16;
+    samplers[0].ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+    samplers[0].BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK;
+    samplers[0].MinLOD = 0.0f;
+    samplers[0].MaxLOD = D3D12_FLOAT32_MAX;
+    samplers[0].ShaderRegister = 0;  // s0
+    samplers[0].RegisterSpace = 0;
+    samplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    // s1: Comparison sampler for shadow mapping (PCF)
+    samplers[1].Filter = D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
+    samplers[1].AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    samplers[1].AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    samplers[1].AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    samplers[1].MaxAnisotropy = 1;
+    samplers[1].ComparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+    samplers[1].BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
+    samplers[1].MinLOD = 0.0f;
+    samplers[1].MaxLOD = D3D12_FLOAT32_MAX;
+    samplers[1].ShaderRegister = 1;  // s1
+    samplers[1].RegisterSpace = 0;
+    samplers[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_ROOT_SIGNATURE_DESC rsDesc = {};
-    rsDesc.NumParameters = 4;
+    rsDesc.NumParameters = 6;
     rsDesc.pParameters = rootParams;
-    rsDesc.NumStaticSamplers = 1;
-    rsDesc.pStaticSamplers = &sampler;
+    rsDesc.NumStaticSamplers = 2;
+    rsDesc.pStaticSamplers = samplers;
     rsDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
     Microsoft::WRL::ComPtr<ID3DBlob> serialized;
@@ -245,6 +295,61 @@ bool D3D12PipelineState::CreatePBRPipelineState(ID3D12Device* device)
     psoDesc.SampleDesc.Count = 1;
 
     HRESULT hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pbrPipelineState));
+    return SUCCEEDED(hr);
+}
+
+bool D3D12PipelineState::LoadShadowDepthShaders()
+{
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    std::wstring exeDir(exePath);
+    exeDir = exeDir.substr(0, exeDir.find_last_of(L"\\") + 1);
+
+    std::wstring vsPath = exeDir + L"Shaders\\ShadowDepth_VS.cso";
+
+    HRESULT hr = D3DReadFileToBlob(vsPath.c_str(), &m_shadowDepthVertexShader);
+    if (FAILED(hr))
+        return false;
+
+    return true;
+}
+
+bool D3D12PipelineState::CreateShadowDepthPipelineState(ID3D12Device* device)
+{
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+    psoDesc.pRootSignature = m_rootSignature.Get();
+
+    psoDesc.VS.pShaderBytecode = m_shadowDepthVertexShader->GetBufferPointer();
+    psoDesc.VS.BytecodeLength = m_shadowDepthVertexShader->GetBufferSize();
+    // No PS — depth-only rendering
+
+    psoDesc.InputLayout.pInputElementDescs = VERTEX_INPUT_LAYOUT;
+    psoDesc.InputLayout.NumElements = VERTEX_INPUT_LAYOUT_COUNT;
+
+    // Rasterizer state with depth bias for shadow acne prevention
+    psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+    psoDesc.RasterizerState.FrontCounterClockwise = FALSE;
+    psoDesc.RasterizerState.DepthClipEnable = TRUE;
+    psoDesc.RasterizerState.DepthBias = 1000;
+    psoDesc.RasterizerState.DepthBiasClamp = 0.0f;
+    psoDesc.RasterizerState.SlopeScaledDepthBias = 1.0f;
+
+    // No blend state needed (no render targets)
+
+    // Depth stencil
+    psoDesc.DepthStencilState.DepthEnable = TRUE;
+    psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+    psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+    psoDesc.DepthStencilState.StencilEnable = FALSE;
+    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+
+    psoDesc.SampleMask = UINT_MAX;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.NumRenderTargets = 0;  // Depth-only, no color output
+    psoDesc.SampleDesc.Count = 1;
+
+    HRESULT hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_shadowDepthPipelineState));
     return SUCCEEDED(hr);
 }
 

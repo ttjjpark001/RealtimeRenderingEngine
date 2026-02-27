@@ -181,6 +181,15 @@
       <Outputs>$(OutDir)Shaders\PBR_VS.cso;$(OutDir)Shaders\PBR_PS.cso</Outputs>
       <Message>Compiling PBR HLSL shaders (VS + PS)...</Message>
     </CustomBuild>
+    <CustomBuild Include="Shaders\ShadowDepth.hlsl">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">if not exist "$(OutDir)Shaders" mkdir "$(OutDir)Shaders"
+"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T vs_5_1 /E VSMain /Zi /Od /Fo "$(OutDir)Shaders\ShadowDepth_VS.cso" "%(FullPath)"</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">if not exist "$(OutDir)Shaders" mkdir "$(OutDir)Shaders"
+"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T vs_5_1 /E VSMain /O2 /Fo "$(OutDir)Shaders\ShadowDepth_VS.cso" "%(FullPath)"</Command>
+      <Outputs>$(OutDir)Shaders\ShadowDepth_VS.cso</Outputs>
+      <Message>Compiling ShadowDepth HLSL shader (VS only)...</Message>
+    </CustomBuild>
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

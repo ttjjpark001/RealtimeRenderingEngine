@@ -283,6 +283,11 @@ void D3D12Context::Shutdown()
     m_pipelineState.Shutdown();
     m_depthBuffer.Reset();
 
+    // Release shadow map resources
+    for (uint32 i = 0; i < MAX_SHADOW_MAPS; i++)
+        m_shadowMaps[i].Reset();
+    m_shadowMapsCreated = false;
+
     if (m_fenceEvent)
     {
         CloseHandle(m_fenceEvent);
@@ -599,6 +604,53 @@ void D3D12Context::DrawPrimitivesPBR(IRHIBuffer* vb, IRHIBuffer* ib,
         }
     }
 
+    // --- CB3: ShadowConstants ---
+    CBAllocation cb3Alloc = m_cbPool.Allocate(sizeof(ShadowConstants));
+    if (!cb3Alloc.cpuPtr) return;
+
+    memcpy(cb3Alloc.cpuPtr, &m_shadowConstants, sizeof(ShadowConstants));
+
+    // CBV for b3
+    D3D12_CPU_DESCRIPTOR_HANDLE cbv3Cpu = m_cbvSrvHeap.AllocateTransient();
+    D3D12_GPU_DESCRIPTOR_HANDLE cbv3Gpu = m_cbvSrvHeap.GetGPUHandleForCPU(cbv3Cpu);
+    {
+        D3D12_CONSTANT_BUFFER_VIEW_DESC desc = {};
+        desc.BufferLocation = cb3Alloc.gpuAddress;
+        desc.SizeInBytes = (sizeof(ShadowConstants) + 255) & ~255;
+        m_device->CreateConstantBufferView(&desc, cbv3Cpu);
+    }
+
+    // --- Copy 8 shadow map SRVs into contiguous transient descriptors ---
+    D3D12_CPU_DESCRIPTOR_HANDLE shadowSrvBlockCpu = m_cbvSrvHeap.AllocateTransient();
+    D3D12_GPU_DESCRIPTOR_HANDLE shadowSrvBlockGpu = m_cbvSrvHeap.GetGPUHandleForCPU(shadowSrvBlockCpu);
+
+    // Allocate remaining 7 contiguous descriptors
+    for (int i = 1; i < 8; i++)
+        m_cbvSrvHeap.AllocateTransient();
+
+    // Copy shadow map SRVs (or null SRVs for unused slots)
+    for (uint32 i = 0; i < MAX_SHADOW_MAPS; i++)
+    {
+        D3D12_CPU_DESCRIPTOR_HANDLE dstCpu = shadowSrvBlockCpu;
+        dstCpu.ptr += static_cast<SIZE_T>(i) * m_cbvDescriptorSize;
+
+        if (m_shadowMapsCreated && m_shadowSrvCpu[i].ptr != 0)
+        {
+            m_device->CopyDescriptorsSimple(1, dstCpu, m_shadowSrvCpu[i],
+                D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        }
+        else
+        {
+            // Create a null SRV for unused shadow map slot
+            D3D12_SHADER_RESOURCE_VIEW_DESC nullSrvDesc = {};
+            nullSrvDesc.Format = DXGI_FORMAT_R32_FLOAT;
+            nullSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+            nullSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            nullSrvDesc.Texture2D.MipLevels = 1;
+            m_device->CreateShaderResourceView(nullptr, &nullSrvDesc, dstCpu);
+        }
+    }
+
     // --- Set PSO and root signature ---
     m_commandList->SetPipelineState(m_pipelineState.GetPBRPSO());
     m_commandList->SetGraphicsRootSignature(m_pipelineState.GetRootSignature());
@@ -612,9 +664,177 @@ void D3D12Context::DrawPrimitivesPBR(IRHIBuffer* vb, IRHIBuffer* ib,
     m_commandList->SetGraphicsRootDescriptorTable(1, srvBlockGpu);  // t0~t4: textures
     m_commandList->SetGraphicsRootDescriptorTable(2, cbv1Gpu);  // b1: Lights
     m_commandList->SetGraphicsRootDescriptorTable(3, cbv2Gpu);  // b2: Material
+    m_commandList->SetGraphicsRootDescriptorTable(4, shadowSrvBlockGpu);  // t5~t12: shadow maps
+    m_commandList->SetGraphicsRootDescriptorTable(5, cbv3Gpu);  // b3: ShadowConstants
 
     // Set primitive topology
     m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    // Set vertex and index buffers
+    D3D12_VERTEX_BUFFER_VIEW vbView = d3dVB->GetVertexBufferView();
+    m_commandList->IASetVertexBuffers(0, 1, &vbView);
+
+    D3D12_INDEX_BUFFER_VIEW ibView = d3dIB->GetIndexBufferView();
+    m_commandList->IASetIndexBuffer(&ibView);
+
+    // Draw
+    uint32 indexCount = d3dIB->GetSize() / sizeof(uint32);
+    m_commandList->DrawIndexedInstanced(indexCount, 1, 0, 0, 0);
+}
+
+void D3D12Context::CreateShadowMaps()
+{
+    if (m_shadowMapsCreated || !m_device)
+        return;
+
+    // Initialize shadow DSV heap (8 descriptors)
+    m_shadowDsvHeap.Initialize(m_device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, MAX_SHADOW_MAPS);
+
+    D3D12_HEAP_PROPERTIES heapProps = {};
+    heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
+
+    D3D12_RESOURCE_DESC texDesc = {};
+    texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    texDesc.Width = SHADOW_MAP_SIZE;
+    texDesc.Height = SHADOW_MAP_SIZE;
+    texDesc.DepthOrArraySize = 1;
+    texDesc.MipLevels = 1;
+    texDesc.Format = DXGI_FORMAT_R32_TYPELESS;
+    texDesc.SampleDesc.Count = 1;
+    texDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+    D3D12_CLEAR_VALUE clearValue = {};
+    clearValue.Format = DXGI_FORMAT_D32_FLOAT;
+    clearValue.DepthStencil.Depth = 1.0f;
+
+    for (uint32 i = 0; i < MAX_SHADOW_MAPS; i++)
+    {
+        HRESULT hr = m_device->CreateCommittedResource(
+            &heapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &texDesc,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            &clearValue,
+            IID_PPV_ARGS(&m_shadowMaps[i]));
+        if (FAILED(hr))
+            return;
+
+        // Create DSV
+        D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
+        dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
+        dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+        D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = m_shadowDsvHeap.Allocate();
+        m_device->CreateDepthStencilView(m_shadowMaps[i].Get(), &dsvDesc, dsvHandle);
+
+        // Create SRV in persistent region of cbvSrvHeap
+        m_shadowSrvCpu[i] = m_cbvSrvHeap.Allocate();
+        m_shadowSrvGpu[i] = m_cbvSrvHeap.GetGPUHandleForCPU(m_shadowSrvCpu[i]);
+
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+        srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.Texture2D.MipLevels = 1;
+        m_device->CreateShaderResourceView(m_shadowMaps[i].Get(), &srvDesc, m_shadowSrvCpu[i]);
+    }
+
+    m_shadowMapsCreated = true;
+}
+
+void D3D12Context::BeginShadowPass(uint32 shadowIndex)
+{
+    if (shadowIndex >= MAX_SHADOW_MAPS || !m_shadowMapsCreated || !m_pipelineState.HasShadowDepthPSO())
+        return;
+
+    // Transition shadow map: PIXEL_SHADER_RESOURCE → DEPTH_WRITE
+    D3D12_RESOURCE_BARRIER barrier = {};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = m_shadowMaps[shadowIndex].Get();
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    m_commandList->ResourceBarrier(1, &barrier);
+
+    // Get DSV handle for this shadow map
+    D3D12_CPU_DESCRIPTOR_HANDLE dsv = m_shadowDsvHeap.GetCPUStart();
+    dsv.ptr += static_cast<SIZE_T>(shadowIndex) *
+        m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+
+    // Clear depth
+    m_commandList->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+
+    // Set render target: depth-only (no RTV)
+    m_commandList->OMSetRenderTargets(0, nullptr, FALSE, &dsv);
+
+    // Set viewport and scissor for shadow map
+    D3D12_VIEWPORT viewport = {};
+    viewport.Width = static_cast<float>(SHADOW_MAP_SIZE);
+    viewport.Height = static_cast<float>(SHADOW_MAP_SIZE);
+    viewport.MinDepth = 0.0f;
+    viewport.MaxDepth = 1.0f;
+    m_commandList->RSSetViewports(1, &viewport);
+
+    D3D12_RECT scissor = {};
+    scissor.right = SHADOW_MAP_SIZE;
+    scissor.bottom = SHADOW_MAP_SIZE;
+    m_commandList->RSSetScissorRects(1, &scissor);
+
+    // Set Shadow Depth PSO and root signature
+    m_commandList->SetPipelineState(m_pipelineState.GetShadowDepthPSO());
+    m_commandList->SetGraphicsRootSignature(m_pipelineState.GetRootSignature());
+
+    // Set descriptor heap (needed for root signature)
+    ID3D12DescriptorHeap* heaps[] = { m_cbvSrvHeap.GetHeap() };
+    m_commandList->SetDescriptorHeaps(1, heaps);
+
+    m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+}
+
+void D3D12Context::EndShadowPass(uint32 shadowIndex)
+{
+    if (shadowIndex >= MAX_SHADOW_MAPS || !m_shadowMapsCreated)
+        return;
+
+    // Transition shadow map: DEPTH_WRITE → PIXEL_SHADER_RESOURCE
+    D3D12_RESOURCE_BARRIER barrier = {};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = m_shadowMaps[shadowIndex].Get();
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    m_commandList->ResourceBarrier(1, &barrier);
+}
+
+void D3D12Context::DrawShadowDepth(IRHIBuffer* vb, IRHIBuffer* ib,
+    const DirectX::XMFLOAT4X4& worldMatrix,
+    const DirectX::XMFLOAT4X4& lightViewProj)
+{
+    if (!vb || !ib || !m_pipelineState.HasShadowDepthPSO())
+        return;
+
+    auto* d3dVB = static_cast<D3D12Buffer*>(vb);
+    auto* d3dIB = static_cast<D3D12Buffer*>(ib);
+
+    // Allocate CB for ShadowPassConstants (b0)
+    CBAllocation cbAlloc = m_cbPool.Allocate(sizeof(ShadowPassConstants));
+    if (!cbAlloc.cpuPtr) return;
+
+    ShadowPassConstants constants = {};
+    constants.lightViewProj = lightViewProj;
+    constants.world = worldMatrix;
+    memcpy(cbAlloc.cpuPtr, &constants, sizeof(ShadowPassConstants));
+
+    // Create transient CBV
+    D3D12_CPU_DESCRIPTOR_HANDLE cbvCpu = m_cbvSrvHeap.AllocateTransient();
+    D3D12_GPU_DESCRIPTOR_HANDLE cbvGpu = m_cbvSrvHeap.GetGPUHandleForCPU(cbvCpu);
+
+    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
+    cbvDesc.BufferLocation = cbAlloc.gpuAddress;
+    cbvDesc.SizeInBytes = (sizeof(ShadowPassConstants) + 255) & ~255;
+    m_device->CreateConstantBufferView(&cbvDesc, cbvCpu);
+
+    // Bind CB to root param 0 (b0)
+    m_commandList->SetGraphicsRootDescriptorTable(0, cbvGpu);
 
     // Set vertex and index buffers
     D3D12_VERTEX_BUFFER_VIEW vbView = d3dVB->GetVertexBufferView();

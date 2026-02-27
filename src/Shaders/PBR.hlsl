@@ -27,7 +27,8 @@ struct LightData
     float3 direction;
     float innerConeAngle;
     float outerConeAngle;
-    float _pad1[3];
+    int shadowMapIndex;   // -1 = no shadow, 0~7 = shadow map index
+    float _pad1[2];
 };
 
 cbuffer LightsCB : register(b1)
@@ -52,8 +53,17 @@ cbuffer PerMaterialCB : register(b2)
     float _padMat;
 };
 
+static const uint MAX_SHADOW_MAPS = 8;
+
+cbuffer ShadowCB : register(b3)
+{
+    float4x4 lightViewProj[MAX_SHADOW_MAPS];
+    uint shadowMapCount;
+    float3 _padShadow;
+};
+
 // ---------------------------------------------------------------------------
-// Textures & Sampler
+// Textures & Samplers
 // ---------------------------------------------------------------------------
 Texture2D AlbedoMap            : register(t0);
 Texture2D NormalMap            : register(t1);
@@ -61,7 +71,18 @@ Texture2D MetallicRoughnessMap : register(t2);
 Texture2D EmissiveMap          : register(t3);
 Texture2D OcclusionMap         : register(t4);
 
+// Shadow maps (t5~t12)
+Texture2D ShadowMap0 : register(t5);
+Texture2D ShadowMap1 : register(t6);
+Texture2D ShadowMap2 : register(t7);
+Texture2D ShadowMap3 : register(t8);
+Texture2D ShadowMap4 : register(t9);
+Texture2D ShadowMap5 : register(t10);
+Texture2D ShadowMap6 : register(t11);
+Texture2D ShadowMap7 : register(t12);
+
 SamplerState LinearSampler : register(s0);
+SamplerComparisonState ShadowSampler : register(s1);
 
 // ---------------------------------------------------------------------------
 // Vertex / Pixel structures
@@ -147,6 +168,57 @@ float GeometrySmith(float3 N, float3 V, float3 L, float roughness)
 float3 FresnelSchlick(float cosTheta, float3 F0)
 {
     return F0 + (1.0f - F0) * pow(saturate(1.0f - cosTheta), 5.0f);
+}
+
+// ---------------------------------------------------------------------------
+// Shadow Mapping (PCF 3x3)
+// ---------------------------------------------------------------------------
+float SampleShadowMap(uint idx, float2 uv, float depth)
+{
+    float result = 0.0f;
+    [branch] switch (idx)
+    {
+        case 0: result = ShadowMap0.SampleCmpLevelZero(ShadowSampler, uv, depth); break;
+        case 1: result = ShadowMap1.SampleCmpLevelZero(ShadowSampler, uv, depth); break;
+        case 2: result = ShadowMap2.SampleCmpLevelZero(ShadowSampler, uv, depth); break;
+        case 3: result = ShadowMap3.SampleCmpLevelZero(ShadowSampler, uv, depth); break;
+        case 4: result = ShadowMap4.SampleCmpLevelZero(ShadowSampler, uv, depth); break;
+        case 5: result = ShadowMap5.SampleCmpLevelZero(ShadowSampler, uv, depth); break;
+        case 6: result = ShadowMap6.SampleCmpLevelZero(ShadowSampler, uv, depth); break;
+        case 7: result = ShadowMap7.SampleCmpLevelZero(ShadowSampler, uv, depth); break;
+        default: result = 1.0f; break;
+    }
+    return result;
+}
+
+float CalcShadow(uint shadowIdx, float3 worldPos)
+{
+    float4 lightSpacePos = mul(float4(worldPos, 1.0f), lightViewProj[shadowIdx]);
+    float3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
+
+    // NDC to UV: x[-1,1]→[0,1], y[-1,1]→[1,0] (D3D UV flip)
+    float2 uv;
+    uv.x = projCoords.x * 0.5f + 0.5f;
+    uv.y = -projCoords.y * 0.5f + 0.5f;
+    float depth = projCoords.z;
+
+    // Out of shadow map range → no shadow
+    if (uv.x < 0.0f || uv.x > 1.0f || uv.y < 0.0f || uv.y > 1.0f || depth > 1.0f || depth < 0.0f)
+        return 1.0f;
+
+    // PCF 3x3
+    float shadow = 0.0f;
+    float texelSize = 1.0f / 1024.0f;
+    [unroll]
+    for (int y = -1; y <= 1; y++)
+    {
+        [unroll]
+        for (int x = -1; x <= 1; x++)
+        {
+            shadow += SampleShadowMap(shadowIdx, uv + float2(x, y) * texelSize, depth);
+        }
+    }
+    return shadow / 9.0f;
 }
 
 // ---------------------------------------------------------------------------
@@ -250,7 +322,14 @@ float4 PSMain(PSInput input) : SV_TARGET
         float3 kD = (1.0f - F) * (1.0f - metallic);
         float3 diffuse = kD * albedo / PI;
 
-        Lo += (diffuse + specular) * lightColor * attenuation * NdotL;
+        // Shadow factor
+        float shadowFactor = 1.0f;
+        if (lights[i].shadowMapIndex >= 0 && (uint)lights[i].shadowMapIndex < shadowMapCount)
+        {
+            shadowFactor = CalcShadow((uint)lights[i].shadowMapIndex, input.worldPos);
+        }
+
+        Lo += (diffuse + specular) * lightColor * attenuation * NdotL * shadowFactor;
     }
 
     // Ambient (simple constant)
