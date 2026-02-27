@@ -1,4 +1,5 @@
 #include "Asset/TextureCache.h"
+#include "RHI/D3D12/D3D12DescriptorHeap.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -6,10 +7,20 @@
 namespace RRE
 {
 
-bool TextureCache::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList)
+bool TextureCache::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList,
+                               D3D12DescriptorHeap* srvHeap)
 {
+    m_device = device;
+    m_srvHeap = srvHeap;
+
     m_fallbackTexture = Texture::CreateFallback(device, cmdList);
-    return m_fallbackTexture != nullptr;
+    if (!m_fallbackTexture)
+        return false;
+
+    // Create SRV for fallback texture
+    CreateSRV(device, m_fallbackTexture.get());
+
+    return true;
 }
 
 Texture* TextureCache::GetOrLoad(const std::string& path, bool isSRGB,
@@ -43,9 +54,31 @@ Texture* TextureCache::GetOrLoad(const std::string& path, bool isSRGB,
     if (!success)
         return m_fallbackTexture.get();
 
+    // Create SRV for the loaded texture
+    CreateSRV(device, texture.get());
+
     Texture* result = texture.get();
     m_cache[path] = std::move(texture);
     return result;
+}
+
+void TextureCache::CreateSRV(ID3D12Device* device, Texture* texture)
+{
+    if (!m_srvHeap || !device || !texture || !texture->GetResource())
+        return;
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.Format = texture->GetFormat();
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.Texture2D.MipLevels = 1;
+    srvDesc.Texture2D.MostDetailedMip = 0;
+
+    D3D12_CPU_DESCRIPTOR_HANDLE srvCpu = m_srvHeap->AllocatePersistent();
+    device->CreateShaderResourceView(texture->GetResource(), &srvDesc, srvCpu);
+
+    D3D12_GPU_DESCRIPTOR_HANDLE srvGpu = m_srvHeap->GetGPUHandleForCPU(srvCpu);
+    texture->SetSRVHandles(srvCpu, srvGpu);
 }
 
 void TextureCache::Clear()

@@ -110,6 +110,7 @@
     <ClCompile Include="RHI\D3D12\D3D12DescriptorHeap.cpp" />
     <ClCompile Include="RHI\D3D12\D3D12Buffer.cpp" />
     <ClCompile Include="RHI\D3D12\D3D12PipelineState.cpp" />
+    <ClCompile Include="RHI\D3D12\D3D12CBPool.cpp" />
     <ClCompile Include="Renderer\MeshFactory.cpp" />
     <ClCompile Include="Renderer\Renderer.cpp" />
     <ClCompile Include="Renderer\DebugHUD.cpp" />
@@ -135,6 +136,7 @@
     <ClInclude Include="RHI\D3D12\D3D12DescriptorHeap.h" />
     <ClInclude Include="RHI\D3D12\D3D12Buffer.h" />
     <ClInclude Include="RHI\D3D12\D3D12PipelineState.h" />
+    <ClInclude Include="RHI\D3D12\D3D12CBPool.h" />
     <ClInclude Include="Renderer\Vertex.h" />
     <ClInclude Include="Renderer\Mesh.h" />
     <ClInclude Include="Renderer\FaceColorPalette.h" />

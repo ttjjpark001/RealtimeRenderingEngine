@@ -11,6 +11,7 @@
 #include "RHI/RHIContext.h"
 #include "RHI/D3D12/D3D12PipelineState.h"
 #include "RHI/D3D12/D3D12DescriptorHeap.h"
+#include "RHI/D3D12/D3D12CBPool.h"
 
 namespace RRE
 {
@@ -99,11 +100,13 @@ public:
     ID3D12CommandQueue* GetCommandQueue() const { return m_commandQueue.Get(); }
     ID3D12GraphicsCommandList* GetCommandList() const { return m_commandList.Get(); }
 
+    // Descriptor heap access for texture SRV creation
+    D3D12DescriptorHeap& GetCBVSRVHeap() { return m_cbvSrvHeap; }
+
     void WaitForGPU();
     void CreateDepthBuffer(uint32 width, uint32 height);
 
 private:
-    bool CreateConstantBuffer();
     void FlushTextCommands();
 
     ID3D12Device* m_device = nullptr;
@@ -126,14 +129,19 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> m_depthBuffer;
     D3D12DescriptorHeap m_dsvHeap;
 
-    // Constant buffer (CBV) — supports multiple draw calls per frame
-    static constexpr uint32 MAX_DRAW_CALLS = 16;
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_constantBuffer;
-    D3D12DescriptorHeap m_cbvHeap;
-    uint8* m_cbData = nullptr;
-    uint32 m_drawCallIndex = 0;
-    UINT m_cbAlignedSize = 0;
+    // Constant buffer pool (replaces fixed 16-slot CB)
+    D3D12CBPool m_cbPool;
+
+    // Unified CBV+SRV descriptor heap (shader-visible)
+    // Persistent region: texture SRVs
+    // Transient region: per-frame CBVs
+    static constexpr uint32 PERSISTENT_DESCRIPTORS = 1024;
+    static constexpr uint32 TRANSIENT_DESCRIPTORS = 8192;
+    D3D12DescriptorHeap m_cbvSrvHeap;
     UINT m_cbvDescriptorSize = 0;
+
+    // Frame counter for double buffering
+    uint32 m_frameCounter = 0;
 
     // Current frame's view-projection matrix
     DirectX::XMFLOAT4X4 m_viewProjection;

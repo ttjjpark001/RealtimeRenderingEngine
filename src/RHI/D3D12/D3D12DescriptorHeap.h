@@ -16,8 +16,24 @@ public:
     bool Initialize(ID3D12Device* device, D3D12_DESCRIPTOR_HEAP_TYPE type,
         uint32 numDescriptors, bool shaderVisible = false);
 
+    // Initialize with persistent/transient split
+    // persistentCount descriptors at the front are persistent (texture SRVs etc.)
+    // Remaining descriptors are transient (per-frame CBVs)
+    bool Initialize(ID3D12Device* device, D3D12_DESCRIPTOR_HEAP_TYPE type,
+        uint32 persistentCount, uint32 transientCount, bool shaderVisible);
+
+    // Legacy: allocate from transient region (backwards compatible)
     D3D12_CPU_DESCRIPTOR_HANDLE Allocate();
     void Reset();
+
+    // Persistent allocation (survives across frames)
+    D3D12_CPU_DESCRIPTOR_HANDLE AllocatePersistent();
+    D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandleForCPU(D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle) const;
+
+    // Transient allocation (reset each frame)
+    D3D12_CPU_DESCRIPTOR_HANDLE AllocateTransient();
+    D3D12_GPU_DESCRIPTOR_HANDLE AllocateTransientGPU();
+    void ResetTransient();
 
     ID3D12DescriptorHeap* GetHeap() const { return m_heap.Get(); }
     D3D12_CPU_DESCRIPTOR_HANDLE GetCPUStart() const { return m_heap->GetCPUDescriptorHandleForHeapStart(); }
@@ -29,6 +45,13 @@ private:
     uint32 m_descriptorSize = 0;
     uint32 m_numDescriptors = 0;
     uint32 m_currentIndex = 0;
+
+    // Persistent/transient split
+    uint32 m_persistentCount = 0;
+    uint32 m_persistentIndex = 0;
+    uint32 m_transientStart = 0;
+    uint32 m_transientIndex = 0;
+    bool m_hasSplit = false;
 };
 
 } // namespace RRE

@@ -57,67 +57,19 @@ bool D3D12Context::Initialize(ID3D12Device* device)
     // Initialize DSV heap
     m_dsvHeap.Initialize(device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1);
 
-    // Initialize CBV heap and constant buffer
-    if (!CreateConstantBuffer())
+    // Initialize CBV+SRV descriptor heap (shader-visible, persistent + transient)
+    if (!m_cbvSrvHeap.Initialize(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+        PERSISTENT_DESCRIPTORS, TRANSIENT_DESCRIPTORS, true))
+        return false;
+
+    m_cbvDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+    // Initialize constant buffer pool (4MB, double-buffered)
+    if (!m_cbPool.Initialize(device))
         return false;
 
     // Initialize view-projection to identity
     DirectX::XMStoreFloat4x4(&m_viewProjection, DirectX::XMMatrixIdentity());
-
-    return true;
-}
-
-bool D3D12Context::CreateConstantBuffer()
-{
-    // Create CBV_SRV_UAV descriptor heap (shader-visible, one descriptor per draw call)
-    if (!m_cbvHeap.Initialize(m_device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, MAX_DRAW_CALLS, true))
-        return false;
-
-    // Constant buffer size must be 256-byte aligned (per slot)
-    m_cbAlignedSize = (sizeof(PerObjectConstants) + 255) & ~255;
-    UINT totalSize = m_cbAlignedSize * MAX_DRAW_CALLS;
-
-    // Create upload heap buffer
-    D3D12_HEAP_PROPERTIES heapProps = {};
-    heapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
-
-    D3D12_RESOURCE_DESC bufferDesc = {};
-    bufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-    bufferDesc.Width = totalSize;
-    bufferDesc.Height = 1;
-    bufferDesc.DepthOrArraySize = 1;
-    bufferDesc.MipLevels = 1;
-    bufferDesc.SampleDesc.Count = 1;
-    bufferDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-
-    HRESULT hr = m_device->CreateCommittedResource(
-        &heapProps,
-        D3D12_HEAP_FLAG_NONE,
-        &bufferDesc,
-        D3D12_RESOURCE_STATE_GENERIC_READ,
-        nullptr,
-        IID_PPV_ARGS(&m_constantBuffer));
-    if (FAILED(hr))
-        return false;
-
-    // Create one CBV descriptor per draw call slot
-    D3D12_GPU_VIRTUAL_ADDRESS gpuBase = m_constantBuffer->GetGPUVirtualAddress();
-    for (uint32 i = 0; i < MAX_DRAW_CALLS; ++i)
-    {
-        D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
-        cbvDesc.BufferLocation = gpuBase + i * m_cbAlignedSize;
-        cbvDesc.SizeInBytes = m_cbAlignedSize;
-        D3D12_CPU_DESCRIPTOR_HANDLE cbvHandle = m_cbvHeap.Allocate();
-        m_device->CreateConstantBufferView(&cbvDesc, cbvHandle);
-    }
-
-    // Cache CBV descriptor increment size for DrawPrimitives
-    m_cbvDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
-    // Keep the buffer persistently mapped
-    hr = m_constantBuffer->Map(0, nullptr, reinterpret_cast<void**>(&m_cbData));
-    if (FAILED(hr))
-        return false;
 
     return true;
 }
@@ -325,15 +277,8 @@ void D3D12Context::Shutdown()
 
     ShutdownD2D();
 
-    // Unmap constant buffer
-    if (m_constantBuffer && m_cbData)
-    {
-        m_constantBuffer->Unmap(0, nullptr);
-        m_cbData = nullptr;
-    }
-
+    m_cbPool.Shutdown();
     m_pipelineState.Shutdown();
-    m_constantBuffer.Reset();
     m_depthBuffer.Reset();
 
     if (m_fenceEvent)
@@ -352,7 +297,10 @@ void D3D12Context::BeginFrame()
 {
     m_commandAllocator->Reset();
     m_commandList->Reset(m_commandAllocator.Get(), nullptr);
-    m_drawCallIndex = 0;
+
+    // Reset CBPool for this frame and transient descriptors
+    m_cbPool.ResetFrame(m_frameCounter);
+    m_cbvSrvHeap.ResetTransient();
 }
 
 void D3D12Context::EndFrame()
@@ -397,6 +345,8 @@ void D3D12Context::EndFrame()
 
     // Wait for GPU
     WaitForGPU();
+
+    m_frameCounter++;
 }
 
 void D3D12Context::Clear(const DirectX::XMFLOAT4& color)
@@ -453,13 +403,18 @@ void D3D12Context::Clear(const DirectX::XMFLOAT4& color)
 void D3D12Context::DrawPrimitives(IRHIBuffer* vb, IRHIBuffer* ib,
     const DirectX::XMFLOAT4X4& worldMatrix)
 {
-    if (!m_hasPSO || !vb || !ib || !m_cbData || m_drawCallIndex >= MAX_DRAW_CALLS)
+    if (!m_hasPSO || !vb || !ib)
         return;
 
     auto* d3dVB = static_cast<D3D12Buffer*>(vb);
     auto* d3dIB = static_cast<D3D12Buffer*>(ib);
 
-    // Write constant buffer to the current slot (zero-init pads all padding fields)
+    // Allocate CB slot from pool (256-byte aligned)
+    CBAllocation cbAlloc = m_cbPool.Allocate(sizeof(PerObjectConstants));
+    if (!cbAlloc.cpuPtr)
+        return;  // Pool exhausted
+
+    // Write constant buffer data
     PerObjectConstants constants = {};
     constants.world = worldMatrix;
     constants.viewProj = m_viewProjection;
@@ -472,18 +427,26 @@ void D3D12Context::DrawPrimitives(IRHIBuffer* vb, IRHIBuffer* ib,
     constants.Kq = m_Kq;
     constants.unlit = m_unlit;
     constants.colorOverride = m_colorOverride;
-    memcpy(m_cbData + m_drawCallIndex * m_cbAlignedSize, &constants, sizeof(PerObjectConstants));
+    memcpy(cbAlloc.cpuPtr, &constants, sizeof(PerObjectConstants));
+
+    // Create a transient CBV descriptor for this draw call
+    D3D12_CPU_DESCRIPTOR_HANDLE cbvCpuHandle = m_cbvSrvHeap.AllocateTransient();
+    D3D12_GPU_DESCRIPTOR_HANDLE cbvGpuHandle = m_cbvSrvHeap.GetGPUHandleForCPU(cbvCpuHandle);
+
+    UINT cbAlignedSize = (sizeof(PerObjectConstants) + 255) & ~255;
+    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
+    cbvDesc.BufferLocation = cbAlloc.gpuAddress;
+    cbvDesc.SizeInBytes = cbAlignedSize;
+    m_device->CreateConstantBufferView(&cbvDesc, cbvCpuHandle);
 
     // Set PSO and root signature
     m_commandList->SetPipelineState(m_pipelineState.GetPSO());
     m_commandList->SetGraphicsRootSignature(m_pipelineState.GetRootSignature());
 
-    // Set CBV descriptor heap and bind the descriptor for this draw call's slot
-    ID3D12DescriptorHeap* heaps[] = { m_cbvHeap.GetHeap() };
+    // Set descriptor heap and bind CBV
+    ID3D12DescriptorHeap* heaps[] = { m_cbvSrvHeap.GetHeap() };
     m_commandList->SetDescriptorHeaps(1, heaps);
-    D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle = m_cbvHeap.GetGPUStart();
-    gpuHandle.ptr += m_drawCallIndex * m_cbvDescriptorSize;
-    m_commandList->SetGraphicsRootDescriptorTable(0, gpuHandle);
+    m_commandList->SetGraphicsRootDescriptorTable(0, cbvGpuHandle);
 
     // Set primitive topology
     m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -498,8 +461,6 @@ void D3D12Context::DrawPrimitives(IRHIBuffer* vb, IRHIBuffer* ib,
     // Draw
     uint32 indexCount = d3dIB->GetSize() / sizeof(uint32);
     m_commandList->DrawIndexedInstanced(indexCount, 1, 0, 0, 0);
-
-    m_drawCallIndex++;
 }
 
 void D3D12Context::DrawText(int x, int y, const char* text,

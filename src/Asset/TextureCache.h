@@ -9,6 +9,8 @@
 namespace RRE
 {
 
+class D3D12DescriptorHeap;
+
 class TextureCache
 {
 public:
@@ -20,7 +22,9 @@ public:
     TextureCache& operator=(const TextureCache&) = delete;
 
     // Initialize with a 1x1 white fallback texture
-    bool Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
+    // If srvHeap is provided, SRV descriptors will be created in the persistent region
+    bool Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList,
+                    D3D12DescriptorHeap* srvHeap = nullptr);
 
     // Get cached texture or load from file path
     // isSRGB: true for baseColor (albedo), false for normal/metallic/roughness etc.
@@ -40,8 +44,12 @@ public:
     size_t GetCachedCount() const { return m_cache.size(); }
 
 private:
+    void CreateSRV(ID3D12Device* device, Texture* texture);
+
     std::unordered_map<std::string, std::unique_ptr<Texture>> m_cache;
     std::unique_ptr<Texture> m_fallbackTexture;
+    D3D12DescriptorHeap* m_srvHeap = nullptr;
+    ID3D12Device* m_device = nullptr;
 };
 
 } // namespace RRE
