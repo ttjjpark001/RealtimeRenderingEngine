@@ -334,7 +334,8 @@ src/
 │   ├── Renderer/
 │   │   ├── FrustumCuller.h / .cpp          # [신규] Frustum Culling
 │   │   ├── OcclusionCuller.h / .cpp        # [신규] Occlusion Culling
-│   │   ├── LODSelector.h / .cpp            # [신규] LOD 선택
+│   │   ├── LODSelector.h / .cpp            # [신규] LOD 선택 + 자동 LOD 생성
+│   │   ├── LightCuller.h / .cpp           # [신규] 광원 컬링 (거리/기여도 기반)
 │   │   ├── InstanceBatcher.h / .cpp        # [신규] Instanced Rendering
 │   │   └── (기존 파일들 확장)
 │   └── Shaders/
@@ -464,7 +465,7 @@ tests/
 **완료 기준**: 그림자가 정확하게 생성되고, PCF로 부드러운 그림자 경계 표시
 
 ### Phase 19: 씬 파일 로딩 UI + 카메라 네비게이션
-**목표**: 메뉴 기반 씬 로딩, 마우스 카메라 조작
+**목표**: 메뉴 기반 씬 로딩, 마우스 + 키보드 카메라 조작
 
 1. Win32Menu에 "File" 메뉴 추가: "Open Scene..." (GetOpenFileName, 필터: `*.gltf;*.glb;*.fbx`)
 2. 씬 로딩 워크플로우: 기존 씬 해제 → Assimp 파싱 → SceneNode/Material/Texture 구축
@@ -474,10 +475,15 @@ tests/
    - 우클릭 드래그: Yaw/Pitch 회전
    - 마우스 휠: 전진/후진 (돌리 줌)
    - 중클릭 드래그: 패닝 (P1)
-6. Fit to Scene: 씬 바운딩 박스 기반 카메라 자동 배치
-7. 이동 속도 자동 조절: 씬 크기에 비례 (P1)
+6. 카메라 키보드 네비게이션:
+   - WASD: 카메라 시선 방향 기준 전진/후퇴/좌/우 이동
+   - Q/E: 월드 Y축 기준 상/하 이동
+   - +/-: FOV 증가/감소
+   - 이동 속도: 씬 바운딩 박스 크기에 비례 자동 조절
+7. Fit to Scene: 씬 바운딩 박스 기반 카메라 자동 배치
+8. 이동 속도 자동 조절: 씬 크기에 비례 (마우스/키보드 공통, P1)
 
-**완료 기준**: 메뉴에서 glTF/FBX 파일을 열어 씬이 교체되고, 마우스로 네비게이션 가능
+**완료 기준**: 메뉴에서 glTF/FBX 파일을 열어 씬이 교체되고, 마우스 + 키보드로 네비게이션 가능
 
 ### Phase 20: 렌더링 모드 선택
 **목표**: 5단계 렌더링 모드 메뉴 전환
@@ -493,8 +499,8 @@ tests/
 
 **완료 기준**: 메뉴에서 5단계 렌더링 모드를 즉시 전환 가능, 각 모드별 정상 렌더링
 
-### Phase 21: 렌더링 최적화 — Culling + LOD
-**목표**: Frustum/Occlusion Culling, LOD 시스템
+### Phase 21: 렌더링 최적화 — Culling + LOD + Light Culling
+**목표**: Frustum/Occlusion Culling, LOD 시스템 (자동 LOD 생성 포함), 광원 컬링
 
 1. `src/Renderer/FrustumCuller.h/.cpp` — AABB vs 6-plane 교차 검사
 2. `DirectX::BoundingFrustum` + `BoundingBox::Intersects()` 활용
@@ -502,9 +508,15 @@ tests/
 4. Occluded 오브젝트: CB 갱신 + Draw 모두 스킵
 5. `src/Renderer/LODSelector.h/.cpp` — 거리 기반 LOD 선택
 6. LODMesh 구조체: Mesh 배열 + 전환 거리
-7. glTF/FBX LOD 매핑 (MSFT_lod 확장, P1)
+7. glTF/FBX LOD 매핑 (MSFT_lod 확장)
+8. 자동 LOD 생성: 씬 파일에 LOD 데이터가 없으면 Edge Collapse(QEM) 기반 메시 심플리피케이션으로 LOD 1(~50%), LOD 2(~25%) 자동 생성. 백그라운드 스레드에서 비동기 수행
+9. `src/Renderer/LightCuller.h/.cpp` — 광원 컬링
+   - 거리 기반: Point/Spot 광원의 유효 범위(BoundingSphere) vs Frustum 교차 검사
+   - 기여도 기반: 광원~카메라 거리 및 강도로 화면 기여도 추정, 임계값 이하 제외
+   - Directional Light는 항상 포함
+10. 유닛 테스트: FrustumCuller 테스트, LightCuller 테스트
 
-**완료 기준**: Frustum 밖 오브젝트 culled, Occluded 오브젝트 스킵, 거리별 LOD 전환
+**완료 기준**: Frustum 밖 오브젝트 culled, Occluded 오브젝트 스킵, 거리별 LOD 전환 (자동 생성 포함), 원거리/저기여 광원 컬링
 
 ### Phase 22: Texture Streaming + Mip-Mapping
 **목표**: 필요 Mip만 GPU 로드, 가시성/거리 기반 우선순위
@@ -546,9 +558,9 @@ tests/
 ### Phase 25: Phase 02 통합 & 최종 검증
 **목표**: 전체 Phase 02 기능 통합, 대형 씬 벤치마크
 
-1. 전체 렌더 파이프라인 통합 (11단계):
-   Scene Graph 순회 → Frustum Culling → Occlusion Culling → LOD → Instance Batching →
-   Texture Streaming → CB 갱신 → Material 정렬 → Front-to-Back → Shadow Pass → Main Pass
+1. 전체 렌더 파이프라인 통합 (12단계):
+   Scene Graph 순회 → Frustum Culling → Occlusion Culling → LOD(자동 LOD 포함) → Light Culling →
+   Instance Batching → Texture Streaming → CB 갱신 → Material 정렬 → Front-to-Back → Shadow Pass → Main Pass
 2. 대형 씬 벤치마크: Sponza, Bistro 등 로딩 및 렌더링 확인
 3. 5단계 렌더링 모드 전체 동작 확인
 4. DebugHUD 전체 항목: FPS, 해상도, 폴리곤, culled/occluded 수, 드로우콜, VRAM, 스트리밍, 렌더모드

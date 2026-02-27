@@ -1011,8 +1011,15 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 19를 구현
      상하좌우 패닝
    - 이동 속도 자동 조절: 씬 바운딩 박스 크기에 비례 (P1)
 
+6. 카메라 키보드 네비게이션을 구현한다.
+   - WASD: 카메라 시선 방향 기준 전진/후퇴/좌/우 이동
+   - Q/E: 월드 Y축 기준 상/하 이동
+   - +/-: FOV 증가/감소 (Perspective 모드)
+   - 씬 로딩 후에도 키보드 이동이 동작하도록 Engine의 키 입력 처리에 통합
+   - 이동 속도: 씬 바운딩 박스 크기에 비례하여 자동 조절 (마우스와 동일)
+
 빌드하여 메뉴에서 glTF/FBX 파일을 열어 씬이 교체되고,
-카메라가 자동 배치되며, 마우스로 네비게이션 가능한지 확인하라.
+카메라가 자동 배치되며, 마우스와 키보드로 네비게이션 가능한지 확인하라.
 ```
 
 ---
@@ -1077,19 +1084,47 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 21를 구현
 3. src/Renderer/LODSelector.h/.cpp를 만든다.
    - struct LODMesh { Mesh* meshLODs[MAX_LOD]; float switchDistances[MAX_LOD]; uint32 lodCount; }
    - SelectLOD(float cameraDistance) → Mesh* (적절한 LOD 반환)
-   - glTF/FBX LOD 매핑: MSFT_lod 확장이 있으면 자동, 없으면 LOD 0 사용
+   - glTF/FBX LOD 매핑: MSFT_lod 확장이 있으면 자동, 없으면 자동 LOD 생성
+   - 자동 LOD 생성 (Auto-LOD):
+     씬 파일에 LOD 메시가 없는 경우, 원본 메시에서 간략화된 LOD 메시를 자동 생성한다.
+     - Edge Collapse 기반 메시 심플리피케이션 알고리즘 구현
+     - LOD 1: 원본 삼각형 수의 ~50% 축소
+     - LOD 2: 원본 삼각형 수의 ~25% 축소
+     - 버텍스 위치, 법선, UV를 보존하며 품질 메트릭(QEM: Quadric Error Metrics) 기반 축소
+     - 씬 로딩 시 백그라운드 스레드에서 LOD 생성 (메인 렌더링 블로킹 방지)
+     - LOD 생성 완료 전까지 원본 메시(LOD 0)로 렌더링
 
-4. tests/unit/test_FrustumCuller.cpp를 만든다.
+4. src/Renderer/LightCuller.h/.cpp를 만든다.
+   - 광원 컬링: 너무 멀거나 가려진 광원을 라이팅 계산에서 제외
+   - 거리 기반 컬링:
+     Point/Spot 광원의 유효 범위(감쇠로 기여도가 임계값 이하가 되는 거리) 계산
+     → 카메라 Frustum과 광원 유효 범위(BoundingSphere) 교차 검사
+     → Frustum 밖의 광원은 활성 광원 목록에서 제외
+   - 기여도 기반 컬링:
+     광원~카메라 거리 및 광원 강도로 화면 기여도 추정
+     → 기여도가 임계값(예: 0.01) 이하인 광원은 제외
+   - Directional Light는 항상 포함 (무한 거리이므로 컬링 대상 아님)
+   - CullLights(frustum, cameraPos, lights) → 활성 광원 인덱스 목록 반환
+   - DebugHUD에 컬링된 광원 수 표시
+
+5. tests/unit/test_FrustumCuller.cpp를 만든다.
    - Frustum 안의 AABB → visible
    - Frustum 밖의 AABB → not visible
    - Frustum 경계의 AABB → visible (보수적)
 
-5. Renderer 파이프라인에 Culling + LOD를 통합한다.
+6. tests/unit/test_LightCuller.cpp를 만든다.
+   - Frustum 안의 Point Light → 활성
+   - Frustum 밖의 Point Light (유효 범위 초과) → 컬링
+   - Directional Light → 항상 활성
+   - 기여도 임계값 이하의 약한 광원 → 컬링
+
+7. Renderer 파이프라인에 Culling + LOD + Light Culling을 통합한다.
    - Scene Graph 순회 → Frustum Culling → Occlusion Culling → LOD 선택 → Draw
+   - 라이팅 패스 전 Light Culling → 활성 광원만 GPU에 전달
 
 빌드하여 Frustum 밖 오브젝트가 culled되고,
-거리별 LOD가 전환되는지 확인하라.
-DebugHUD에 culled 수를 표시하라.
+거리별 LOD가 전환되며, 원거리 광원이 컬링되는지 확인하라.
+DebugHUD에 culled 오브젝트 수와 culled 광원 수를 표시하라.
 ```
 
 ---

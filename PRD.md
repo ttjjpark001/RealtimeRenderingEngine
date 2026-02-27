@@ -179,7 +179,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | G-13 | 씬 로드 시 기존 씬(Phase 01 데모 오브젝트 포함)을 해제하고 새 씬으로 교체한다 | P0 |
 | G-14 | 씬 로드 후 씬 파일에 카메라 시작 위치가 지정되어 있으면 해당 위치/방향으로 카메라를 배치한다 | P0 |
 | G-14a | 씬 파일에 카메라 정보가 없으면 씬의 바운딩 박스를 기반으로 씬 전체를 조망할 수 있는 위치에 카메라를 자동 배치한다 (Fit to Scene) | P0 |
-| G-15 | 로드된 씬을 카메라 네비게이션으로 자유롭게 탐색할 수 있다 | P0 |
+| G-15 | 로드된 씬을 카메라 네비게이션(마우스 + 키보드 WASD/QE)으로 자유롭게 탐색할 수 있다 | P0 |
 | G-16 | 드래그 앤 드롭으로 glTF/GLB 파일을 윈도우에 놓아도 씬이 로드된다 | P1 |
 
 ### 3.14 Material 시스템
@@ -276,8 +276,11 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | OPT-07 | LOD(Level of Detail) 시스템을 구현하여 카메라 거리에 따라 메시 디테일을 전환한다 | P0 |
 | OPT-08 | LOD 단계: 최소 2단계 이상 (High, Low 또는 High, Medium, Low) | P0 |
 | OPT-09 | LOD 전환 거리 기준값을 오브젝트별 또는 전역으로 설정할 수 있다 | P1 |
-| OPT-10 | glTF/FBX 파일에 LOD 메시가 포함되어 있으면 자동으로 LOD 단계에 매핑한다 | P1 |
-| OPT-11 | LOD 메시가 없는 경우 단일 LOD로 동작한다 (폴백) | P0 |
+| OPT-10 | glTF/FBX 파일에 LOD 메시가 포함되어 있으면 자동으로 LOD 단계에 매핑한다 | P0 |
+| OPT-10a | LOD 메시가 씬 파일에 없는 경우, Edge Collapse(QEM) 기반 메시 심플리피케이션으로 LOD 메시를 자동 생성한다 | P0 |
+| OPT-10b | 자동 LOD 생성은 백그라운드 스레드에서 비동기로 수행하며, 생성 완료 전까지 원본 메시(LOD 0)로 렌더링한다 | P0 |
+| OPT-10c | 자동 LOD 생성 시 LOD 1은 원본 삼각형의 ~50%, LOD 2는 ~25%로 축소한다 | P0 |
+| OPT-11 | 자동 LOD 생성이 실패하거나 메시가 이미 충분히 간단한 경우 단일 LOD로 동작한다 (폴백) | P0 |
 
 #### Texture Streaming & Mip-Mapping
 | ID | 요구사항 | 우선순위 |
@@ -291,6 +294,16 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | OPT-18 | Mip-Mapping을 지원하여 텍스처 생성 시 Mip chain을 자동 생성한다 | P0 |
 | OPT-19 | D3D12 텍스처 리소스 생성 시 MipLevels를 적절히 설정한다 (전체 Mip chain 또는 지정 레벨) | P0 |
 | OPT-20 | Sampler에서 Mip 필터링(Trilinear 또는 Anisotropic)을 활성화한다 | P0 |
+
+#### Light Culling (광원 컬링)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| LC-01 | 카메라 Frustum 밖에 위치한 Point/Spot 광원을 라이팅 계산에서 제외한다 | P0 |
+| LC-02 | Point/Spot 광원의 유효 범위(감쇠로 기여도가 임계값 이하가 되는 거리)를 BoundingSphere로 계산한다 | P0 |
+| LC-03 | 광원의 BoundingSphere와 카메라 Frustum의 교차 검사로 가시 여부를 판정한다 | P0 |
+| LC-04 | 광원~카메라 거리 및 강도 기반으로 화면 기여도를 추정하여, 임계값(0.01) 이하인 광원을 제외한다 | P0 |
+| LC-05 | Directional Light는 무한 거리이므로 항상 활성 상태를 유지한다 (컬링 대상 아님) | P0 |
+| LC-06 | 컬링된 광원 수를 DebugHUD에 표시한다 | P1 |
 
 #### Instanced Rendering
 | ID | 요구사항 | 우선순위 |
@@ -442,4 +455,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | Thread Pool | 미리 생성된 워커 스레드 집합. 작업을 큐에 넣으면 유휴 스레드가 처리하는 병렬 실행 패턴 |
 | Gamma Correction | 리니어 공간에서 계산한 색상을 sRGB 감마 곡선(pow 1/2.2)으로 변환하여 모니터에 올바른 밝기로 출력하는 과정 |
 | CB Alignment (256-byte) | D3D12 Constant Buffer는 256바이트 경계 정렬이 필수. 할당 오프셋과 크기 모두 256의 배수여야 한다 |
+| Light Culling | 카메라 시야 밖이거나 기여도가 미미한 광원을 라이팅 계산에서 제외하는 최적화 기법 |
+| Auto-LOD (Mesh Simplification) | 씬 파일에 LOD 메시가 없을 때 Edge Collapse(QEM) 알고리즘으로 간략화된 LOD 메시를 자동 생성하는 기법 |
+| QEM (Quadric Error Metrics) | Edge Collapse 시 어떤 간선을 축소할지 결정하는 품질 메트릭. 기하학적 오차를 최소화하는 순서로 간선을 제거 |
 | Render Mode | 렌더링 복잡도를 단계별로 전환하는 기능. Wireframe → Solid → Base Color → Full PBR → Full PBR + Shadows 순으로 복잡도 증가 |

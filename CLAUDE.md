@@ -44,7 +44,7 @@ src/
   Platform/     — Win32 윈도우/입력/메뉴 (플랫폼별 분리)
   RHI/          — 렌더링 하드웨어 추상화 인터페이스 (IRHIDevice, IRHIBuffer, IRHIContext)
     D3D12/      — DirectX 12 백엔드 (Device, Context, SwapChain, Buffer, PSO, DescriptorHeap)
-  Renderer/     — Vertex, Mesh, FaceColorPalette, MeshFactory, Renderer, DebugHUD, FrustumCuller, LODSelector, InstanceBatcher
+  Renderer/     — Vertex, Mesh, FaceColorPalette, MeshFactory, Renderer, DebugHUD, FrustumCuller, LODSelector, LightCuller, InstanceBatcher
   Scene/        — SceneNode, SceneGraph, Transform, Camera
   Lighting/     — Light (Directional/Point/Spot), LightManager, PointLight(Phase 01 호환)
 tests/
@@ -147,6 +147,9 @@ tests/
 - GetViewMatrix(): XMMatrixLookAtLH로 뷰 행렬 생성
 - GetProjectionMatrix(aspectRatio): 투영 모드에 따라 Perspective/Orthographic 행렬 생성
 - **키보드 이동**: WASD+QE 키로 카메라 위치 이동, +/- 키로 FOV 조절
+  - Phase 01: 기본 씬에서 카메라 이동
+  - Phase 02: 로드된 씬에서도 동일하게 키보드 네비게이션 동작 (마우스와 함께 사용)
+  - 이동 속도는 씬 바운딩 박스 크기에 비례하여 자동 조절 (마우스/키보드 공통)
 - **마우스 네비게이션 (Phase 02)**:
   - 우클릭 드래그: Yaw/Pitch 회전 (FPS 스타일 시선 제어)
   - 마우스 휠: 전진/후진 (돌리 줌)
@@ -154,7 +157,7 @@ tests/
 - **Fit to Scene**: 씬 바운딩 박스를 계산하여 카메라를 씬 전체가 보이는 위치로 자동 배치
   - 바운딩 박스 중심을 lookAt 타겟으로, 대각선 길이 기반으로 적절한 거리 산출
   - 씬 로드 시 자동 호출, "Camera" 메뉴의 "Fit to Scene" 항목으로도 수동 호출
-- **이동 속도 자동 조절**: 씬 바운딩 박스 크기에 비례하여 WASD/휠 이동 속도 조절 (P1)
+- **이동 속도 자동 조절**: 씬 바운딩 박스 크기에 비례하여 WASD/휠/키보드 이동 속도 조절 (P1)
 - DebugHUD에 카메라 정보(투영 종류, 위치, 방향, FOV) 표시 가능, "Camera" 메뉴에서 on/off 토글
 - 메뉴에서 투영 모드 전환, FOV 조절, Reset, Fit to Scene 가능
 
@@ -353,6 +356,14 @@ struct Light {
 - 원뿔 페이드: `spotFactor = smoothstep(outerConeAngle, innerConeAngle, dot(-lightDir, spotDirection))`
 - 최종 감쇠 = 거리 감쇠 × spotFactor
 
+**광원 컬링 (Light Culling):**
+- 렌더링 파이프라인에서 라이팅 패스 전에 광원 컬링을 수행하여 기여하지 않는 광원을 제외
+- 거리 기반: Point/Spot 광원의 유효 범위(BoundingSphere) vs Frustum 교차 검사
+- 기여도 기반: 광원~카메라 거리 및 강도로 화면 기여도 추정, 임계값 이하 제외
+- Directional Light는 항상 활성 (무한 거리)
+- 컬링 후 활성 광원만 GPU에 전달하여 셰이더 루프 비용 감소
+- 구현 위치: `src/Renderer/LightCuller.h/.cpp`
+
 ### Shadow Mapping
 
 **개요:**
@@ -526,6 +537,15 @@ struct Light {
 - **보수적 판정**: 경계 케이스에서는 visible로 판정 (과도한 popping 방지)
 - 구현 위치: `src/Renderer/OcclusionCuller.h/.cpp`
 
+#### Light Culling (광원 컬링)
+
+- **목적**: 너무 멀거나 가려져서 화면에 기여하지 않는 광원을 라이팅 계산에서 제외하여 셰이더 루프 비용 감소
+- **거리 기반 컬링**: Point/Spot 광원의 유효 범위(감쇠로 기여도가 임계값 이하가 되는 거리)를 BoundingSphere로 계산 → 카메라 Frustum과 교차 검사 → Frustum 밖의 광원 제외
+- **기여도 기반 컬링**: 광원~카메라 거리 및 광원 강도로 화면 기여도 추정 → 기여도가 임계값(예: 0.01) 이하인 광원 제외
+- **Directional Light**: 무한 거리이므로 항상 활성 (컬링 대상 아님)
+- **결과**: 컬링 후 활성 광원만 GPU LightsCB에 전달하여 셰이더 루프 반복 횟수 감소
+- 구현 위치: `src/Renderer/LightCuller.h/.cpp`
+
 #### LOD (Level of Detail)
 
 - **LOD 구조체**: Mesh별 LOD 단계(High, Medium, Low)를 배열로 보유
@@ -537,8 +557,14 @@ struct Light {
   };
   ```
 - **거리 기반 LOD 선택**: 카메라~오브젝트 거리를 계산하여 적절한 LOD 단계 선택
-- **glTF/FBX LOD 매핑**: `MSFT_lod` 확장 등이 있으면 자동 매핑, 없으면 단일 LOD
-- **폴백**: LOD 메시가 없으면 LOD 0(원본)으로 동작
+- **glTF/FBX LOD 매핑**: `MSFT_lod` 확장 등이 있으면 자동 매핑
+- **자동 LOD 생성 (Auto-LOD)**: 씬 파일에 LOD 메시가 없는 경우, 원본 메시에서 간략화된 LOD 메시를 자동 생성
+  - Edge Collapse 기반 메시 심플리피케이션 (QEM: Quadric Error Metrics)
+  - LOD 1: 원본 삼각형 수의 ~50% 축소 / LOD 2: ~25% 축소
+  - 버텍스 위치, 법선, UV를 보존하며 기하학적 오차 최소화
+  - 백그라운드 스레드에서 비동기 수행 (메인 렌더링 블로킹 방지)
+  - 생성 완료 전까지 원본 메시(LOD 0)로 렌더링
+- **폴백**: 자동 LOD 생성이 실패하거나 메시가 이미 충분히 간단한 경우 LOD 0(원본)으로 동작
 - 구현 위치: `src/Renderer/LODSelector.h/.cpp`
 
 #### Texture Streaming & Mip-Mapping
@@ -673,11 +699,12 @@ struct PerMaterialCB {
 1. **Scene Graph 순회** → 각 노드의 AABB + 월드 행렬 수집
 2. **Frustum Culling** → 시야 밖 오브젝트 제외
 3. **Occlusion Culling** → 완전히 가려진 오브젝트 제외 (CB 갱신 + Draw 모두 스킵)
-4. **LOD 선택** → 카메라 거리에 따라 적절한 LOD Mesh 결정
-5. **Instance Batching** → 동일 Mesh+Material 그룹핑, Instance Buffer 생성
-6. **Texture Streaming** → 가시성+거리 기반 우선순위로 Mip 레벨 업데이트, 비동기 로딩 요청
-7. **CB 갱신** → Dirty Flag 체크, VRAM 예산 기반 적응적 갱신 빈도 조절, 풀에서 슬롯 할당
-8. **Material 정렬** → PSO 상태 변경 최소화를 위해 Material 기준 정렬
-9. **Opaque Front-to-Back 정렬** → Early-Z rejection 극대화
-10. **Shadow Depth Pass** → 그림자 생성 광원별 depth-only 렌더링
-11. **Main Pass** → Opaque (인스턴싱 적용) → Alpha Mask → Alpha Blend (back-to-front)
+4. **LOD 선택** → 카메라 거리에 따라 적절한 LOD Mesh 결정 (자동 생성 LOD 포함)
+5. **Light Culling** → Frustum 밖/저기여 광원 제외, 활성 광원만 GPU에 전달
+6. **Instance Batching** → 동일 Mesh+Material 그룹핑, Instance Buffer 생성
+7. **Texture Streaming** → 가시성+거리 기반 우선순위로 Mip 레벨 업데이트, 비동기 로딩 요청
+8. **CB 갱신** → Dirty Flag 체크, VRAM 예산 기반 적응적 갱신 빈도 조절, 풀에서 슬롯 할당
+9. **Material 정렬** → PSO 상태 변경 최소화를 위해 Material 기준 정렬
+10. **Opaque Front-to-Back 정렬** → Early-Z rejection 극대화
+11. **Shadow Depth Pass** → 그림자 생성 광원별 depth-only 렌더링
+12. **Main Pass** → Opaque (인스턴싱 적용) → Alpha Mask → Alpha Blend (back-to-front)
