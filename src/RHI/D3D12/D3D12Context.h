@@ -38,6 +38,58 @@ struct PerObjectConstants
 };  // Total: 224 bytes → 256 aligned
 static_assert(sizeof(PerObjectConstants) <= 256, "PerObjectConstants exceeds 256-byte CB slot");
 
+// PBR per-object constants (b0) — only world/viewProj/camera, no lighting
+struct PerObjectPBR
+{
+    DirectX::XMFLOAT4X4 world;          // 64
+    DirectX::XMFLOAT4X4 viewProj;       // 64
+    DirectX::XMFLOAT3 cameraPosition;   // 12
+    float _pad0;                         // 4
+};  // Total: 144 bytes → 256 aligned
+static_assert(sizeof(PerObjectPBR) <= 256, "PerObjectPBR exceeds 256-byte CB slot");
+
+// Light data for PBR (matches HLSL LightData struct)
+struct GPULightData
+{
+    DirectX::XMFLOAT3 position;  // 12
+    float intensity;              // 4
+    DirectX::XMFLOAT3 color;    // 12
+    float _pad0;                  // 4
+    float Kc;                     // 4
+    float Kl;                     // 4
+    float Kq;                     // 4
+    float _pad1;                  // 4
+};  // 48 bytes per light
+
+// Lights constant buffer (b1)
+static constexpr uint32 MAX_PBR_LIGHTS = 8;
+struct LightConstants
+{
+    GPULightData lights[MAX_PBR_LIGHTS]; // 48 * 8 = 384
+    uint32 numActiveLights;              // 4
+    float _pad[3];                        // 12
+};  // Total: 400 bytes → 512 aligned
+static_assert(sizeof(LightConstants) <= 512, "LightConstants exceeds 512-byte CB slot");
+
+// Per-material constants (b2)
+struct PerMaterialConstants
+{
+    DirectX::XMFLOAT4 baseColorFactor;   // 16
+    float metallicFactor;                 // 4
+    float roughnessFactor;                // 4
+    float alphaCutoff;                    // 4
+    uint32 hasAlbedoMap;                  // 4
+    uint32 hasNormalMap;                  // 4
+    uint32 hasMetallicRoughnessMap;       // 4
+    uint32 hasEmissiveMap;                // 4
+    uint32 hasOcclusionMap;               // 4
+    DirectX::XMFLOAT3 emissiveFactor;    // 12
+    float _padMat;                        // 4
+};  // Total: 64 bytes → 256 aligned
+static_assert(sizeof(PerMaterialConstants) <= 256, "PerMaterialConstants exceeds 256-byte CB slot");
+
+class Material;
+class TextureCache;
 class D3D12SwapChain;
 
 struct TextCommand
@@ -87,6 +139,14 @@ public:
         m_unlit = unlit ? 1.0f : 0.0f;
         m_colorOverride = color;
     }
+
+    // Set PBR light data for current frame
+    void SetPBRLightData(const LightConstants& lights) { m_pbrLightConstants = lights; }
+
+    // PBR draw call: binds 3 CBs (PerObject, Lights, Material) + 5 texture SRVs
+    void DrawPrimitivesPBR(IRHIBuffer* vb, IRHIBuffer* ib,
+        const DirectX::XMFLOAT4X4& worldMatrix,
+        Material* material, TextureCache* textureCache);
 
     // IRHIContext interface
     void BeginFrame() override;
@@ -156,6 +216,9 @@ private:
     // Unlit mode (for light indicator)
     float m_unlit = 0.0f;
     DirectX::XMFLOAT3 m_colorOverride = { 1.0f, 1.0f, 1.0f };
+
+    // PBR lighting data (set via SetPBRLightData)
+    LightConstants m_pbrLightConstants = {};
 
     // D3D11On12 / D2D / DirectWrite
     Microsoft::WRL::ComPtr<ID3D11On12Device> m_d3d11On12Device;

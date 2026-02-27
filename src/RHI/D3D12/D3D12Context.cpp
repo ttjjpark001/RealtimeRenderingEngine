@@ -1,6 +1,8 @@
 #include "RHI/D3D12/D3D12Context.h"
 #include "RHI/D3D12/D3D12SwapChain.h"
 #include "RHI/D3D12/D3D12Buffer.h"
+#include "Asset/Material.h"
+#include "Asset/TextureCache.h"
 #include <cstring>
 
 #pragma comment(lib, "d3d11.lib")
@@ -447,6 +449,169 @@ void D3D12Context::DrawPrimitives(IRHIBuffer* vb, IRHIBuffer* ib,
     ID3D12DescriptorHeap* heaps[] = { m_cbvSrvHeap.GetHeap() };
     m_commandList->SetDescriptorHeaps(1, heaps);
     m_commandList->SetGraphicsRootDescriptorTable(0, cbvGpuHandle);
+
+    // Set primitive topology
+    m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    // Set vertex and index buffers
+    D3D12_VERTEX_BUFFER_VIEW vbView = d3dVB->GetVertexBufferView();
+    m_commandList->IASetVertexBuffers(0, 1, &vbView);
+
+    D3D12_INDEX_BUFFER_VIEW ibView = d3dIB->GetIndexBufferView();
+    m_commandList->IASetIndexBuffer(&ibView);
+
+    // Draw
+    uint32 indexCount = d3dIB->GetSize() / sizeof(uint32);
+    m_commandList->DrawIndexedInstanced(indexCount, 1, 0, 0, 0);
+}
+
+void D3D12Context::DrawPrimitivesPBR(IRHIBuffer* vb, IRHIBuffer* ib,
+    const DirectX::XMFLOAT4X4& worldMatrix,
+    Material* material, TextureCache* textureCache)
+{
+    if (!m_hasPSO || !vb || !ib || !m_pipelineState.HasPBRPSO())
+        return;
+
+    auto* d3dVB = static_cast<D3D12Buffer*>(vb);
+    auto* d3dIB = static_cast<D3D12Buffer*>(ib);
+
+    // --- Allocate 3 CBs from pool ---
+
+    // CB0: PerObjectPBR
+    CBAllocation cb0Alloc = m_cbPool.Allocate(sizeof(PerObjectPBR));
+    if (!cb0Alloc.cpuPtr) return;
+
+    PerObjectPBR perObj = {};
+    perObj.world = worldMatrix;
+    perObj.viewProj = m_viewProjection;
+    perObj.cameraPosition = m_cameraPosition;
+    memcpy(cb0Alloc.cpuPtr, &perObj, sizeof(PerObjectPBR));
+
+    // CB1: LightConstants
+    CBAllocation cb1Alloc = m_cbPool.Allocate(sizeof(LightConstants));
+    if (!cb1Alloc.cpuPtr) return;
+
+    memcpy(cb1Alloc.cpuPtr, &m_pbrLightConstants, sizeof(LightConstants));
+
+    // CB2: PerMaterialConstants
+    CBAllocation cb2Alloc = m_cbPool.Allocate(sizeof(PerMaterialConstants));
+    if (!cb2Alloc.cpuPtr) return;
+
+    PerMaterialConstants matConst = {};
+    if (material)
+    {
+        matConst.baseColorFactor = material->baseColorFactor;
+        matConst.metallicFactor = material->metallicFactor;
+        matConst.roughnessFactor = material->roughnessFactor;
+        matConst.alphaCutoff = material->alphaCutoff;
+        matConst.hasAlbedoMap = (material->baseColorTexture != nullptr) ? 1u : 0u;
+        matConst.hasNormalMap = (material->normalTexture != nullptr) ? 1u : 0u;
+        matConst.hasMetallicRoughnessMap = (material->metallicRoughnessTexture != nullptr) ? 1u : 0u;
+        matConst.hasEmissiveMap = (material->emissiveTexture != nullptr) ? 1u : 0u;
+        matConst.hasOcclusionMap = (material->occlusionTexture != nullptr) ? 1u : 0u;
+        matConst.emissiveFactor = material->emissiveFactor;
+    }
+    else
+    {
+        matConst.baseColorFactor = { 1.0f, 1.0f, 1.0f, 1.0f };
+        matConst.metallicFactor = 0.0f;
+        matConst.roughnessFactor = 0.5f;
+    }
+    memcpy(cb2Alloc.cpuPtr, &matConst, sizeof(PerMaterialConstants));
+
+    // --- Create 3 transient CBV descriptors ---
+
+    // CBV for b0
+    D3D12_CPU_DESCRIPTOR_HANDLE cbv0Cpu = m_cbvSrvHeap.AllocateTransient();
+    D3D12_GPU_DESCRIPTOR_HANDLE cbv0Gpu = m_cbvSrvHeap.GetGPUHandleForCPU(cbv0Cpu);
+    {
+        D3D12_CONSTANT_BUFFER_VIEW_DESC desc = {};
+        desc.BufferLocation = cb0Alloc.gpuAddress;
+        desc.SizeInBytes = (sizeof(PerObjectPBR) + 255) & ~255;
+        m_device->CreateConstantBufferView(&desc, cbv0Cpu);
+    }
+
+    // CBV for b1
+    D3D12_CPU_DESCRIPTOR_HANDLE cbv1Cpu = m_cbvSrvHeap.AllocateTransient();
+    D3D12_GPU_DESCRIPTOR_HANDLE cbv1Gpu = m_cbvSrvHeap.GetGPUHandleForCPU(cbv1Cpu);
+    {
+        D3D12_CONSTANT_BUFFER_VIEW_DESC desc = {};
+        desc.BufferLocation = cb1Alloc.gpuAddress;
+        desc.SizeInBytes = (sizeof(LightConstants) + 255) & ~255;
+        m_device->CreateConstantBufferView(&desc, cbv1Cpu);
+    }
+
+    // CBV for b2
+    D3D12_CPU_DESCRIPTOR_HANDLE cbv2Cpu = m_cbvSrvHeap.AllocateTransient();
+    D3D12_GPU_DESCRIPTOR_HANDLE cbv2Gpu = m_cbvSrvHeap.GetGPUHandleForCPU(cbv2Cpu);
+    {
+        D3D12_CONSTANT_BUFFER_VIEW_DESC desc = {};
+        desc.BufferLocation = cb2Alloc.gpuAddress;
+        desc.SizeInBytes = (sizeof(PerMaterialConstants) + 255) & ~255;
+        m_device->CreateConstantBufferView(&desc, cbv2Cpu);
+    }
+
+    // --- Copy 5 texture SRVs into contiguous transient descriptors ---
+    // Allocate 5 consecutive transient descriptors for t0~t4
+    D3D12_CPU_DESCRIPTOR_HANDLE srvBlockCpu = m_cbvSrvHeap.AllocateTransient();
+    D3D12_GPU_DESCRIPTOR_HANDLE srvBlockGpu = m_cbvSrvHeap.GetGPUHandleForCPU(srvBlockCpu);
+
+    // We need 5 contiguous descriptors; first one is already allocated above
+    // Allocate remaining 4
+    for (int i = 1; i < 5; i++)
+        m_cbvSrvHeap.AllocateTransient();
+
+    // Get fallback SRV handle
+    D3D12_GPU_DESCRIPTOR_HANDLE fallbackSrv = {};
+    if (textureCache && textureCache->GetFallback())
+        fallbackSrv = textureCache->GetFallback()->GetSRVGpuHandle();
+
+    // Helper: get SRV source for a texture (or fallback)
+    auto getSrvCpu = [&](Texture* tex) -> D3D12_CPU_DESCRIPTOR_HANDLE {
+        if (tex && tex->GetResource())
+            return tex->GetSRVCpuHandle();
+        if (textureCache && textureCache->GetFallback())
+            return textureCache->GetFallback()->GetSRVCpuHandle();
+        return {};
+    };
+
+    Texture* textures[5] = { nullptr, nullptr, nullptr, nullptr, nullptr };
+    if (material)
+    {
+        textures[0] = material->baseColorTexture;
+        textures[1] = material->normalTexture;
+        textures[2] = material->metallicRoughnessTexture;
+        textures[3] = material->emissiveTexture;
+        textures[4] = material->occlusionTexture;
+    }
+
+    // Copy SRV descriptors into the contiguous block
+    for (int i = 0; i < 5; i++)
+    {
+        D3D12_CPU_DESCRIPTOR_HANDLE srcCpu = getSrvCpu(textures[i]);
+        D3D12_CPU_DESCRIPTOR_HANDLE dstCpu = srvBlockCpu;
+        dstCpu.ptr += static_cast<SIZE_T>(i) * m_cbvDescriptorSize;
+
+        if (srcCpu.ptr != 0)
+        {
+            m_device->CopyDescriptorsSimple(1, dstCpu, srcCpu,
+                D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        }
+    }
+
+    // --- Set PSO and root signature ---
+    m_commandList->SetPipelineState(m_pipelineState.GetPBRPSO());
+    m_commandList->SetGraphicsRootSignature(m_pipelineState.GetRootSignature());
+
+    // Set descriptor heap
+    ID3D12DescriptorHeap* heaps[] = { m_cbvSrvHeap.GetHeap() };
+    m_commandList->SetDescriptorHeaps(1, heaps);
+
+    // Bind root parameters
+    m_commandList->SetGraphicsRootDescriptorTable(0, cbv0Gpu);  // b0: PerObject
+    m_commandList->SetGraphicsRootDescriptorTable(1, srvBlockGpu);  // t0~t4: textures
+    m_commandList->SetGraphicsRootDescriptorTable(2, cbv1Gpu);  // b1: Lights
+    m_commandList->SetGraphicsRootDescriptorTable(3, cbv2Gpu);  // b2: Material
 
     // Set primitive topology
     m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);

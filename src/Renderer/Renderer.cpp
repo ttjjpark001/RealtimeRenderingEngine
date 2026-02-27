@@ -7,6 +7,8 @@
 #include "Scene/SceneNode.h"
 #include "Scene/Camera.h"
 #include "Lighting/PointLight.h"
+#include "Asset/Material.h"
+#include "Asset/TextureCache.h"
 #include <DirectXMath.h>
 #include <d3d12.h>
 
@@ -62,10 +64,10 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera, PointLight* light,
     XMStoreFloat4x4(&viewProjFloat, viewProj);
     m_context->SetViewProjection(viewProjFloat);
 
-    // Set lighting data
+    // Set lighting data (BasicColor path)
+    XMFLOAT3 camPos = camera.GetPosition();
     if (light)
     {
-        XMFLOAT3 camPos = camera.GetPosition();
         XMFLOAT3 ambient = { 0.15f, 0.15f, 0.15f };
         m_context->SetLightData(
             light->GetPosition(), light->GetColor(),
@@ -73,10 +75,21 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera, PointLight* light,
             light->GetConstantAttenuation(),
             light->GetLinearAttenuation(),
             light->GetQuadraticAttenuation());
+
+        // Set PBR light data
+        LightConstants pbrLights = {};
+        pbrLights.numActiveLights = 1;
+        pbrLights.lights[0].position = light->GetPosition();
+        pbrLights.lights[0].color = light->GetColor();
+        pbrLights.lights[0].intensity = 1.0f;
+        pbrLights.lights[0].Kc = light->GetConstantAttenuation();
+        pbrLights.lights[0].Kl = light->GetLinearAttenuation();
+        pbrLights.lights[0].Kq = light->GetQuadraticAttenuation();
+        m_context->SetPBRLightData(pbrLights);
     }
 
     // Traverse scene graph and draw each node with a mesh
-    graph.Traverse([this](SceneNode* node, const XMMATRIX& worldMatrix) {
+    graph.Traverse([this, &camPos](SceneNode* node, const XMMATRIX& worldMatrix) {
         Mesh* mesh = node->GetMesh();
         if (!mesh)
             return;
@@ -93,7 +106,18 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera, PointLight* light,
         XMFLOAT4X4 worldFloat;
         XMStoreFloat4x4(&worldFloat, transposed);
 
-        m_context->DrawPrimitives(it->second.vb.get(), it->second.ib.get(), worldFloat);
+        Material* material = node->GetMaterial();
+        if (material && m_textureCache)
+        {
+            // PBR path: use DrawPrimitivesPBR with material + textures
+            m_context->DrawPrimitivesPBR(it->second.vb.get(), it->second.ib.get(),
+                worldFloat, material, m_textureCache);
+        }
+        else
+        {
+            // BasicColor path: vertex-colored geometry
+            m_context->DrawPrimitives(it->second.vb.get(), it->second.ib.get(), worldFloat);
+        }
     });
 }
 

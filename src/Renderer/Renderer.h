@@ -15,6 +15,7 @@ class Mesh;
 class SceneGraph;
 class Camera;
 class PointLight;
+class TextureCache;
 
 class Renderer
 {
@@ -23,6 +24,7 @@ public:
     ~Renderer() = default;
 
     void SetContext(D3D12Context* context, ID3D12Device* device);
+    void SetTextureCache(TextureCache* cache) { m_textureCache = cache; }
 
     // Upload mesh VB/IB to GPU (cached, idempotent)
     void UploadMesh(Mesh* mesh);
@@ -47,6 +49,7 @@ private:
 
     D3D12Context* m_context = nullptr;
     ID3D12Device* m_d3dDevice = nullptr;
+    TextureCache* m_textureCache = nullptr;
     std::unordered_map<Mesh*, MeshBuffers> m_meshCache;
 };
 

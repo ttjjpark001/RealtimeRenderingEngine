@@ -17,16 +17,27 @@ public:
 
     ID3D12RootSignature* GetRootSignature() const { return m_rootSignature.Get(); }
     ID3D12PipelineState* GetPSO() const { return m_pipelineState.Get(); }
+    ID3D12PipelineState* GetPBRPSO() const { return m_pbrPipelineState.Get(); }
+    bool HasPBRPSO() const { return m_pbrPipelineState != nullptr; }
 
 private:
     bool CreateRootSignature(ID3D12Device* device);
     bool LoadShaders();
     bool CreatePipelineState(ID3D12Device* device);
+    bool LoadPBRShaders();
+    bool CreatePBRPipelineState(ID3D12Device* device);
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rootSignature;
+
+    // BasicColor PSO
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pipelineState;
     Microsoft::WRL::ComPtr<ID3DBlob> m_vertexShader;
     Microsoft::WRL::ComPtr<ID3DBlob> m_pixelShader;
+
+    // PBR PSO
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pbrPipelineState;
+    Microsoft::WRL::ComPtr<ID3DBlob> m_pbrVertexShader;
+    Microsoft::WRL::ComPtr<ID3DBlob> m_pbrPixelShader;
 };
 
 } // namespace RRE
