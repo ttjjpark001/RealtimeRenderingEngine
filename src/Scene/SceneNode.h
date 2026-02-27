@@ -9,6 +9,7 @@ namespace RRE
 {
 
 class Mesh;
+class Material;
 
 class SceneNode
 {
@@ -33,9 +34,14 @@ public:
     void SetMesh(Mesh* mesh) { m_mesh = mesh; }
     Mesh* GetMesh() const { return m_mesh; }
 
+    // Material (nullable — nullptr means Phase 01 vertex-color fallback)
+    void SetMaterial(Material* material) { m_material = material; }
+    Material* GetMaterial() const { return m_material; }
+
 private:
     Transform m_localTransform;
     Mesh* m_mesh = nullptr;
+    Material* m_material = nullptr;
     SceneNode* m_parent = nullptr;
     std::vector<std::unique_ptr<SceneNode>> m_children;
 };

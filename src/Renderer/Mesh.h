@@ -15,6 +15,7 @@ public:
 
     std::vector<Vertex> vertices;
     std::vector<uint32> indices;
+    int32 materialIndex = -1;  // Index into SceneData::materials (-1 = no material)
 
     // Adjacency: for each face i, adjacency[i] is a list of adjacent face indices
     std::vector<std::vector<uint32>> faceAdjacency;

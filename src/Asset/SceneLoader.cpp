@@ -3,9 +3,11 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
+#include <assimp/GltfMaterial.h>
 
 #include <stdexcept>
 #include <cmath>
+#include <filesystem>
 
 namespace RRE
 {
@@ -14,6 +16,7 @@ struct SceneLoader::AssimpContext
 {
     const aiScene* scene = nullptr;
     SceneData* sceneData = nullptr;
+    std::string sceneDir;
     // Mesh index mapping: aiScene mesh index -> our meshes vector index
     std::vector<uint32> meshIndexMap;
 };
@@ -34,17 +37,30 @@ SceneData SceneLoader::LoadScene(const std::string& filePath)
     }
 
     SceneData data;
+    std::string sceneDir = std::filesystem::path(filePath).parent_path().string();
+
+    // Convert all materials
+    for (unsigned int i = 0; i < aiScenePtr->mNumMaterials; ++i)
+    {
+        data.materials.push_back(ConvertMaterial(aiScenePtr->mMaterials[i], sceneDir));
+    }
 
     // Convert all meshes
     AssimpContext ctx;
     ctx.scene = aiScenePtr;
     ctx.sceneData = &data;
+    ctx.sceneDir = sceneDir;
     ctx.meshIndexMap.resize(aiScenePtr->mNumMeshes);
 
     for (unsigned int i = 0; i < aiScenePtr->mNumMeshes; ++i)
     {
         ctx.meshIndexMap[i] = static_cast<uint32>(data.meshes.size());
-        data.meshes.push_back(ConvertMesh(aiScenePtr->mMeshes[i]));
+        auto mesh = ConvertMesh(aiScenePtr->mMeshes[i]);
+        // Link material index
+        int32 matIdx = static_cast<int32>(aiScenePtr->mMeshes[i]->mMaterialIndex);
+        if (matIdx >= 0 && matIdx < static_cast<int32>(data.materials.size()))
+            mesh->materialIndex = matIdx;
+        data.meshes.push_back(std::move(mesh));
     }
 
     // Build SceneNode tree
@@ -100,11 +116,17 @@ void SceneLoader::ProcessNode(AssimpContext& ctx, const void* aiNodePtr,
     parentNode->GetTransform().SetRotation({ pitch, yaw, roll });
     parentNode->GetTransform().SetScale(scl);
 
-    // Assign mesh if this node has one (use first mesh for simplicity)
+    // Assign mesh and material if this node has one
     if (node->mNumMeshes > 0)
     {
         uint32 meshIdx = ctx.meshIndexMap[node->mMeshes[0]];
-        parentNode->SetMesh(ctx.sceneData->meshes[meshIdx].get());
+        Mesh* mesh = ctx.sceneData->meshes[meshIdx].get();
+        parentNode->SetMesh(mesh);
+        if (mesh->materialIndex >= 0 &&
+            mesh->materialIndex < static_cast<int32>(ctx.sceneData->materials.size()))
+        {
+            parentNode->SetMaterial(ctx.sceneData->materials[mesh->materialIndex].get());
+        }
     }
 
     // If this node has multiple meshes, create child nodes for extras
@@ -112,7 +134,13 @@ void SceneLoader::ProcessNode(AssimpContext& ctx, const void* aiNodePtr,
     {
         auto childNode = std::make_unique<SceneNode>();
         uint32 meshIdx = ctx.meshIndexMap[node->mMeshes[i]];
-        childNode->SetMesh(ctx.sceneData->meshes[meshIdx].get());
+        Mesh* mesh = ctx.sceneData->meshes[meshIdx].get();
+        childNode->SetMesh(mesh);
+        if (mesh->materialIndex >= 0 &&
+            mesh->materialIndex < static_cast<int32>(ctx.sceneData->materials.size()))
+        {
+            childNode->SetMaterial(ctx.sceneData->materials[mesh->materialIndex].get());
+        }
         parentNode->AddChild(std::move(childNode));
     }
 
@@ -135,6 +163,7 @@ std::unique_ptr<Mesh> SceneLoader::ConvertMesh(const void* aiMeshPtr)
     result->indices.reserve(mesh->mNumFaces * 3);
 
     bool hasUVs = mesh->mTextureCoords[0] != nullptr;
+    bool hasTangents = mesh->mTangents != nullptr;
 
     for (unsigned int i = 0; i < mesh->mNumVertices; ++i)
     {
@@ -157,20 +186,49 @@ std::unique_ptr<Mesh> SceneLoader::ConvertMesh(const void* aiMeshPtr)
             };
         }
 
-        // Store UV in color for now (Phase 01 vertex format has color but no UV)
-        // color.x = u, color.y = v, color.z = 0, color.w = 1
+        // Default gray color for loaded meshes (Material system handles appearance)
+        vertex.color = { 0.8f, 0.8f, 0.8f, 1.0f };
+
+        // UV coordinates
         if (hasUVs)
         {
-            vertex.color = {
+            vertex.texCoord = {
                 mesh->mTextureCoords[0][i].x,
-                mesh->mTextureCoords[0][i].y,
-                0.0f,
-                1.0f
+                mesh->mTextureCoords[0][i].y
             };
         }
         else
         {
-            vertex.color = { 0.8f, 0.8f, 0.8f, 1.0f };  // Default gray
+            vertex.texCoord = { 0.0f, 0.0f };
+        }
+
+        // Tangent (with handedness in w)
+        if (hasTangents)
+        {
+            // Compute handedness from bitangent
+            float handedness = 1.0f;
+            if (mesh->mBitangents)
+            {
+                DirectX::XMVECTOR n = DirectX::XMLoadFloat3(&vertex.normal);
+                DirectX::XMVECTOR t = DirectX::XMVectorSet(
+                    mesh->mTangents[i].x, mesh->mTangents[i].y, mesh->mTangents[i].z, 0.0f);
+                DirectX::XMVECTOR b = DirectX::XMVectorSet(
+                    mesh->mBitangents[i].x, mesh->mBitangents[i].y, mesh->mBitangents[i].z, 0.0f);
+                DirectX::XMVECTOR computedB = DirectX::XMVector3Cross(n, t);
+                float dot;
+                DirectX::XMStoreFloat(&dot, DirectX::XMVector3Dot(computedB, b));
+                handedness = dot < 0.0f ? -1.0f : 1.0f;
+            }
+            vertex.tangent = {
+                mesh->mTangents[i].x,
+                mesh->mTangents[i].y,
+                mesh->mTangents[i].z,
+                handedness
+            };
+        }
+        else
+        {
+            vertex.tangent = { 1.0f, 0.0f, 0.0f, 1.0f };
         }
 
         result->vertices.push_back(vertex);
@@ -185,6 +243,109 @@ std::unique_ptr<Mesh> SceneLoader::ConvertMesh(const void* aiMeshPtr)
             result->indices.push_back(static_cast<uint32>(face.mIndices[j]));
         }
     }
+
+    return result;
+}
+
+std::unique_ptr<Material> SceneLoader::ConvertMaterial(const void* aiMaterialPtr,
+                                                       const std::string& sceneDir)
+{
+    const aiMaterial* mat = static_cast<const aiMaterial*>(aiMaterialPtr);
+    auto result = std::make_unique<Material>();
+
+    // Base color factor
+    aiColor4D baseColor;
+    if (mat->Get(AI_MATKEY_BASE_COLOR, baseColor) == AI_SUCCESS)
+    {
+        result->baseColorFactor = { baseColor.r, baseColor.g, baseColor.b, baseColor.a };
+    }
+    else
+    {
+        // Fallback: try diffuse color
+        aiColor4D diffuse;
+        if (mat->Get(AI_MATKEY_COLOR_DIFFUSE, diffuse) == AI_SUCCESS)
+        {
+            result->baseColorFactor = { diffuse.r, diffuse.g, diffuse.b, diffuse.a };
+        }
+    }
+
+    // Metallic factor
+    float metallic = 1.0f;
+    if (mat->Get(AI_MATKEY_METALLIC_FACTOR, metallic) == AI_SUCCESS)
+    {
+        result->metallicFactor = metallic;
+    }
+
+    // Roughness factor
+    float roughness = 1.0f;
+    if (mat->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness) == AI_SUCCESS)
+    {
+        result->roughnessFactor = roughness;
+    }
+
+    // Emissive factor
+    aiColor3D emissive;
+    if (mat->Get(AI_MATKEY_COLOR_EMISSIVE, emissive) == AI_SUCCESS)
+    {
+        result->emissiveFactor = { emissive.r, emissive.g, emissive.b };
+    }
+
+    // Alpha mode
+    aiString alphaMode;
+    if (mat->Get(AI_MATKEY_GLTF_ALPHAMODE, alphaMode) == AI_SUCCESS)
+    {
+        std::string mode(alphaMode.C_Str());
+        if (mode == "MASK")
+            result->alphaMode = AlphaMode::Mask;
+        else if (mode == "BLEND")
+            result->alphaMode = AlphaMode::Blend;
+        else
+            result->alphaMode = AlphaMode::Opaque;
+    }
+
+    // Alpha cutoff
+    float alphaCutoff = 0.5f;
+    if (mat->Get(AI_MATKEY_GLTF_ALPHACUTOFF, alphaCutoff) == AI_SUCCESS)
+    {
+        result->alphaCutoff = alphaCutoff;
+    }
+
+    // Double-sided
+    int twoSided = 0;
+    if (mat->Get(AI_MATKEY_TWOSIDED, twoSided) == AI_SUCCESS)
+    {
+        result->doubleSided = (twoSided != 0);
+    }
+
+    // Texture paths
+    auto extractTexturePath = [&](aiTextureType type) -> std::string
+    {
+        if (mat->GetTextureCount(type) > 0)
+        {
+            aiString path;
+            if (mat->GetTexture(type, 0, &path) == AI_SUCCESS)
+            {
+                std::string texPath(path.C_Str());
+                // If path is relative, prepend scene directory
+                if (!texPath.empty() && texPath[0] != '/' && texPath[0] != '\\' &&
+                    (texPath.size() < 2 || texPath[1] != ':'))
+                {
+                    texPath = sceneDir + "/" + texPath;
+                }
+                return texPath;
+            }
+        }
+        return "";
+    };
+
+    result->baseColorTexturePath = extractTexturePath(aiTextureType_BASE_COLOR);
+    if (result->baseColorTexturePath.empty())
+        result->baseColorTexturePath = extractTexturePath(aiTextureType_DIFFUSE);
+
+    result->normalTexturePath = extractTexturePath(aiTextureType_NORMALS);
+    result->metallicRoughnessTexturePath = extractTexturePath(aiTextureType_UNKNOWN);
+    result->emissiveTexturePath = extractTexturePath(aiTextureType_EMISSIVE);
+    result->occlusionTexturePath = extractTexturePath(aiTextureType_LIGHTMAP);
 
     return result;
 }
@@ -218,7 +379,6 @@ std::optional<CameraInfo> SceneLoader::ExtractCamera(const void* aiScenePtr)
     if (camNode)
     {
         // Accumulate parent transforms
-        aiMatrix4x4 worldTransform;
         const aiNode* current = camNode;
         std::vector<aiMatrix4x4> chain;
         while (current)

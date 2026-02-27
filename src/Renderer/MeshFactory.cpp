@@ -114,6 +114,8 @@ Mesh BuildColoredMesh(
             vert.position = positions[face[v]];
             vert.color = color;
             vert.normal = normal;
+            vert.texCoord = { 0.0f, 0.0f };
+            vert.tangent = { 1.0f, 0.0f, 0.0f, 1.0f };
             mesh.vertices.push_back(vert);
         }
 

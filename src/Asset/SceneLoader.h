@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Core/Types.h"
+#include "Asset/Material.h"
 #include "Renderer/Mesh.h"
 #include "Scene/SceneNode.h"
 #include <DirectXMath.h>
@@ -63,6 +64,7 @@ struct CameraInfo
 struct SceneData
 {
     std::vector<std::unique_ptr<Mesh>> meshes;
+    std::vector<std::unique_ptr<Material>> materials;
     std::unique_ptr<SceneNode> rootNode;
     BoundingBox sceneBounds;
     std::optional<CameraInfo> camera;
@@ -82,6 +84,8 @@ private:
     void ProcessNode(AssimpContext& ctx, const void* aiNodePtr,
                      SceneNode* parentNode);
     std::unique_ptr<Mesh> ConvertMesh(const void* aiMeshPtr);
+    std::unique_ptr<Material> ConvertMaterial(const void* aiMaterialPtr,
+                                              const std::string& sceneDir);
     std::optional<CameraInfo> ExtractCamera(const void* aiScenePtr);
     void CalculateSceneBounds(SceneData& data);
 };

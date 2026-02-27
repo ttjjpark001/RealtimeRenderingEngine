@@ -145,6 +145,7 @@
     <ClInclude Include="Lighting\PointLight.h" />
     <ClInclude Include="Scene\Camera.h" />
     <ClInclude Include="Asset\SceneLoader.h" />
+    <ClInclude Include="Asset\Material.h" />
   </ItemGroup>
 
   <!-- Shader Files (CustomBuild: compile VS and PS from single HLSL) -->
