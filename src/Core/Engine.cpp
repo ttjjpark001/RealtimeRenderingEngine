@@ -543,10 +543,15 @@ void Engine::LoadScene(const std::string& filePath)
     m_loadedMaterials = std::move(data.materials);
 
     // Load textures for each material
-    if (m_textureCache)
+    // Command list must be in recording state for GPU texture uploads
+    if (m_textureCache && !m_loadedMaterials.empty())
     {
         auto* device = static_cast<D3D12Device*>(m_rhiDevice.get())->GetD3DDevice();
+
+        // Open command list for texture upload commands
+        context->BeginFrame();
         auto* cmdList = context->GetCommandList();
+
         for (auto& mat : m_loadedMaterials)
         {
             if (!mat->baseColorTexturePath.empty())
@@ -560,6 +565,15 @@ void Engine::LoadScene(const std::string& filePath)
             if (!mat->occlusionTexturePath.empty())
                 mat->occlusionTexture = m_textureCache->GetOrLoad(mat->occlusionTexturePath, false, device, cmdList);
         }
+
+        // Execute upload commands and wait for completion
+        cmdList->Close();
+        ID3D12CommandList* cmdLists[] = { cmdList };
+        context->GetCommandQueue()->ExecuteCommandLists(1, cmdLists);
+        context->WaitForGPU();
+
+        // Release upload buffers now that GPU copy is complete
+        m_textureCache->ReleaseUploadBuffers();
     }
 
     // Replace scene graph root
@@ -581,11 +595,27 @@ void Engine::LoadScene(const std::string& filePath)
         m_camera->FitToScene(data.sceneBounds.GetCenter(), m_sceneDiagonal);
     }
 
-    // Adjust movement speed to scene size
+    // Adjust movement speed to scene size + reposition light
     if (data.sceneBounds.IsValid())
     {
         m_sceneDiagonal = data.sceneBounds.GetDiagonalLength();
         m_camera->SetMoveSpeedScale(m_sceneDiagonal / 10.0f);
+
+        // Reposition point light relative to scene bounds
+        DirectX::XMFLOAT3 center = data.sceneBounds.GetCenter();
+        float offset = m_sceneDiagonal * 0.5f;
+        DirectX::XMFLOAT3 lightPos = { center.x + offset, center.y + offset, center.z - offset };
+        if (m_pointLight)
+            m_pointLight->SetPosition(lightPos);
+        if (m_lightManager && m_lightManager->GetActiveLightCount() > 0)
+        {
+            m_lightManager->GetLightMutable(0).position = lightPos;
+            // Scale attenuation to scene size so light reaches entire scene
+            float Kl = 0.09f / (m_sceneDiagonal * 0.1f + 1.0f);
+            float Kq = 0.032f / (m_sceneDiagonal * 0.1f + 1.0f);
+            m_lightManager->GetLightMutable(0).Kl = Kl;
+            m_lightManager->GetLightMutable(0).Kq = Kq;
+        }
     }
 
     m_isExternalScene = true;
