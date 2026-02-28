@@ -485,19 +485,37 @@ tests/
 
 **완료 기준**: 메뉴에서 glTF/FBX 파일을 열어 씬이 교체되고, 마우스 + 키보드로 네비게이션 가능
 
-### Phase 20: 렌더링 모드 선택
-**목표**: 5단계 렌더링 모드 메뉴 전환
+### Phase 20: PBR 파이프라인 통합 + 렌더링 모드 선택
+**목표**: 구현된 PBR 파이프라인을 Engine에 연결하여 텍스처가 정상 렌더링되도록 하고, 5단계 렌더링 모드 전환 구현
 
-1. `enum class RenderMode { Wireframe, Solid, BaseColorOnly, FullPBR, FullPBRShadows }`
-2. Win32Menu에 "Render" 메뉴 추가 (5개 항목 + CheckMenuRadioItem)
-3. `src/Shaders/Wireframe.hlsl` — 단색 셰이더
-4. Wireframe PSO (FillMode = Wireframe)
-5. Solid/BaseColorOnly/FullPBR: PBR 셰이더의 텍스처 플래그로 제어
-6. FullPBRShadows: Shadow Depth Pass 수행 + Shadow Map 바인딩
-7. Renderer에 `SetRenderMode()` + 모드별 PSO/패스 분기
-8. DebugHUD에 현재 모드명 표시
+**Part A: PBR 파이프라인 통합 (텍스처 렌더링 활성화)**
+> Phase 13-16에서 PBR 인프라(Vertex UV/tangent, PBR PSO, Root Signature, PBR.hlsl, DrawPrimitivesPBR, TextureCache)는 이미 구현됨.
+> Engine에서 이들을 연결하는 마지막 통합 작업이 누락되어 텍스처가 렌더링되지 않음.
 
-**완료 기준**: 메뉴에서 5단계 렌더링 모드를 즉시 전환 가능, 각 모드별 정상 렌더링
+1. Engine에 `TextureCache` 생성 및 초기화
+   - `Engine::Initialize()`에서 `TextureCache::Initialize(device, context)` 호출
+   - `Renderer::SetTextureCache(textureCache)` 호출
+2. `Engine::LoadScene()`에서 텍스처 로딩 연결
+   - 각 Material의 텍스처 경로 → `TextureCache::GetOrLoad()` 호출
+   - 반환된 Texture 포인터를 Material에 설정 (baseColorTexture, normalTexture 등)
+   - 폴백 텍스처: 로드 실패 시 `TextureCache::GetFallback()` 사용
+3. 씬 교체 시 `TextureCache::Clear()` 호출 (GPU 리소스 해제)
+4. Alpha Mask/Blend 패스 구현
+   - Renderer::RenderScene()에서 Material의 alphaMode별 렌더링 분리
+   - Opaque → Alpha Mask (clip) → Alpha Blend (back-to-front 정렬)
+   - Alpha Blend PSO: BlendEnable=true, DepthWriteMask=ZERO
+
+**Part B: 렌더링 모드 선택**
+5. `enum class RenderMode { Wireframe, Solid, BaseColorOnly, FullPBR, FullPBRShadows }`
+6. Win32Menu에 "Render" 메뉴 추가 (5개 항목 + CheckMenuRadioItem)
+7. `src/Shaders/Wireframe.hlsl` — 단색 셰이더
+8. Wireframe PSO (FillMode = Wireframe)
+9. Solid/BaseColorOnly/FullPBR: PBR 셰이더의 텍스처 플래그로 제어
+10. FullPBRShadows: Shadow Depth Pass 수행 + Shadow Map 바인딩
+11. Renderer에 `SetRenderMode()` + 모드별 PSO/패스 분기
+12. DebugHUD에 현재 모드명 표시
+
+**완료 기준**: glTF/GLB 씬 로드 시 텍스처가 정상 렌더링됨, Alpha Mask/Blend 오브젝트 정상 표시, 메뉴에서 5단계 렌더링 모드를 즉시 전환 가능
 
 ### Phase 21: 렌더링 최적화 — Culling + LOD + Light Culling
 **목표**: Frustum/Occlusion Culling, LOD 시스템 (자동 LOD 생성 포함), 광원 컬링

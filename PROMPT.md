@@ -1024,15 +1024,62 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 19를 구현
 
 ---
 
-## Prompt 20: 렌더링 모드 선택
+## Prompt 20: PBR 파이프라인 통합 + 렌더링 모드 선택
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 20를 구현하라.
 
-1. enum class RenderMode를 정의한다.
+이 Phase는 두 파트로 나뉜다:
+- Part A: 이미 구현된 PBR 인프라를 Engine에 연결하여 텍스처 렌더링 활성화
+- Part B: 5단계 렌더링 모드 메뉴 전환
+
+=== Part A: PBR 파이프라인 통합 ===
+
+현재 상태:
+- PBR 인프라는 Phase 13-16에서 이미 구현됨:
+  · Vertex에 texCoord(XMFLOAT2), tangent(XMFLOAT4) 포함 (64바이트)
+  · PBR PSO + Root Signature (t0-t4 SRV, s0/s1 sampler) 존재
+  · PBR.hlsl: Cook-Torrance BRDF + 다중 광원 + Shadow PCF + Normal Mapping 완성
+  · D3D12Context::DrawPrimitivesPBR() 존재
+  · Renderer::RenderScene()에서 Material이 있으면 PBR 경로 사용
+  · TextureCache 클래스 존재 (Initialize, GetOrLoad, GetFallback, Clear)
+- 누락: Engine에서 TextureCache를 생성/연결하지 않아 텍스처가 렌더링되지 않음
+
+1. Engine에 TextureCache를 생성하고 Renderer에 연결한다.
+   - Engine.h에 std::unique_ptr<TextureCache> m_textureCache 멤버 추가
+   - Engine::Initialize()에서:
+     · m_textureCache = std::make_unique<TextureCache>()
+     · m_textureCache->Initialize(device, context)  // device/context는 RHI에서 획득
+     · m_renderer->SetTextureCache(m_textureCache.get())
+
+2. Engine::LoadScene()에서 텍스처를 로딩한다.
+   - SceneLoader가 반환한 각 Material에 대해:
+     · Material의 텍스처 경로(baseColorPath, normalPath, metallicRoughnessPath,
+       emissivePath, occlusionPath)를 확인
+     · 각 경로가 비어있지 않으면 m_textureCache->GetOrLoad(path, isSRGB) 호출
+       - baseColor: isSRGB = true (sRGB 공간)
+       - normal, metallicRoughness, occlusion: isSRGB = false (Linear 공간)
+       - emissive: isSRGB = true
+     · 반환된 Texture 포인터를 Material에 설정
+     · 로드 실패 시 m_textureCache->GetFallback() 사용 (1×1 white)
+   - 씬 교체 시: 기존 m_textureCache->Clear() 호출 후 새 텍스처 로딩
+
+3. Alpha Mask/Blend 패스를 구현한다.
+   - Renderer::RenderScene()에서 Material의 alphaMode별 렌더링을 분리:
+     · Pass 1: Opaque (alphaMode == Opaque) — front-to-back 정렬
+     · Pass 2: Alpha Mask (alphaMode == Mask) — PBR.hlsl에 clip(alpha - alphaCutoff)
+     · Pass 3: Alpha Blend (alphaMode == Blend) — back-to-front 정렬
+   - Alpha Blend PSO: 기존 PBR PSO 기반, BlendEnable=true,
+     SrcBlend=SRC_ALPHA, DestBlend=INV_SRC_ALPHA, DepthWriteMask=ZERO
+   - PBR.hlsl: Alpha Mask 모드일 때 baseColor.a < alphaCutoff이면 clip(-1) 추가
+     (이미 구현되어 있으면 확인만)
+
+=== Part B: 렌더링 모드 선택 ===
+
+4. enum class RenderMode를 정의한다.
    - Wireframe, Solid, BaseColorOnly, FullPBR, FullPBRShadows
 
-2. Win32Menu에 "Render" 메뉴를 추가한다.
+5. Win32Menu에 "Render" 메뉴를 추가한다.
    - "Wireframe"           (ID_RENDER_WIREFRAME)
    - "Solid (No Texture)"  (ID_RENDER_SOLID)
    - "Base Color Only"     (ID_RENDER_BASECOLOR)
@@ -1040,11 +1087,11 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 20를 구현
    - "Full PBR + Shadows"  (ID_RENDER_FULLPBR_SHADOWS)  ← 기본 선택
    - CheckMenuRadioItem으로 현재 선택 체크 표시
 
-3. src/Shaders/Wireframe.hlsl를 만든다.
+6. src/Shaders/Wireframe.hlsl를 만든다.
    - VS: position × WVP 변환
    - PS: 단색 출력 (예: float4(0.8, 0.8, 0.8, 1.0))
 
-4. Renderer에 렌더링 모드를 적용한다.
+7. Renderer에 렌더링 모드를 적용한다.
    - SetRenderMode(RenderMode mode)
    - 모드별 동작:
      Wireframe: Wireframe PSO 사용, 라이팅/텍스처 미적용
@@ -1053,11 +1100,16 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 20를 구현
      FullPBR: PBR PSO, 모든 텍스처 활성, Shadow Pass 스킵
      FullPBRShadows: Shadow Depth Pass + PBR PSO + Shadow Map 바인딩
 
-5. DebugHUD에 현재 렌더링 모드 이름을 표시한다 (P1).
+8. DebugHUD에 현재 렌더링 모드 이름을 표시한다 (P1).
    - "Render: Full PBR + Shadows" 등
 
-빌드하여 메뉴에서 5단계 렌더링 모드를 전환할 수 있고,
-각 모드별로 정상 렌더링되는지 확인하라.
+=== 검증 ===
+
+빌드하여 다음을 확인하라:
+- Duck.gltf 또는 기타 텍스처가 있는 glTF 파일을 로드하면 텍스처가 정상 표시됨
+- Alpha Mask/Blend 오브젝트가 올바르게 렌더링됨
+- 메뉴에서 5단계 렌더링 모드를 전환할 수 있고, 각 모드별로 정상 렌더링됨
+- 기존 Phase 01 데모 씬(vertex-color 큐브)은 BasicColor 경로로 여전히 정상 동작
 ```
 
 ---

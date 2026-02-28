@@ -470,6 +470,19 @@ struct Light {
 
 **기존 BasicColor.hlsl은 Phase 01 오브젝트용으로 유지 (변경 없음)**
 
+### PBR 파이프라인 통합 (Phase 20)
+
+> **구현 상태 (Phase 19 완료 시점)**:
+> PBR 인프라(Vertex UV/tangent, PBR PSO, Root Signature, PBR.hlsl, DrawPrimitivesPBR, TextureCache 클래스)는 Phase 13-16에서 구현 완료.
+> **미연결 항목**: Engine에서 TextureCache를 생성/초기화하지 않고, LoadScene에서 텍스처를 로딩하지 않아 PBR 텍스처 렌더링이 비활성 상태.
+> Phase 20에서 Engine↔TextureCache 연결 + Alpha Mask/Blend 패스 구현 + 렌더링 모드 전환을 완성.
+
+- **Engine에서 TextureCache 연결**:
+  - `Engine::Initialize()`: TextureCache 생성 → `Renderer::SetTextureCache()` 호출
+  - `Engine::LoadScene()`: Material의 텍스처 경로 → `TextureCache::GetOrLoad()` → Material 텍스처 포인터 설정
+  - 씬 교체 시: `TextureCache::Clear()` 호출 후 새 텍스처 로딩
+  - sRGB 구분: baseColor/emissive = sRGB, normal/metallicRoughness/occlusion = Linear
+
 ### Renderer 확장
 
 - **렌더 패스 순서:**
