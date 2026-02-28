@@ -87,6 +87,19 @@ bool Win32Menu::Initialize(HWND hwnd)
     CheckMenuRadioItem(m_cameraMenu, ID_CAMERA_PERSPECTIVE, ID_CAMERA_ORTHOGRAPHIC,
         ID_CAMERA_PERSPECTIVE, MF_BYCOMMAND);
 
+    // Render menu
+    m_renderMenu = CreatePopupMenu();
+    AppendMenuW(m_renderMenu, MF_STRING, ID_RENDER_WIREFRAME, L"Wireframe");
+    AppendMenuW(m_renderMenu, MF_STRING, ID_RENDER_SOLID, L"Solid (No Texture)");
+    AppendMenuW(m_renderMenu, MF_STRING, ID_RENDER_BASECOLOR, L"Base Color Only");
+    AppendMenuW(m_renderMenu, MF_STRING, ID_RENDER_FULL_PBR, L"Full PBR");
+    AppendMenuW(m_renderMenu, MF_STRING, ID_RENDER_FULL_PBR_SHADOW, L"Full PBR + Shadows");
+    AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_renderMenu), L"Render");
+
+    // Default check: Full PBR + Shadows
+    CheckMenuRadioItem(m_renderMenu, ID_RENDER_WIREFRAME, ID_RENDER_FULL_PBR_SHADOW,
+        ID_RENDER_FULL_PBR_SHADOW, MF_BYCOMMAND);
+
     SetMenu(hwnd, m_menuBar);
     return true;
 }
@@ -238,6 +251,17 @@ bool Win32Menu::HandleCommand(WPARAM wParam)
         CheckMenuRadioItem(m_cameraMenu, ID_CAMERA_PERSPECTIVE, ID_CAMERA_ORTHOGRAPHIC,
             ID_CAMERA_PERSPECTIVE, MF_BYCOMMAND);
         if (m_cameraResetCallback) m_cameraResetCallback();
+        return true;
+
+    // Render mode commands
+    case ID_RENDER_WIREFRAME:
+    case ID_RENDER_SOLID:
+    case ID_RENDER_BASECOLOR:
+    case ID_RENDER_FULL_PBR:
+    case ID_RENDER_FULL_PBR_SHADOW:
+        CheckMenuRadioItem(m_renderMenu, ID_RENDER_WIREFRAME, ID_RENDER_FULL_PBR_SHADOW,
+            id, MF_BYCOMMAND);
+        if (m_renderModeCallback) m_renderModeCallback(id - ID_RENDER_WIREFRAME);
         return true;
 
     default:

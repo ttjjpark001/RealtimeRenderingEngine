@@ -89,7 +89,7 @@ struct PerMaterialConstants
     uint32 hasEmissiveMap;                // 4
     uint32 hasOcclusionMap;               // 4
     DirectX::XMFLOAT3 emissiveFactor;    // 12
-    float _padMat;                        // 4
+    uint32 alphaMode;                     // 4  (0=Opaque, 1=Mask, 2=Blend)
 };  // Total: 64 bytes → 256 aligned
 static_assert(sizeof(PerMaterialConstants) <= 256, "PerMaterialConstants exceeds 256-byte CB slot");
 
@@ -172,10 +172,17 @@ public:
     // Set shadow data for current frame
     void SetShadowData(const ShadowConstants& data) { m_shadowConstants = data; }
 
+    // Set render mode for texture flag overrides (0=Wireframe..4=FullPBRShadows)
+    void SetRenderModeInt(int mode) { m_renderModeInt = mode; }
+
     // PBR draw call: binds 3 CBs (PerObject, Lights, Material) + 5 texture SRVs + shadow data
     void DrawPrimitivesPBR(IRHIBuffer* vb, IRHIBuffer* ib,
         const DirectX::XMFLOAT4X4& worldMatrix,
         Material* material, TextureCache* textureCache);
+
+    // Wireframe draw call: simple position-only rendering
+    void DrawPrimitivesWireframe(IRHIBuffer* vb, IRHIBuffer* ib,
+        const DirectX::XMFLOAT4X4& worldMatrix);
 
     // Shadow mapping methods
     void CreateShadowMaps();
@@ -263,6 +270,9 @@ private:
 
     // PBR lighting data (set via SetPBRLightData)
     LightConstants m_pbrLightConstants = {};
+
+    // Render mode (mirrors RenderMode enum: 0=Wireframe..4=FullPBRShadows)
+    int m_renderModeInt = 4;
 
     // Shadow data (set via SetShadowData)
     ShadowConstants m_shadowConstants = {};

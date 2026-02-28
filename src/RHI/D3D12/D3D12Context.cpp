@@ -470,6 +470,54 @@ void D3D12Context::DrawPrimitives(IRHIBuffer* vb, IRHIBuffer* ib,
     m_commandList->DrawIndexedInstanced(indexCount, 1, 0, 0, 0);
 }
 
+void D3D12Context::DrawPrimitivesWireframe(IRHIBuffer* vb, IRHIBuffer* ib,
+    const DirectX::XMFLOAT4X4& worldMatrix)
+{
+    if (!m_pipelineState.HasWireframePSO() || !vb || !ib)
+        return;
+
+    auto* d3dVB = static_cast<D3D12Buffer*>(vb);
+    auto* d3dIB = static_cast<D3D12Buffer*>(ib);
+
+    // Allocate CB slot for PerObjectPBR (world + viewProj + camPos)
+    CBAllocation cbAlloc = m_cbPool.Allocate(sizeof(PerObjectPBR));
+    if (!cbAlloc.cpuPtr)
+        return;
+
+    PerObjectPBR constants = {};
+    constants.world = worldMatrix;
+    constants.viewProj = m_viewProjection;
+    constants.cameraPosition = m_cameraPosition;
+    memcpy(cbAlloc.cpuPtr, &constants, sizeof(PerObjectPBR));
+
+    D3D12_CPU_DESCRIPTOR_HANDLE cbvCpuHandle = m_cbvSrvHeap.AllocateTransient();
+    D3D12_GPU_DESCRIPTOR_HANDLE cbvGpuHandle = m_cbvSrvHeap.GetGPUHandleForCPU(cbvCpuHandle);
+
+    UINT cbAlignedSize = (sizeof(PerObjectPBR) + 255) & ~255;
+    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
+    cbvDesc.BufferLocation = cbAlloc.gpuAddress;
+    cbvDesc.SizeInBytes = cbAlignedSize;
+    m_device->CreateConstantBufferView(&cbvDesc, cbvCpuHandle);
+
+    m_commandList->SetPipelineState(m_pipelineState.GetWireframePSO());
+    m_commandList->SetGraphicsRootSignature(m_pipelineState.GetRootSignature());
+
+    ID3D12DescriptorHeap* heaps[] = { m_cbvSrvHeap.GetHeap() };
+    m_commandList->SetDescriptorHeaps(1, heaps);
+    m_commandList->SetGraphicsRootDescriptorTable(0, cbvGpuHandle);
+
+    m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    D3D12_VERTEX_BUFFER_VIEW vbView = d3dVB->GetVertexBufferView();
+    m_commandList->IASetVertexBuffers(0, 1, &vbView);
+
+    D3D12_INDEX_BUFFER_VIEW ibView = d3dIB->GetIndexBufferView();
+    m_commandList->IASetIndexBuffer(&ibView);
+
+    uint32 indexCount = d3dIB->GetSize() / sizeof(uint32);
+    m_commandList->DrawIndexedInstanced(indexCount, 1, 0, 0, 0);
+}
+
 void D3D12Context::DrawPrimitivesPBR(IRHIBuffer* vb, IRHIBuffer* ib,
     const DirectX::XMFLOAT4X4& worldMatrix,
     Material* material, TextureCache* textureCache)
@@ -515,13 +563,37 @@ void D3D12Context::DrawPrimitivesPBR(IRHIBuffer* vb, IRHIBuffer* ib,
         matConst.hasEmissiveMap = (material->emissiveTexture != nullptr) ? 1u : 0u;
         matConst.hasOcclusionMap = (material->occlusionTexture != nullptr) ? 1u : 0u;
         matConst.emissiveFactor = material->emissiveFactor;
+        matConst.alphaMode = static_cast<uint32>(material->alphaMode);
     }
     else
     {
         matConst.baseColorFactor = { 1.0f, 1.0f, 1.0f, 1.0f };
         matConst.metallicFactor = 0.0f;
         matConst.roughnessFactor = 0.5f;
+        matConst.alphaMode = 0;
     }
+
+    // Render mode texture flag overrides
+    // 1=Solid: all texture flags off
+    // 2=BaseColorOnly: only albedo
+    // 3=FullPBR: all flags as-is (no shadows)
+    // 4=FullPBRShadows: all flags as-is
+    if (m_renderModeInt == 1) // Solid
+    {
+        matConst.hasAlbedoMap = 0;
+        matConst.hasNormalMap = 0;
+        matConst.hasMetallicRoughnessMap = 0;
+        matConst.hasEmissiveMap = 0;
+        matConst.hasOcclusionMap = 0;
+    }
+    else if (m_renderModeInt == 2) // BaseColorOnly
+    {
+        matConst.hasNormalMap = 0;
+        matConst.hasMetallicRoughnessMap = 0;
+        matConst.hasEmissiveMap = 0;
+        matConst.hasOcclusionMap = 0;
+    }
+
     memcpy(cb2Alloc.cpuPtr, &matConst, sizeof(PerMaterialConstants));
 
     // --- Create 3 transient CBV descriptors ---
@@ -652,7 +724,10 @@ void D3D12Context::DrawPrimitivesPBR(IRHIBuffer* vb, IRHIBuffer* ib,
     }
 
     // --- Set PSO and root signature ---
-    m_commandList->SetPipelineState(m_pipelineState.GetPBRPSO());
+    if (material && material->alphaMode == AlphaMode::Blend && m_pipelineState.HasPBRAlphaBlendPSO())
+        m_commandList->SetPipelineState(m_pipelineState.GetPBRAlphaBlendPSO());
+    else
+        m_commandList->SetPipelineState(m_pipelineState.GetPBRPSO());
     m_commandList->SetGraphicsRootSignature(m_pipelineState.GetRootSignature());
 
     // Set descriptor heap

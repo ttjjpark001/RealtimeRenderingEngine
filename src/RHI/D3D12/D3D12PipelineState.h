@@ -21,6 +21,10 @@ public:
     bool HasPBRPSO() const { return m_pbrPipelineState != nullptr; }
     ID3D12PipelineState* GetShadowDepthPSO() const { return m_shadowDepthPipelineState.Get(); }
     bool HasShadowDepthPSO() const { return m_shadowDepthPipelineState != nullptr; }
+    ID3D12PipelineState* GetPBRAlphaBlendPSO() const { return m_pbrAlphaBlendPipelineState.Get(); }
+    bool HasPBRAlphaBlendPSO() const { return m_pbrAlphaBlendPipelineState != nullptr; }
+    ID3D12PipelineState* GetWireframePSO() const { return m_wireframePipelineState.Get(); }
+    bool HasWireframePSO() const { return m_wireframePipelineState != nullptr; }
 
 private:
     bool CreateRootSignature(ID3D12Device* device);
@@ -30,6 +34,9 @@ private:
     bool CreatePBRPipelineState(ID3D12Device* device);
     bool LoadShadowDepthShaders();
     bool CreateShadowDepthPipelineState(ID3D12Device* device);
+    bool CreatePBRAlphaBlendPipelineState(ID3D12Device* device);
+    bool LoadWireframeShaders();
+    bool CreateWireframePipelineState(ID3D12Device* device);
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rootSignature;
 
@@ -46,6 +53,14 @@ private:
     // Shadow Depth PSO
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_shadowDepthPipelineState;
     Microsoft::WRL::ComPtr<ID3DBlob> m_shadowDepthVertexShader;
+
+    // PBR Alpha Blend PSO
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pbrAlphaBlendPipelineState;
+
+    // Wireframe PSO
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_wireframePipelineState;
+    Microsoft::WRL::ComPtr<ID3DBlob> m_wireframeVertexShader;
+    Microsoft::WRL::ComPtr<ID3DBlob> m_wireframePixelShader;
 };
 
 } // namespace RRE

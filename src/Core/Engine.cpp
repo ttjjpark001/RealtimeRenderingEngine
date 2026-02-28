@@ -18,6 +18,7 @@
 #include "Platform/Win32/Win32Menu.h"
 #include "Asset/SceneLoader.h"
 #include "Asset/Material.h"
+#include "Asset/TextureCache.h"
 #include <DirectXMath.h>
 #include <commdlg.h>
 
@@ -89,6 +90,13 @@ bool Engine::Initialize(const EngineInitParams& params)
         auto* d3dDevice = static_cast<D3D12Device*>(m_rhiDevice.get());
         auto* context = static_cast<D3D12Context*>(m_rhiDevice->GetContext());
         m_renderer->SetContext(context, d3dDevice->GetD3DDevice());
+
+        // Create texture cache and connect to renderer
+        m_textureCache = std::make_unique<TextureCache>();
+        m_textureCache->Initialize(d3dDevice->GetD3DDevice(),
+                                   context->GetCommandList(),
+                                   &context->GetCBVSRVHeap());
+        m_renderer->SetTextureCache(m_textureCache.get());
     }
 
     // Create menu
@@ -242,6 +250,11 @@ bool Engine::Initialize(const EngineInitParams& params)
         m_camera->Reset();
     });
 
+    m_menu->SetRenderModeCallback([this](uint32 mode) {
+        if (m_renderer)
+            m_renderer->SetRenderMode(static_cast<RenderMode>(mode));
+    });
+
     // Create debug HUD
     m_debugHUD = std::make_unique<DebugHUD>();
 
@@ -289,6 +302,7 @@ void Engine::Shutdown()
         m_rhiDevice->Shutdown();
     }
 
+    m_textureCache.reset();
     m_renderer.reset();
     m_loadedMeshes.clear();
     m_loadedMaterials.clear();
@@ -387,6 +401,18 @@ void Engine::Update(float deltaTime)
             stats.cameraDirection = m_camera->GetDirection();
             stats.fovDegrees = m_camera->GetFovDegrees();
         }
+
+        // Render mode name
+        if (m_renderer)
+        {
+            static const char* modeNames[] = {
+                "Wireframe", "Solid", "Base Color Only", "Full PBR", "Full PBR + Shadows"
+            };
+            int modeIdx = static_cast<int>(m_renderer->GetRenderMode());
+            if (modeIdx >= 0 && modeIdx <= 4)
+                stats.renderModeName = modeNames[modeIdx];
+        }
+
         m_debugHUD->Update(deltaTime, stats);
     }
 }
@@ -501,6 +527,7 @@ void Engine::LoadScene(const std::string& filePath)
 
     // Clear previous scene resources
     if (m_renderer) m_renderer->ClearMeshCache();
+    if (m_textureCache) m_textureCache->Clear();
     m_loadedMeshes.clear();
     m_loadedMaterials.clear();
 
@@ -514,6 +541,26 @@ void Engine::LoadScene(const std::string& filePath)
     // Store loaded data
     m_loadedMeshes = std::move(data.meshes);
     m_loadedMaterials = std::move(data.materials);
+
+    // Load textures for each material
+    if (m_textureCache)
+    {
+        auto* device = static_cast<D3D12Device*>(m_rhiDevice.get())->GetD3DDevice();
+        auto* cmdList = context->GetCommandList();
+        for (auto& mat : m_loadedMaterials)
+        {
+            if (!mat->baseColorTexturePath.empty())
+                mat->baseColorTexture = m_textureCache->GetOrLoad(mat->baseColorTexturePath, true, device, cmdList);
+            if (!mat->normalTexturePath.empty())
+                mat->normalTexture = m_textureCache->GetOrLoad(mat->normalTexturePath, false, device, cmdList);
+            if (!mat->metallicRoughnessTexturePath.empty())
+                mat->metallicRoughnessTexture = m_textureCache->GetOrLoad(mat->metallicRoughnessTexturePath, false, device, cmdList);
+            if (!mat->emissiveTexturePath.empty())
+                mat->emissiveTexture = m_textureCache->GetOrLoad(mat->emissiveTexturePath, true, device, cmdList);
+            if (!mat->occlusionTexturePath.empty())
+                mat->occlusionTexture = m_textureCache->GetOrLoad(mat->occlusionTexturePath, false, device, cmdList);
+        }
+    }
 
     // Replace scene graph root
     m_parentNode = nullptr;

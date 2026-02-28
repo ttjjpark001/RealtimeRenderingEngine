@@ -23,11 +23,23 @@ bool D3D12PipelineState::Initialize(ID3D12Device* device)
     if (LoadShadowDepthShaders())
         CreateShadowDepthPipelineState(device);
 
+    // Alpha Blend PSO (requires PBR shaders)
+    if (m_pbrVertexShader && m_pbrPixelShader)
+        CreatePBRAlphaBlendPipelineState(device);
+
+    // Wireframe PSO is optional
+    if (LoadWireframeShaders())
+        CreateWireframePipelineState(device);
+
     return true;
 }
 
 void D3D12PipelineState::Shutdown()
 {
+    m_wireframePipelineState.Reset();
+    m_wireframeVertexShader.Reset();
+    m_wireframePixelShader.Reset();
+    m_pbrAlphaBlendPipelineState.Reset();
     m_shadowDepthPipelineState.Reset();
     m_shadowDepthVertexShader.Reset();
     m_pbrPipelineState.Reset();
@@ -350,6 +362,112 @@ bool D3D12PipelineState::CreateShadowDepthPipelineState(ID3D12Device* device)
     psoDesc.SampleDesc.Count = 1;
 
     HRESULT hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_shadowDepthPipelineState));
+    return SUCCEEDED(hr);
+}
+
+bool D3D12PipelineState::CreatePBRAlphaBlendPipelineState(ID3D12Device* device)
+{
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+    psoDesc.pRootSignature = m_rootSignature.Get();
+
+    psoDesc.VS.pShaderBytecode = m_pbrVertexShader->GetBufferPointer();
+    psoDesc.VS.BytecodeLength = m_pbrVertexShader->GetBufferSize();
+    psoDesc.PS.pShaderBytecode = m_pbrPixelShader->GetBufferPointer();
+    psoDesc.PS.BytecodeLength = m_pbrPixelShader->GetBufferSize();
+
+    psoDesc.InputLayout.pInputElementDescs = VERTEX_INPUT_LAYOUT;
+    psoDesc.InputLayout.NumElements = VERTEX_INPUT_LAYOUT_COUNT;
+
+    // Rasterizer state
+    psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+    psoDesc.RasterizerState.FrontCounterClockwise = FALSE;
+    psoDesc.RasterizerState.DepthClipEnable = TRUE;
+
+    // Blend state: alpha blending enabled
+    psoDesc.BlendState.RenderTarget[0].BlendEnable = TRUE;
+    psoDesc.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+    psoDesc.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+    psoDesc.BlendState.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+    psoDesc.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+    psoDesc.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+    psoDesc.BlendState.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    psoDesc.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+    // Depth stencil: depth read only (no write) for transparency
+    psoDesc.DepthStencilState.DepthEnable = TRUE;
+    psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+    psoDesc.DepthStencilState.StencilEnable = FALSE;
+    psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+
+    psoDesc.SampleMask = UINT_MAX;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.NumRenderTargets = 1;
+    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    psoDesc.SampleDesc.Count = 1;
+
+    HRESULT hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pbrAlphaBlendPipelineState));
+    return SUCCEEDED(hr);
+}
+
+bool D3D12PipelineState::LoadWireframeShaders()
+{
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    std::wstring exeDir(exePath);
+    exeDir = exeDir.substr(0, exeDir.find_last_of(L"\\") + 1);
+
+    std::wstring vsPath = exeDir + L"Shaders\\Wireframe_VS.cso";
+    std::wstring psPath = exeDir + L"Shaders\\Wireframe_PS.cso";
+
+    HRESULT hr = D3DReadFileToBlob(vsPath.c_str(), &m_wireframeVertexShader);
+    if (FAILED(hr))
+        return false;
+
+    hr = D3DReadFileToBlob(psPath.c_str(), &m_wireframePixelShader);
+    if (FAILED(hr))
+        return false;
+
+    return true;
+}
+
+bool D3D12PipelineState::CreateWireframePipelineState(ID3D12Device* device)
+{
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+    psoDesc.pRootSignature = m_rootSignature.Get();
+
+    psoDesc.VS.pShaderBytecode = m_wireframeVertexShader->GetBufferPointer();
+    psoDesc.VS.BytecodeLength = m_wireframeVertexShader->GetBufferSize();
+    psoDesc.PS.pShaderBytecode = m_wireframePixelShader->GetBufferPointer();
+    psoDesc.PS.BytecodeLength = m_wireframePixelShader->GetBufferSize();
+
+    psoDesc.InputLayout.pInputElementDescs = VERTEX_INPUT_LAYOUT;
+    psoDesc.InputLayout.NumElements = VERTEX_INPUT_LAYOUT_COUNT;
+
+    // Rasterizer state: wireframe fill mode
+    psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+    psoDesc.RasterizerState.FrontCounterClockwise = FALSE;
+    psoDesc.RasterizerState.DepthClipEnable = TRUE;
+
+    // Blend state (opaque)
+    psoDesc.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+    // Depth stencil
+    psoDesc.DepthStencilState.DepthEnable = TRUE;
+    psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+    psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+    psoDesc.DepthStencilState.StencilEnable = FALSE;
+    psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+
+    psoDesc.SampleMask = UINT_MAX;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.NumRenderTargets = 1;
+    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    psoDesc.SampleDesc.Count = 1;
+
+    HRESULT hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_wireframePipelineState));
     return SUCCEEDED(hr);
 }
 

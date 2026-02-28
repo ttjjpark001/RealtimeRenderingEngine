@@ -50,7 +50,7 @@ cbuffer PerMaterialCB : register(b2)
     uint hasEmissiveMap;
     uint hasOcclusionMap;
     float3 emissiveFactor;
-    float _padMat;
+    uint alphaMode;       // 0=Opaque, 1=Mask, 2=Blend
 };
 
 static const uint MAX_SHADOW_MAPS = 8;
@@ -236,6 +236,10 @@ float4 PSMain(PSInput input) : SV_TARGET
         albedo4 = baseColorFactor;
     float3 albedo = albedo4.rgb;
     float alpha = albedo4.a;
+
+    // Alpha mask: discard pixel if below cutoff
+    if (alphaMode == 1)
+        clip(alpha - alphaCutoff);
 
     // Metallic / Roughness (glTF packing: G=roughness, B=metallic)
     float metallic = metallicFactor;

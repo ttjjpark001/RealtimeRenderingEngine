@@ -21,6 +21,7 @@ class Camera;
 class Renderer;
 class SceneGraph;
 class SceneNode;
+class TextureCache;
 enum class MeshType;
 
 struct EngineInitParams
@@ -86,6 +87,9 @@ private:
     // Camera
     std::unique_ptr<Camera> m_camera;
     bool m_showCameraInfo = true;
+
+    // Texture cache
+    std::unique_ptr<TextureCache> m_textureCache;
 
     // Loaded scene data (external scene)
     std::vector<std::unique_ptr<Mesh>> m_loadedMeshes;

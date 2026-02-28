@@ -9,6 +9,15 @@ struct ID3D12Device;
 namespace RRE
 {
 
+enum class RenderMode
+{
+    Wireframe,
+    Solid,
+    BaseColorOnly,
+    FullPBR,
+    FullPBRShadows
+};
+
 class D3D12Context;
 class IRHIBuffer;
 class Mesh;
@@ -26,6 +35,9 @@ public:
 
     void SetContext(D3D12Context* context, ID3D12Device* device);
     void SetTextureCache(TextureCache* cache) { m_textureCache = cache; }
+
+    void SetRenderMode(RenderMode mode) { m_renderMode = mode; }
+    RenderMode GetRenderMode() const { return m_renderMode; }
 
     // Upload mesh VB/IB to GPU (cached, idempotent)
     void UploadMesh(Mesh* mesh);
@@ -51,6 +63,7 @@ private:
     D3D12Context* m_context = nullptr;
     ID3D12Device* m_d3dDevice = nullptr;
     TextureCache* m_textureCache = nullptr;
+    RenderMode m_renderMode = RenderMode::FullPBRShadows;
     std::unordered_map<Mesh*, MeshBuffers> m_meshCache;
 };
 

@@ -13,6 +13,7 @@
 #include <DirectXMath.h>
 #include <d3d12.h>
 #include <cmath>
+#include <algorithm>
 
 using namespace DirectX;
 
@@ -100,11 +101,14 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera, PointLight* light,
         m_context->SetPBRLightData(builtLights);
     }
 
-    // --- Shadow Depth Pass ---
+    // Pass render mode to D3D12Context for texture flag overrides
+    m_context->SetRenderModeInt(static_cast<int>(m_renderMode));
+
+    // --- Shadow Depth Pass (only in FullPBRShadows mode) ---
     ShadowConstants shadowConst = {};
     uint32 shadowCasterCount = lightManager ? lightManager->GetShadowCasterCount() : 0;
 
-    if (shadowCasterCount > 0)
+    if (shadowCasterCount > 0 && m_renderMode == RenderMode::FullPBRShadows)
     {
         m_context->CreateShadowMaps();
 
@@ -191,37 +195,93 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera, PointLight* light,
 
     m_context->SetShadowData(shadowConst);
 
-    // Traverse scene graph and draw each node with a mesh
+    // --- Pass 1: Opaque + Alpha Mask (or Wireframe) ---
     graph.Traverse([this, &camPos](SceneNode* node, const XMMATRIX& worldMatrix) {
         Mesh* mesh = node->GetMesh();
         if (!mesh)
             return;
 
-        // Ensure mesh is uploaded
-        UploadMesh(mesh);
+        Material* material = node->GetMaterial();
+        // Skip blend materials — they go in pass 2
+        if (material && material->alphaMode == AlphaMode::Blend && m_renderMode != RenderMode::Wireframe)
+            return;
 
+        UploadMesh(mesh);
         auto it = m_meshCache.find(mesh);
         if (it == m_meshCache.end())
             return;
 
-        // Transpose for HLSL column-major layout
         XMMATRIX transposed = XMMatrixTranspose(worldMatrix);
         XMFLOAT4X4 worldFloat;
         XMStoreFloat4x4(&worldFloat, transposed);
 
-        Material* material = node->GetMaterial();
-        if (material && m_textureCache)
+        if (m_renderMode == RenderMode::Wireframe)
         {
-            // PBR path: use DrawPrimitivesPBR with material + textures
+            m_context->DrawPrimitivesWireframe(it->second.vb.get(), it->second.ib.get(), worldFloat);
+        }
+        else if (material && m_textureCache)
+        {
             m_context->DrawPrimitivesPBR(it->second.vb.get(), it->second.ib.get(),
                 worldFloat, material, m_textureCache);
         }
         else
         {
-            // BasicColor path: vertex-colored geometry
             m_context->DrawPrimitives(it->second.vb.get(), it->second.ib.get(), worldFloat);
         }
     });
+
+    // --- Pass 2: Alpha Blend (back-to-front sorted) — skip in Wireframe mode ---
+    if (m_renderMode != RenderMode::Wireframe)
+    {
+        struct BlendDrawCall
+        {
+            SceneNode* node;
+            XMFLOAT4X4 worldFloat;
+            float distSq;
+        };
+        std::vector<BlendDrawCall> blendList;
+
+        graph.Traverse([this, &camPos, &blendList](SceneNode* node, const XMMATRIX& worldMatrix) {
+            Mesh* mesh = node->GetMesh();
+            if (!mesh)
+                return;
+
+            Material* material = node->GetMaterial();
+            if (!material || material->alphaMode != AlphaMode::Blend)
+                return;
+
+            UploadMesh(mesh);
+            if (m_meshCache.find(mesh) == m_meshCache.end())
+                return;
+
+            XMFLOAT4X4 worldFloat;
+            XMStoreFloat4x4(&worldFloat, XMMatrixTranspose(worldMatrix));
+
+            XMFLOAT3 objPos;
+            XMStoreFloat3(&objPos, worldMatrix.r[3]);
+            float dx = objPos.x - camPos.x;
+            float dy = objPos.y - camPos.y;
+            float dz = objPos.z - camPos.z;
+            float distSq = dx * dx + dy * dy + dz * dz;
+
+            blendList.push_back({ node, worldFloat, distSq });
+        });
+
+        // Sort back-to-front (farthest first)
+        std::sort(blendList.begin(), blendList.end(),
+            [](const BlendDrawCall& a, const BlendDrawCall& b) { return a.distSq > b.distSq; });
+
+        for (auto& dc : blendList)
+        {
+            Mesh* mesh = dc.node->GetMesh();
+            auto it = m_meshCache.find(mesh);
+            if (it == m_meshCache.end())
+                continue;
+
+            m_context->DrawPrimitivesPBR(it->second.vb.get(), it->second.ib.get(),
+                dc.worldFloat, dc.node->GetMaterial(), m_textureCache);
+        }
+    }
 }
 
 void Renderer::RenderLightIndicator(PointLight* light, bool show,

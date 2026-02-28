@@ -28,6 +28,9 @@ struct RenderStats
     DirectX::XMFLOAT3 cameraPosition = { 0.0f, 0.0f, 0.0f };
     DirectX::XMFLOAT3 cameraDirection = { 0.0f, 0.0f, 0.0f };
     float fovDegrees = 45.0f;
+
+    // Render mode info (Phase 20)
+    const char* renderModeName = "Full PBR + Shadows";
 };
 
 class DebugHUD

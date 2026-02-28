@@ -48,6 +48,12 @@ constexpr UINT ID_CAMERA_FIT_TO_SCENE = 5007;
 
 constexpr UINT ID_FILE_OPEN_SCENE     = 6001;
 
+constexpr UINT ID_RENDER_WIREFRAME       = 7001;
+constexpr UINT ID_RENDER_SOLID           = 7002;
+constexpr UINT ID_RENDER_BASECOLOR       = 7003;
+constexpr UINT ID_RENDER_FULL_PBR        = 7004;
+constexpr UINT ID_RENDER_FULL_PBR_SHADOW = 7005;
+
 class Win32Menu
 {
 public:
@@ -63,6 +69,7 @@ public:
     using CameraResetCallback = std::function<void()>;
     using FileOpenCallback = std::function<void()>;
     using CameraFitToSceneCallback = std::function<void()>;
+    using RenderModeCallback = std::function<void(uint32 mode)>;
 
     Win32Menu() = default;
     ~Win32Menu() = default;
@@ -83,6 +90,7 @@ public:
     void SetCameraResetCallback(CameraResetCallback callback) { m_cameraResetCallback = std::move(callback); }
     void SetFileOpenCallback(FileOpenCallback callback) { m_fileOpenCallback = std::move(callback); }
     void SetCameraFitToSceneCallback(CameraFitToSceneCallback callback) { m_cameraFitToSceneCallback = std::move(callback); }
+    void SetRenderModeCallback(RenderModeCallback callback) { m_renderModeCallback = std::move(callback); }
 
     void UpdateAnimCheckMark(bool isPlaying);
 
@@ -95,6 +103,7 @@ private:
     HMENU m_animMenu = nullptr;
     HMENU m_lightMenu = nullptr;
     HMENU m_cameraMenu = nullptr;
+    HMENU m_renderMenu = nullptr;
 
     ViewCallback m_viewCallback;
     MeshCallback m_meshCallback;
@@ -108,6 +117,7 @@ private:
     CameraResetCallback m_cameraResetCallback;
     FileOpenCallback m_fileOpenCallback;
     CameraFitToSceneCallback m_cameraFitToSceneCallback;
+    RenderModeCallback m_renderModeCallback;
 };
 
 } // namespace RRE

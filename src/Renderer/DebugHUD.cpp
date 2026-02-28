@@ -57,6 +57,10 @@ void DebugHUD::Render(IRHIContext& context)
     context.DrawText(x, y, buf, green);
     y += lineHeight;
 
+    snprintf(buf, sizeof(buf), "Render: %s", m_lastStats.renderModeName);
+    context.DrawText(x, y, buf, green);
+    y += lineHeight;
+
     // Light info (conditional)
     if (m_lastStats.showLightInfo)
     {
