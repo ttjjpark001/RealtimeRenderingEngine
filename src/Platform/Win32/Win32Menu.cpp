@@ -11,6 +11,11 @@ bool Win32Menu::Initialize(HWND hwnd)
     if (!m_menuBar)
         return false;
 
+    // File menu (first in menu bar)
+    m_fileMenu = CreatePopupMenu();
+    AppendMenuW(m_fileMenu, MF_STRING, ID_FILE_OPEN_SCENE, L"Open Scene...\tCtrl+O");
+    AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_fileMenu), L"File");
+
     // View menu
     m_viewMenu = CreatePopupMenu();
     AppendMenuW(m_viewMenu, MF_STRING, ID_VIEW_800x450, L"800 x 450");
@@ -74,6 +79,7 @@ bool Win32Menu::Initialize(HWND hwnd)
     AppendMenuW(m_cameraMenu, MF_STRING, ID_CAMERA_FOV_UP, L"FOV+");
     AppendMenuW(m_cameraMenu, MF_STRING, ID_CAMERA_FOV_DOWN, L"FOV-");
     AppendMenuW(m_cameraMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m_cameraMenu, MF_STRING, ID_CAMERA_FIT_TO_SCENE, L"Fit to Scene");
     AppendMenuW(m_cameraMenu, MF_STRING, ID_CAMERA_RESET, L"Reset");
     AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_cameraMenu), L"Camera");
 
@@ -91,6 +97,11 @@ bool Win32Menu::HandleCommand(WPARAM wParam)
 
     switch (id)
     {
+    // File commands
+    case ID_FILE_OPEN_SCENE:
+        if (m_fileOpenCallback) m_fileOpenCallback();
+        return true;
+
     // View commands
     case ID_VIEW_800x450:
         CheckMenuRadioItem(m_viewMenu, ID_VIEW_800x450, ID_VIEW_960x540,
@@ -217,6 +228,10 @@ bool Win32Menu::HandleCommand(WPARAM wParam)
 
     case ID_CAMERA_FOV_DOWN:
         if (m_cameraFovCallback) m_cameraFovCallback(-5.0f);
+        return true;
+
+    case ID_CAMERA_FIT_TO_SCENE:
+        if (m_cameraFitToSceneCallback) m_cameraFitToSceneCallback();
         return true;
 
     case ID_CAMERA_RESET:

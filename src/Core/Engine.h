@@ -2,6 +2,8 @@
 
 #include "Core/Types.h"
 #include <memory>
+#include <vector>
+#include <string>
 
 namespace RRE
 {
@@ -11,6 +13,7 @@ class Win32Menu;
 class IRHIDevice;
 class IRHIBuffer;
 class Mesh;
+class Material;
 class DebugHUD;
 class PointLight;
 class LightManager;
@@ -44,6 +47,10 @@ private:
     void OnViewModeChanged(uint32 width, uint32 height, bool fullscreen);
     void OnMeshTypeChanged(MeshType type);
     void OnAnimationToggle();
+
+    // Scene loading
+    void LoadScene(const std::string& filePath);
+    void ShowOpenSceneDialog();
 
     std::unique_ptr<Win32Window> m_window;
     std::unique_ptr<Win32Menu> m_menu;
@@ -79,6 +86,12 @@ private:
     // Camera
     std::unique_ptr<Camera> m_camera;
     bool m_showCameraInfo = true;
+
+    // Loaded scene data (external scene)
+    std::vector<std::unique_ptr<Mesh>> m_loadedMeshes;
+    std::vector<std::unique_ptr<Material>> m_loadedMaterials;
+    bool m_isExternalScene = false;
+    float m_sceneDiagonal = 10.0f;
 
     // Animation
     float m_rotationAngle = 0.0f;

@@ -16,6 +16,9 @@ public:
 
     SceneNode* GetRoot() const { return m_root.get(); }
 
+    // Replace root node (for scene loading)
+    void SetRoot(std::unique_ptr<SceneNode> newRoot);
+
     // Depth-first traversal: visitor(node, worldMatrix)
     using Visitor = std::function<void(SceneNode*, const DirectX::XMMATRIX&)>;
     void Traverse(const Visitor& visitor) const;

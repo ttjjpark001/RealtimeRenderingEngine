@@ -9,6 +9,11 @@ SceneGraph::SceneGraph()
 {
 }
 
+void SceneGraph::SetRoot(std::unique_ptr<SceneNode> newRoot)
+{
+    m_root = std::move(newRoot);
+}
+
 void SceneGraph::Traverse(const Visitor& visitor) const
 {
     if (m_root)

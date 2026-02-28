@@ -1,5 +1,6 @@
 #include "Platform/Win32/Win32Window.h"
 #include "Platform/Win32/Win32Menu.h"
+#include <shellapi.h>
 
 namespace RRE
 {
@@ -76,6 +77,9 @@ bool Win32Window::Initialize(uint32 width, uint32 height, const std::string& tit
     {
         return false;
     }
+
+    // Enable drag-and-drop
+    DragAcceptFiles(m_hwnd, TRUE);
 
     m_isRunning = true;
     return true;
@@ -241,6 +245,81 @@ LRESULT Win32Window::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam)
         if (m_keyCallback)
         {
             m_keyCallback(wParam);
+        }
+        return 0;
+    }
+
+    case WM_RBUTTONDOWN:
+    {
+        m_rightButtonDown = true;
+        m_lastMousePos.x = LOWORD(lParam);
+        m_lastMousePos.y = HIWORD(lParam);
+        SetCapture(m_hwnd);
+        return 0;
+    }
+
+    case WM_RBUTTONUP:
+    {
+        m_rightButtonDown = false;
+        if (!m_middleButtonDown)
+            ReleaseCapture();
+        return 0;
+    }
+
+    case WM_MBUTTONDOWN:
+    {
+        m_middleButtonDown = true;
+        m_lastMousePos.x = LOWORD(lParam);
+        m_lastMousePos.y = HIWORD(lParam);
+        SetCapture(m_hwnd);
+        return 0;
+    }
+
+    case WM_MBUTTONUP:
+    {
+        m_middleButtonDown = false;
+        if (!m_rightButtonDown)
+            ReleaseCapture();
+        return 0;
+    }
+
+    case WM_MOUSEMOVE:
+    {
+        int x = static_cast<int>(static_cast<short>(LOWORD(lParam)));
+        int y = static_cast<int>(static_cast<short>(HIWORD(lParam)));
+        int dx = x - m_lastMousePos.x;
+        int dy = y - m_lastMousePos.y;
+        m_lastMousePos.x = x;
+        m_lastMousePos.y = y;
+
+        if (m_rightButtonDown && m_rightDragCallback)
+            m_rightDragCallback(dx, dy);
+        if (m_middleButtonDown && m_middleDragCallback)
+            m_middleDragCallback(dx, dy);
+        return 0;
+    }
+
+    case WM_MOUSEWHEEL:
+    {
+        int delta = GET_WHEEL_DELTA_WPARAM(wParam);
+        if (m_mouseWheelCallback)
+            m_mouseWheelCallback(delta);
+        return 0;
+    }
+
+    case WM_DROPFILES:
+    {
+        HDROP hDrop = reinterpret_cast<HDROP>(wParam);
+        wchar_t filePath[MAX_PATH] = {};
+        DragQueryFileW(hDrop, 0, filePath, MAX_PATH);
+        DragFinish(hDrop);
+
+        if (m_dropFileCallback)
+        {
+            int len = WideCharToMultiByte(CP_UTF8, 0, filePath, -1, nullptr, 0, nullptr, nullptr);
+            std::string utf8Path(len - 1, '\0');
+            WideCharToMultiByte(CP_UTF8, 0, filePath, -1, utf8Path.data(), len, nullptr, nullptr);
+            m_dropFileCallback(utf8Path);
         }
         return 0;
     }

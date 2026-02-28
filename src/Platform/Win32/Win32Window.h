@@ -15,6 +15,9 @@ class Win32Window
 public:
     using ResizeCallback = std::function<void(uint32, uint32)>;
     using KeyCallback = std::function<void(WPARAM)>;
+    using MouseMoveCallback = std::function<void(int deltaX, int deltaY)>;
+    using MouseWheelCallback = std::function<void(int delta)>;
+    using DropFileCallback = std::function<void(const std::string& filePath)>;
 
     Win32Window();
     ~Win32Window();
@@ -33,6 +36,10 @@ public:
 
     void SetResizeCallback(ResizeCallback callback) { m_resizeCallback = std::move(callback); }
     void SetKeyCallback(KeyCallback callback) { m_keyCallback = std::move(callback); }
+    void SetRightDragCallback(MouseMoveCallback callback) { m_rightDragCallback = std::move(callback); }
+    void SetMiddleDragCallback(MouseMoveCallback callback) { m_middleDragCallback = std::move(callback); }
+    void SetMouseWheelCallback(MouseWheelCallback callback) { m_mouseWheelCallback = std::move(callback); }
+    void SetDropFileCallback(DropFileCallback callback) { m_dropFileCallback = std::move(callback); }
     void SetMenu(Win32Menu* menu) { m_menu = menu; }
 
     void Show(int nCmdShow = SW_SHOW);
@@ -54,7 +61,15 @@ private:
 
     ResizeCallback m_resizeCallback;
     KeyCallback m_keyCallback;
+    MouseMoveCallback m_rightDragCallback;
+    MouseMoveCallback m_middleDragCallback;
+    MouseWheelCallback m_mouseWheelCallback;
+    DropFileCallback m_dropFileCallback;
     Win32Menu* m_menu = nullptr;
+
+    bool m_rightButtonDown = false;
+    bool m_middleButtonDown = false;
+    POINT m_lastMousePos = {};
 
     static constexpr const wchar_t* WINDOW_CLASS_NAME = L"RREngineWindowClass";
 };

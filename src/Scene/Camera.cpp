@@ -1,4 +1,5 @@
 #include "Scene/Camera.h"
+#include <cmath>
 
 using namespace DirectX;
 
@@ -48,10 +49,11 @@ const char* Camera::GetProjectionModeName() const
 
 void Camera::MoveForward(float distance)
 {
+    float scaledDist = distance * m_moveSpeedScale;
     XMVECTOR pos = XMLoadFloat3(&m_position);
     XMVECTOR target = XMLoadFloat3(&m_lookAt);
     XMVECTOR dir = XMVector3Normalize(XMVectorSubtract(target, pos));
-    XMVECTOR offset = XMVectorScale(dir, distance);
+    XMVECTOR offset = XMVectorScale(dir, scaledDist);
 
     pos = XMVectorAdd(pos, offset);
     target = XMVectorAdd(target, offset);
@@ -62,12 +64,13 @@ void Camera::MoveForward(float distance)
 
 void Camera::MoveRight(float distance)
 {
+    float scaledDist = distance * m_moveSpeedScale;
     XMVECTOR pos = XMLoadFloat3(&m_position);
     XMVECTOR target = XMLoadFloat3(&m_lookAt);
     XMVECTOR up = XMLoadFloat3(&m_up);
     XMVECTOR forward = XMVector3Normalize(XMVectorSubtract(target, pos));
     XMVECTOR right = XMVector3Normalize(XMVector3Cross(up, forward));
-    XMVECTOR offset = XMVectorScale(right, distance);
+    XMVECTOR offset = XMVectorScale(right, scaledDist);
 
     pos = XMVectorAdd(pos, offset);
     target = XMVectorAdd(target, offset);
@@ -78,8 +81,80 @@ void Camera::MoveRight(float distance)
 
 void Camera::MoveUp(float distance)
 {
-    m_position.y += distance;
-    m_lookAt.y += distance;
+    float scaledDist = distance * m_moveSpeedScale;
+    m_position.y += scaledDist;
+    m_lookAt.y += scaledDist;
+}
+
+void Camera::Rotate(float yawDelta, float pitchDelta)
+{
+    if (!m_yawPitchInitialized)
+    {
+        RecalcYawPitchFromLookAt();
+        m_yawPitchInitialized = true;
+    }
+
+    m_yaw += yawDelta;
+    m_pitch += pitchDelta;
+
+    // Clamp pitch to ±89 degrees
+    constexpr float maxPitch = XMConvertToRadians(89.0f);
+    if (m_pitch > maxPitch) m_pitch = maxPitch;
+    if (m_pitch < -maxPitch) m_pitch = -maxPitch;
+
+    RecalcLookAtFromYawPitch();
+}
+
+void Camera::FitToScene(const XMFLOAT3& sceneCenter, float sceneDiagonal)
+{
+    m_lookAt = sceneCenter;
+
+    // Position camera looking from front, backed away by 1.5x diagonal
+    float dist = sceneDiagonal * 1.5f;
+    if (dist < 1.0f) dist = 1.0f;
+
+    // Look from front-above (slight elevation)
+    m_position = {
+        sceneCenter.x,
+        sceneCenter.y + sceneDiagonal * 0.3f,
+        sceneCenter.z - dist
+    };
+
+    // Adjust far plane to encompass scene
+    m_farPlane = dist * 10.0f;
+    if (m_farPlane < 100.0f) m_farPlane = 100.0f;
+
+    RecalcYawPitchFromLookAt();
+    m_yawPitchInitialized = true;
+}
+
+void Camera::RecalcYawPitchFromLookAt()
+{
+    XMVECTOR pos = XMLoadFloat3(&m_position);
+    XMVECTOR target = XMLoadFloat3(&m_lookAt);
+    XMVECTOR dir = XMVector3Normalize(XMVectorSubtract(target, pos));
+
+    XMFLOAT3 d;
+    XMStoreFloat3(&d, dir);
+
+    m_yaw = std::atan2f(d.x, d.z);
+    m_pitch = std::asinf(d.y);
+}
+
+void Camera::RecalcLookAtFromYawPitch()
+{
+    float cosPitch = std::cosf(m_pitch);
+    XMFLOAT3 dir = {
+        cosPitch * std::sinf(m_yaw),
+        std::sinf(m_pitch),
+        cosPitch * std::cosf(m_yaw)
+    };
+
+    m_lookAt = {
+        m_position.x + dir.x,
+        m_position.y + dir.y,
+        m_position.z + dir.z
+    };
 }
 
 void Camera::AdjustFov(float deltaDegrees)
@@ -100,6 +175,9 @@ void Camera::Reset()
     m_farPlane = 100.0f;
     m_orthoSize = 5.0f;
     m_projectionMode = ProjectionMode::Perspective;
+    m_moveSpeedScale = 1.0f;
+    RecalcYawPitchFromLookAt();
+    m_yawPitchInitialized = true;
 }
 
 } // namespace RRE

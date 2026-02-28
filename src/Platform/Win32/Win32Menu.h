@@ -44,6 +44,9 @@ constexpr UINT ID_CAMERA_ORTHOGRAPHIC = 5003;
 constexpr UINT ID_CAMERA_FOV_UP       = 5004;
 constexpr UINT ID_CAMERA_FOV_DOWN     = 5005;
 constexpr UINT ID_CAMERA_RESET        = 5006;
+constexpr UINT ID_CAMERA_FIT_TO_SCENE = 5007;
+
+constexpr UINT ID_FILE_OPEN_SCENE     = 6001;
 
 class Win32Menu
 {
@@ -58,6 +61,8 @@ public:
     using CameraToggleInfoCallback = std::function<void()>;
     using CameraFovCallback = std::function<void(float deltaDegrees)>;
     using CameraResetCallback = std::function<void()>;
+    using FileOpenCallback = std::function<void()>;
+    using CameraFitToSceneCallback = std::function<void()>;
 
     Win32Menu() = default;
     ~Win32Menu() = default;
@@ -76,12 +81,15 @@ public:
     void SetCameraToggleInfoCallback(CameraToggleInfoCallback callback) { m_cameraToggleInfoCallback = std::move(callback); }
     void SetCameraFovCallback(CameraFovCallback callback) { m_cameraFovCallback = std::move(callback); }
     void SetCameraResetCallback(CameraResetCallback callback) { m_cameraResetCallback = std::move(callback); }
+    void SetFileOpenCallback(FileOpenCallback callback) { m_fileOpenCallback = std::move(callback); }
+    void SetCameraFitToSceneCallback(CameraFitToSceneCallback callback) { m_cameraFitToSceneCallback = std::move(callback); }
 
     void UpdateAnimCheckMark(bool isPlaying);
 
 private:
     HWND m_hwnd = nullptr;
     HMENU m_menuBar = nullptr;
+    HMENU m_fileMenu = nullptr;
     HMENU m_viewMenu = nullptr;
     HMENU m_objectMenu = nullptr;
     HMENU m_animMenu = nullptr;
@@ -98,6 +106,8 @@ private:
     CameraToggleInfoCallback m_cameraToggleInfoCallback;
     CameraFovCallback m_cameraFovCallback;
     CameraResetCallback m_cameraResetCallback;
+    FileOpenCallback m_fileOpenCallback;
+    CameraFitToSceneCallback m_cameraFitToSceneCallback;
 };
 
 } // namespace RRE

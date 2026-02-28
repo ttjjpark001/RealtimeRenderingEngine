@@ -16,7 +16,10 @@
 #include "Scene/SceneGraph.h"
 #include "Scene/SceneNode.h"
 #include "Platform/Win32/Win32Menu.h"
+#include "Asset/SceneLoader.h"
+#include "Asset/Material.h"
 #include <DirectXMath.h>
+#include <commdlg.h>
 
 using namespace DirectX;
 
@@ -100,12 +103,75 @@ bool Engine::Initialize(const EngineInitParams& params)
     m_menu->SetAnimCallback([this]() {
         OnAnimationToggle();
     });
+    m_menu->SetFileOpenCallback([this]() {
+        ShowOpenSceneDialog();
+    });
+    m_menu->SetCameraFitToSceneCallback([this]() {
+        if (m_camera)
+        {
+            if (m_isExternalScene)
+            {
+                // Recompute from loaded scene bounds
+                BoundingBox bounds;
+                m_sceneGraph->Traverse([&bounds](SceneNode* node, const XMMATRIX& world) {
+                    if (node->GetMesh())
+                    {
+                        for (const auto& v : node->GetMesh()->vertices)
+                        {
+                            XMVECTOR pos = XMLoadFloat3(&v.position);
+                            pos = XMVector3Transform(pos, world);
+                            XMFLOAT3 wp;
+                            XMStoreFloat3(&wp, pos);
+                            bounds.Expand(wp);
+                        }
+                    }
+                });
+                if (bounds.IsValid())
+                {
+                    m_sceneDiagonal = bounds.GetDiagonalLength();
+                    m_camera->FitToScene(bounds.GetCenter(), m_sceneDiagonal);
+                    m_camera->SetMoveSpeedScale(m_sceneDiagonal / 10.0f);
+                }
+            }
+            else
+            {
+                m_camera->Reset();
+            }
+        }
+    });
     m_window->SetMenu(m_menu.get());
 
     // Set key callback for Space key animation toggle
     m_window->SetKeyCallback([this](WPARAM key) {
         if (key == VK_SPACE)
             OnAnimationToggle();
+    });
+
+    // Mouse callbacks
+    m_window->SetRightDragCallback([this](int dx, int dy) {
+        if (m_camera)
+        {
+            constexpr float sensitivity = 0.003f;
+            m_camera->Rotate(dx * sensitivity, -dy * sensitivity);
+        }
+    });
+    m_window->SetMouseWheelCallback([this](int delta) {
+        if (m_camera)
+        {
+            float wheelSpeed = 0.5f;
+            m_camera->MoveForward(delta / 120.0f * wheelSpeed);
+        }
+    });
+    m_window->SetMiddleDragCallback([this](int dx, int dy) {
+        if (m_camera)
+        {
+            constexpr float panSpeed = 0.01f;
+            m_camera->MoveRight(-dx * panSpeed);
+            m_camera->MoveUp(dy * panSpeed);
+        }
+    });
+    m_window->SetDropFileCallback([this](const std::string& filePath) {
+        LoadScene(filePath);
     });
 
     // Create point light
@@ -224,6 +290,8 @@ void Engine::Shutdown()
     }
 
     m_renderer.reset();
+    m_loadedMeshes.clear();
+    m_loadedMaterials.clear();
     m_parentNode = nullptr;
     m_orbitPivotNode = nullptr;
     m_childNode = nullptr;
@@ -402,6 +470,80 @@ void Engine::OnAnimationToggle()
     m_isAnimating = !m_isAnimating;
     if (m_menu)
         m_menu->UpdateAnimCheckMark(m_isAnimating);
+}
+
+void Engine::ShowOpenSceneDialog()
+{
+    wchar_t filePath[MAX_PATH] = {};
+
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = m_window->GetHWND();
+    ofn.lpstrFilter = L"3D Scene Files (*.gltf;*.glb;*.fbx)\0*.gltf;*.glb;*.fbx\0All Files\0*.*\0";
+    ofn.lpstrFile = filePath;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+
+    if (GetOpenFileNameW(&ofn))
+    {
+        int len = WideCharToMultiByte(CP_UTF8, 0, filePath, -1, nullptr, 0, nullptr, nullptr);
+        std::string utf8Path(len - 1, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, filePath, -1, utf8Path.data(), len, nullptr, nullptr);
+        LoadScene(utf8Path);
+    }
+}
+
+void Engine::LoadScene(const std::string& filePath)
+{
+    // Wait for GPU to finish all pending work
+    auto* context = static_cast<D3D12Context*>(m_rhiDevice->GetContext());
+    context->WaitForGPU();
+
+    // Clear previous scene resources
+    if (m_renderer) m_renderer->ClearMeshCache();
+    m_loadedMeshes.clear();
+    m_loadedMaterials.clear();
+
+    // Load scene via Assimp
+    SceneLoader loader;
+    SceneData data = loader.LoadScene(filePath);
+
+    if (!data.rootNode)
+        return;
+
+    // Store loaded data
+    m_loadedMeshes = std::move(data.meshes);
+    m_loadedMaterials = std::move(data.materials);
+
+    // Replace scene graph root
+    m_parentNode = nullptr;
+    m_orbitPivotNode = nullptr;
+    m_childNode = nullptr;
+    m_sceneGraph->SetRoot(std::move(data.rootNode));
+
+    // Camera placement
+    if (data.camera.has_value())
+    {
+        m_camera->SetPosition(data.camera->position);
+        m_camera->SetLookAt(data.camera->lookAt);
+        m_camera->SetFov(data.camera->fovY);
+    }
+    else if (data.sceneBounds.IsValid())
+    {
+        m_sceneDiagonal = data.sceneBounds.GetDiagonalLength();
+        m_camera->FitToScene(data.sceneBounds.GetCenter(), m_sceneDiagonal);
+    }
+
+    // Adjust movement speed to scene size
+    if (data.sceneBounds.IsValid())
+    {
+        m_sceneDiagonal = data.sceneBounds.GetDiagonalLength();
+        m_camera->SetMoveSpeedScale(m_sceneDiagonal / 10.0f);
+    }
+
+    m_isExternalScene = true;
+    m_isAnimating = false;
+    if (m_menu) m_menu->UpdateAnimCheckMark(false);
 }
 
 } // namespace RRE

@@ -43,6 +43,16 @@ public:
     void MoveRight(float distance);
     void MoveUp(float distance);
 
+    // Yaw/Pitch rotation (FPS-style, radians)
+    void Rotate(float yawDelta, float pitchDelta);
+
+    // Fit camera to view entire scene
+    void FitToScene(const DirectX::XMFLOAT3& sceneCenter, float sceneDiagonal);
+
+    // Move speed scale (proportional to scene size)
+    void SetMoveSpeedScale(float scale) { m_moveSpeedScale = scale; }
+    float GetMoveSpeedScale() const { return m_moveSpeedScale; }
+
     // FOV adjustment (degrees, clamped 10~120)
     void AdjustFov(float deltaDegrees);
 
@@ -58,6 +68,14 @@ private:
     float m_farPlane = 100.0f;
     float m_orthoSize = 5.0f;
     ProjectionMode m_projectionMode = ProjectionMode::Perspective;
+
+    float m_yaw = 0.0f;        // horizontal look angle (radians)
+    float m_pitch = 0.0f;      // vertical look angle (radians, clamped ±89°)
+    float m_moveSpeedScale = 1.0f;
+    bool m_yawPitchInitialized = false;
+
+    void RecalcYawPitchFromLookAt();
+    void RecalcLookAtFromYawPitch();
 };
 
 } // namespace RRE
