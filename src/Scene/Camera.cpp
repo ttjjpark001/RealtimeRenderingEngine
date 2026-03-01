@@ -109,16 +109,19 @@ void Camera::FitToScene(const XMFLOAT3& sceneCenter, float sceneDiagonal)
 {
     m_lookAt = sceneCenter;
 
-    // Position camera looking from front, backed away by 1.5x diagonal
+    // Position camera on -Z axis looking in +Z direction (front view)
+    // Camera right = +X, Camera up = +Y, matching object axes
     float dist = sceneDiagonal * 1.5f;
     if (dist < 1.0f) dist = 1.0f;
 
-    // Look from front-above (slight elevation)
     m_position = {
         sceneCenter.x,
-        sceneCenter.y + sceneDiagonal * 0.3f,
+        sceneCenter.y,
         sceneCenter.z - dist
     };
+
+    // Ensure up vector is world Y
+    m_up = { 0.0f, 1.0f, 0.0f };
 
     // Adjust far plane to encompass scene
     m_farPlane = dist * 10.0f;

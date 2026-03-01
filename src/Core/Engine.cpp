@@ -531,18 +531,38 @@ void Engine::LoadScene(const std::string& filePath)
         context->BeginUploadCommands();
         auto* cmdList = context->GetCommandList();
 
+        // Helper: load texture from file or embedded data
+        auto loadTexture = [&](const std::string& path, bool isSRGB) -> Texture* {
+            if (path.empty()) return nullptr;
+            if (path[0] == '*')
+            {
+                auto it = data.embeddedTextures.find(path);
+                if (it != data.embeddedTextures.end())
+                {
+                    const auto& emb = it->second;
+                    if (emb.isCompressed)
+                    {
+                        return m_textureCache->GetOrLoadFromMemory(
+                            path, emb.data.data(), emb.data.size(), isSRGB, device, cmdList);
+                    }
+                    else
+                    {
+                        return m_textureCache->GetOrLoadFromRawPixels(
+                            path, emb.data.data(), emb.width, emb.height, isSRGB, device, cmdList);
+                    }
+                }
+                return nullptr;
+            }
+            return m_textureCache->GetOrLoad(path, isSRGB, device, cmdList);
+        };
+
         for (auto& mat : m_loadedMaterials)
         {
-            if (!mat->baseColorTexturePath.empty())
-                mat->baseColorTexture = m_textureCache->GetOrLoad(mat->baseColorTexturePath, true, device, cmdList);
-            if (!mat->normalTexturePath.empty())
-                mat->normalTexture = m_textureCache->GetOrLoad(mat->normalTexturePath, false, device, cmdList);
-            if (!mat->metallicRoughnessTexturePath.empty())
-                mat->metallicRoughnessTexture = m_textureCache->GetOrLoad(mat->metallicRoughnessTexturePath, false, device, cmdList);
-            if (!mat->emissiveTexturePath.empty())
-                mat->emissiveTexture = m_textureCache->GetOrLoad(mat->emissiveTexturePath, true, device, cmdList);
-            if (!mat->occlusionTexturePath.empty())
-                mat->occlusionTexture = m_textureCache->GetOrLoad(mat->occlusionTexturePath, false, device, cmdList);
+            mat->baseColorTexture = loadTexture(mat->baseColorTexturePath, true);
+            mat->normalTexture = loadTexture(mat->normalTexturePath, false);
+            mat->metallicRoughnessTexture = loadTexture(mat->metallicRoughnessTexturePath, false);
+            mat->emissiveTexture = loadTexture(mat->emissiveTexturePath, true);
+            mat->occlusionTexture = loadTexture(mat->occlusionTexturePath, false);
         }
 
         // Execute upload commands and wait for completion

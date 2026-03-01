@@ -7,6 +7,7 @@
 #include <DirectXMath.h>
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include <memory>
 #include <optional>
 #include <cmath>
@@ -61,6 +62,13 @@ struct CameraInfo
     float farPlane = 1000.0f;
 };
 
+struct EmbeddedTextureData
+{
+    std::vector<uint8_t> data;
+    bool isCompressed = false;  // true: PNG/JPG (stbi_load_from_memory), false: raw RGBA
+    uint32_t width = 0, height = 0;  // raw일 때만 유효
+};
+
 struct SceneData
 {
     std::vector<std::unique_ptr<Mesh>> meshes;
@@ -68,6 +76,7 @@ struct SceneData
     std::unique_ptr<SceneNode> rootNode;
     BoundingBox sceneBounds;
     std::optional<CameraInfo> camera;
+    std::unordered_map<std::string, EmbeddedTextureData> embeddedTextures;
 };
 
 class SceneLoader
@@ -85,7 +94,9 @@ private:
                      SceneNode* parentNode);
     std::unique_ptr<Mesh> ConvertMesh(const void* aiMeshPtr);
     std::unique_ptr<Material> ConvertMaterial(const void* aiMaterialPtr,
-                                              const std::string& sceneDir);
+                                              const void* aiScenePtr,
+                                              const std::string& sceneDir,
+                                              SceneData& sceneData);
     std::optional<CameraInfo> ExtractCamera(const void* aiScenePtr);
     void CalculateSceneBounds(SceneData& data);
 };

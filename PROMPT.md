@@ -1143,10 +1143,42 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 20를 구현
     - LightManager 첫 번째 광원의 position과 color로 정보 표시
     - 색상명은 RGB 값 비교로 자동 산출 (White/Red/Green 등)
 
+=== Part E: glTF/GLB 좌표계 변환 + GLB 임베딩 텍스처 로딩 ===
+
+16. Assimp 임포트 플래그에 `aiProcess_ConvertToLeftHanded`를 추가한다.
+    - 기존: `aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_CalcTangentSpace`
+    - 추가: `aiProcess_ConvertToLeftHanded` (= MakeLeftHanded | FlipUVs | FlipWindingOrder)
+    - 이유: glTF는 우수 좌표계(RH), DirectX는 좌수 좌표계(LH)
+      · MakeLeftHanded: 정점/노말/탄젠트 Z축 반전, 노드 행렬 조정, UV.y 반전
+      · FlipUVs: UV.y 재반전 (MakeLeftHanded와 상쇄 → 원래 UV 유지)
+      · FlipWindingOrder: CCW→CW (D3D12 FrontCounterClockwise=FALSE)
+
+17. stbi_set_flip_vertically_on_load(false)로 설정한다.
+    - glTF UV 원점(top-left)은 D3D12 텍스처 좌표와 동일
+    - stbi 기본값(row 0 = top)이 D3D12와 일치하므로 반전 불필요
+
+18. Transform에 SetLocalMatrix(XMMATRIX)를 추가한다.
+    - Assimp의 aiMatrix4x4를 전치 후 직접 저장
+    - TRS 분해→재합성 round-trip에서 Euler 회전 순서 불일치로 인한 기하 왜곡 방지
+    - m_directMatrix (XMFLOAT4X4) + m_useDirectMatrix 플래그
+    - GetLocalMatrix()에서 플래그 확인 후 직접 행렬 또는 기존 TRS 행렬 반환
+
+19. GLB 임베딩 텍스처 로딩을 구현한다.
+    - SceneData에 embeddedTextures 맵 추가 (키: "*N", 값: EmbeddedTextureData)
+    - SceneLoader의 extractTexturePath에서 "*N" 경로 감지:
+      · aiScene::mTextures[N]에서 데이터 추출
+      · mHeight==0: compressed (PNG/JPG), 크기=mWidth 바이트
+      · mHeight!=0: raw ARGB, aiTexel(b,g,r,a)→RGBA 변환
+    - TextureCache에 GetOrLoadFromMemory() 추가
+    - Engine::LoadScene()에서 path[0]=='*' 분기 처리
+
 === 검증 ===
 
 빌드하여 다음을 확인하라:
-- Duck.gltf 또는 기타 텍스처가 있는 glTF 파일을 로드하면 텍스처가 정상 표시됨
+- DamagedHelmet.glb 등 GLB 파일을 로드하면 임베딩 텍스처가 정상 표시됨
+- 텍스처 좌우/상하 반전 없이 정상 매핑됨
+- 모델이 앞면(front face)을 카메라 방향으로 올바르게 향함
+- Duck.gltf 등 외부 텍스처 참조 glTF 파일도 정상 로드됨
 - Alpha Mask/Blend 오브젝트가 올바르게 렌더링됨
 - 메뉴에서 5단계 렌더링 모드를 전환할 수 있고, 각 모드별로 정상 렌더링됨
 - 기존 Phase 01 데모 씬(vertex-color 큐브)은 BasicColor 경로로 여전히 정상 동작

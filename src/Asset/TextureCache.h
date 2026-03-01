@@ -31,6 +31,15 @@ public:
     Texture* GetOrLoad(const std::string& path, bool isSRGB,
                        ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
 
+    // Get cached texture or load from compressed in-memory data (PNG/JPG for GLB embedded textures)
+    Texture* GetOrLoadFromMemory(const std::string& key, const uint8_t* data, size_t dataSize,
+                                 bool isSRGB, ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
+
+    // Get cached texture or create from raw RGBA pixel data
+    Texture* GetOrLoadFromRawPixels(const std::string& key, const uint8_t* pixels,
+                                     uint32 width, uint32 height, bool isSRGB,
+                                     ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
+
     // Get the fallback (1x1 white) texture
     Texture* GetFallback() const { return m_fallbackTexture.get(); }
 

@@ -13,6 +13,10 @@ bool TextureCache::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* c
     m_device = device;
     m_srvHeap = srvHeap;
 
+    // glTF UV origin (top-left) matches D3D12, so no vertical flip needed.
+    // stbi loads row 0 = top of image, which is correct for D3D12 textures.
+    stbi_set_flip_vertically_on_load(false);
+
     m_fallbackTexture = Texture::CreateFallback(device, cmdList);
     if (!m_fallbackTexture)
         return false;
@@ -59,6 +63,71 @@ Texture* TextureCache::GetOrLoad(const std::string& path, bool isSRGB,
 
     Texture* result = texture.get();
     m_cache[path] = std::move(texture);
+    return result;
+}
+
+Texture* TextureCache::GetOrLoadFromMemory(const std::string& key, const uint8_t* data, size_t dataSize,
+                                            bool isSRGB, ID3D12Device* device, ID3D12GraphicsCommandList* cmdList)
+{
+    if (!data || dataSize == 0)
+        return m_fallbackTexture.get();
+
+    // Check cache first
+    auto it = m_cache.find(key);
+    if (it != m_cache.end())
+        return it->second.get();
+
+    // Decode image from memory with stb_image
+    int width = 0, height = 0, channels = 0;
+    stbi_uc* pixels = stbi_load_from_memory(data, static_cast<int>(dataSize),
+                                             &width, &height, &channels, STBI_rgb_alpha);
+    if (!pixels)
+        return m_fallbackTexture.get();
+
+    DXGI_FORMAT format = isSRGB ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
+                                : DXGI_FORMAT_R8G8B8A8_UNORM;
+
+    auto texture = std::make_unique<Texture>();
+    bool success = texture->CreateFromData(device, cmdList, pixels,
+                                            static_cast<uint32>(width),
+                                            static_cast<uint32>(height),
+                                            format);
+    stbi_image_free(pixels);
+
+    if (!success)
+        return m_fallbackTexture.get();
+
+    CreateSRV(device, texture.get());
+
+    Texture* result = texture.get();
+    m_cache[key] = std::move(texture);
+    return result;
+}
+
+Texture* TextureCache::GetOrLoadFromRawPixels(const std::string& key, const uint8_t* pixels,
+                                                uint32 width, uint32 height, bool isSRGB,
+                                                ID3D12Device* device, ID3D12GraphicsCommandList* cmdList)
+{
+    if (!pixels || width == 0 || height == 0)
+        return m_fallbackTexture.get();
+
+    auto it = m_cache.find(key);
+    if (it != m_cache.end())
+        return it->second.get();
+
+    DXGI_FORMAT format = isSRGB ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
+                                : DXGI_FORMAT_R8G8B8A8_UNORM;
+
+    auto texture = std::make_unique<Texture>();
+    bool success = texture->CreateFromData(device, cmdList, pixels, width, height, format);
+
+    if (!success)
+        return m_fallbackTexture.get();
+
+    CreateSRV(device, texture.get());
+
+    Texture* result = texture.get();
+    m_cache[key] = std::move(texture);
     return result;
 }
 

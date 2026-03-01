@@ -9,6 +9,7 @@
 #include <cmath>
 #include <filesystem>
 
+
 namespace RRE
 {
 
@@ -29,7 +30,7 @@ SceneData SceneLoader::LoadScene(const std::string& filePath)
         aiProcess_Triangulate |
         aiProcess_GenNormals |
         aiProcess_CalcTangentSpace |
-        aiProcess_FlipUVs);
+        aiProcess_ConvertToLeftHanded);
 
     if (!aiScenePtr || (aiScenePtr->mFlags & AI_SCENE_FLAGS_INCOMPLETE) || !aiScenePtr->mRootNode)
     {
@@ -42,7 +43,7 @@ SceneData SceneLoader::LoadScene(const std::string& filePath)
     // Convert all materials
     for (unsigned int i = 0; i < aiScenePtr->mNumMaterials; ++i)
     {
-        data.materials.push_back(ConvertMaterial(aiScenePtr->mMaterials[i], sceneDir));
+        data.materials.push_back(ConvertMaterial(aiScenePtr->mMaterials[i], aiScenePtr, sceneDir, data));
     }
 
     // Convert all meshes
@@ -83,39 +84,20 @@ void SceneLoader::ProcessNode(AssimpContext& ctx, const void* aiNodePtr,
 
     // Extract transform from aiNode
     const aiMatrix4x4& m = node->mTransformation;
-    // Assimp uses row-major matrices, DirectXMath also row-major — direct copy
-    // aiMatrix4x4: a=row0, b=row1, c=row2, d=row3; 1=col0, 2=col1, 3=col2, 4=col3
+    // Assimp uses column-vector convention (v' = M * v), translation in column 4
+    // DirectXMath uses row-vector convention (v' = v * M), translation in row 4
+    // Must transpose when converting between conventions
     DirectX::XMMATRIX localMatrix(
-        m.a1, m.a2, m.a3, m.a4,
-        m.b1, m.b2, m.b3, m.b4,
-        m.c1, m.c2, m.c3, m.c4,
-        m.d1, m.d2, m.d3, m.d4
+        m.a1, m.b1, m.c1, m.d1,
+        m.a2, m.b2, m.c2, m.d2,
+        m.a3, m.b3, m.c3, m.d3,
+        m.a4, m.b4, m.c4, m.d4
     );
 
-    // Decompose into TRS
-    DirectX::XMVECTOR scale, rotQuat, translation;
-    DirectX::XMMatrixDecompose(&scale, &rotQuat, &translation, localMatrix);
-
-    DirectX::XMFLOAT3 pos, scl;
-    DirectX::XMStoreFloat3(&pos, translation);
-    DirectX::XMStoreFloat3(&scl, scale);
-
-    // Convert quaternion to Euler angles
-    DirectX::XMFLOAT4 quat;
-    DirectX::XMStoreFloat4(&quat, rotQuat);
-    // Euler from quaternion (YXZ order)
-    float sinP = 2.0f * (quat.w * quat.x - quat.y * quat.z);
-    float pitch = std::abs(sinP) >= 1.0f ? std::copysign(DirectX::XM_PIDIV2, sinP) : std::asin(sinP);
-    float sinY = 2.0f * (quat.w * quat.y + quat.x * quat.z);
-    float cosY = 1.0f - 2.0f * (quat.x * quat.x + quat.y * quat.y);
-    float yaw = std::atan2(sinY, cosY);
-    float sinR = 2.0f * (quat.w * quat.z + quat.x * quat.y);
-    float cosR = 1.0f - 2.0f * (quat.x * quat.x + quat.z * quat.z);
-    float roll = std::atan2(sinR, cosR);
-
-    parentNode->GetTransform().SetPosition(pos);
-    parentNode->GetTransform().SetRotation({ pitch, yaw, roll });
-    parentNode->GetTransform().SetScale(scl);
+    // Store the matrix directly to avoid lossy TRS decompose→recompose round-trip.
+    // Euler angle extraction and recomposition can use mismatched rotation orders,
+    // causing geometry distortion (mirroring) for models with non-trivial transforms.
+    parentNode->GetTransform().SetLocalMatrix(localMatrix);
 
     // Assign mesh and material if this node has one
     if (node->mNumMeshes > 0)
@@ -249,9 +231,12 @@ std::unique_ptr<Mesh> SceneLoader::ConvertMesh(const void* aiMeshPtr)
 }
 
 std::unique_ptr<Material> SceneLoader::ConvertMaterial(const void* aiMaterialPtr,
-                                                       const std::string& sceneDir)
+                                                       const void* aiScenePtr,
+                                                       const std::string& sceneDir,
+                                                       SceneData& sceneData)
 {
     const aiMaterial* mat = static_cast<const aiMaterial*>(aiMaterialPtr);
+    const aiScene* scene = static_cast<const aiScene*>(aiScenePtr);
     auto result = std::make_unique<Material>();
 
     // Base color factor
@@ -318,7 +303,7 @@ std::unique_ptr<Material> SceneLoader::ConvertMaterial(const void* aiMaterialPtr
         result->doubleSided = (twoSided != 0);
     }
 
-    // Texture paths
+    // Texture paths (handles both file-based and embedded textures)
     auto extractTexturePath = [&](aiTextureType type) -> std::string
     {
         if (mat->GetTextureCount(type) > 0)
@@ -327,7 +312,52 @@ std::unique_ptr<Material> SceneLoader::ConvertMaterial(const void* aiMaterialPtr
             if (mat->GetTexture(type, 0, &path) == AI_SUCCESS)
             {
                 std::string texPath(path.C_Str());
-                // If path is relative, prepend scene directory
+
+                // Check for embedded texture (path starts with '*')
+                if (!texPath.empty() && texPath[0] == '*')
+                {
+                    // Already extracted? skip duplicate work
+                    if (sceneData.embeddedTextures.find(texPath) == sceneData.embeddedTextures.end())
+                    {
+                        int texIndex = std::atoi(texPath.c_str() + 1);
+                        if (texIndex >= 0 && static_cast<unsigned int>(texIndex) < scene->mNumTextures)
+                        {
+                            const aiTexture* aiTex = scene->mTextures[texIndex];
+                            EmbeddedTextureData embedded;
+
+                            if (aiTex->mHeight == 0)
+                            {
+                                // Compressed format (PNG, JPG, etc.) — mWidth is data size in bytes
+                                embedded.isCompressed = true;
+                                embedded.width = aiTex->mWidth;
+                                embedded.height = 0;
+                                embedded.data.resize(aiTex->mWidth);
+                                std::memcpy(embedded.data.data(), aiTex->pcData, aiTex->mWidth);
+                            }
+                            else
+                            {
+                                // Raw ARGB data — convert to RGBA
+                                embedded.isCompressed = false;
+                                embedded.width = aiTex->mWidth;
+                                embedded.height = aiTex->mHeight;
+                                size_t pixelCount = aiTex->mWidth * aiTex->mHeight;
+                                embedded.data.resize(pixelCount * 4);
+                                for (size_t p = 0; p < pixelCount; ++p)
+                                {
+                                    embedded.data[p * 4 + 0] = aiTex->pcData[p].r;
+                                    embedded.data[p * 4 + 1] = aiTex->pcData[p].g;
+                                    embedded.data[p * 4 + 2] = aiTex->pcData[p].b;
+                                    embedded.data[p * 4 + 3] = aiTex->pcData[p].a;
+                                }
+                            }
+
+                            sceneData.embeddedTextures[texPath] = std::move(embedded);
+                        }
+                    }
+                    return texPath;
+                }
+
+                // File-based: if path is relative, prepend scene directory
                 if (!texPath.empty() && texPath[0] != '/' && texPath[0] != '\\' &&
                     (texPath.size() < 2 || texPath[1] != ':'))
                 {

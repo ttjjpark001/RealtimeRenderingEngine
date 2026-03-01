@@ -541,7 +541,22 @@ tests/
 20. 색상 변경 메뉴: LightManager의 모든 광원 색상 일괄 변경
 21. DebugHUD 광원 정보: LightManager에서 직접 조회
 
-**완료 기준**: glTF/GLB 씬 로드 시 텍스처가 정상 렌더링됨, Alpha Mask/Blend 오브젝트 정상 표시, 메뉴에서 5단계 렌더링 모드를 즉시 전환 가능, 씬 로드 시 3-포인트 라이팅 자동 배치, PointLight 레거시 코드 완전 제거
+**Part E: glTF/GLB 좌표계 변환 + GLB 임베딩 텍스처 로딩**
+22. Assimp 임포트 플래그에 `aiProcess_ConvertToLeftHanded` 추가
+    - glTF는 우수 좌표계(RH, +Z=뷰어 방향), DirectX는 좌수 좌표계(LH, +Z=화면 안쪽)
+    - `aiProcess_ConvertToLeftHanded` = `MakeLeftHanded | FlipUVs | FlipWindingOrder`:
+      · `MakeLeftHanded`: 정점/노말/탄젠트의 Z축 반전 + 노드 변환 행렬 조정 + UV.y 반전
+      · `FlipUVs`: UV.y 재반전 (MakeLeftHanded의 UV 반전과 상쇄 → 원래 UV 유지)
+      · `FlipWindingOrder`: CCW→CW (D3D12 `FrontCounterClockwise=FALSE` 규칙 일치)
+    - `stbi_set_flip_vertically_on_load(false)`: glTF UV 원점(top-left)이 D3D12와 동일하므로 이미지 반전 불필요
+23. Transform에 `SetLocalMatrix()` 추가 — Assimp 행렬을 직접 저장하여 TRS 분해→재합성 round-trip 손실 방지
+24. GLB 임베딩 텍스처 로딩 지원
+    - SceneData에 `embeddedTextures` 맵 추가 (키: `*N`, 값: 압축 이미지 바이트)
+    - SceneLoader에서 `aiTexture::pcData` 추출 (compressed: PNG/JPG 바이트, raw: ARGB 변환)
+    - TextureCache에 `GetOrLoadFromMemory()` 추가 — `stbi_load_from_memory()`로 디코딩
+    - Engine::LoadScene()에서 `*N` 경로 감지 시 임베딩 데이터 → `GetOrLoadFromMemory()` 호출
+
+**완료 기준**: glTF/GLB 씬 로드 시 텍스처가 정상 렌더링됨, GLB 임베딩 텍스처 정상 로드, 좌표계 변환으로 모델 방향/텍스처 매핑 정상, Alpha Mask/Blend 오브젝트 정상 표시, 메뉴에서 5단계 렌더링 모드를 즉시 전환 가능, 씬 로드 시 3-포인트 라이팅 자동 배치, PointLight 레거시 코드 완전 제거
 
 ### Phase 21: 렌더링 최적화 — Culling + LOD + Light Culling
 **목표**: Frustum/Occlusion Culling, LOD 시스템 (자동 LOD 생성 포함), 광원 컬링

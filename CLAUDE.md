@@ -240,6 +240,30 @@ vcpkg install assimp:x64-windows
 vcpkg integrate install
 ```
 
+### Assimp 임포트 플래그 + 좌표계 변환
+
+glTF/GLB는 우수 좌표계(RH, +Z=뷰어 방향), DirectX는 좌수 좌표계(LH, +Z=화면 안쪽)이다.
+Assimp의 `aiProcess_ConvertToLeftHanded` 프리셋으로 변환한다:
+
+```cpp
+importer.ReadFile(filePath,
+    aiProcess_Triangulate |
+    aiProcess_GenNormals |
+    aiProcess_CalcTangentSpace |
+    aiProcess_ConvertToLeftHanded);  // = MakeLeftHanded | FlipUVs | FlipWindingOrder
+```
+
+| 플래그 | 역할 |
+|--------|------|
+| `MakeLeftHanded` | 정점/노말/탄젠트 Z축 반전, 노드 변환 행렬 조정, UV.y 반전 |
+| `FlipUVs` | UV.y 재반전 (MakeLeftHanded의 UV 반전과 상쇄 → 원래 UV 유지) |
+| `FlipWindingOrder` | CCW→CW 변환 (D3D12 `FrontCounterClockwise=FALSE` 규칙 일치) |
+
+**주의사항:**
+- `stbi_set_flip_vertically_on_load(false)` 필수: glTF UV 원점(top-left)이 D3D12와 동일하므로 이미지 반전 불필요
+- Transform에 `SetLocalMatrix()`로 Assimp 행렬을 직접 저장 (TRS 분해→재합성 round-trip 손실 방지)
+- GLB 임베딩 텍스처: `aiTexture::pcData`에서 추출 → `TextureCache::GetOrLoadFromMemory()`로 로딩
+
 ### Asset 모듈 구조 (`src/Asset/`)
 
 ```
