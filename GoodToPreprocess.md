@@ -29,14 +29,7 @@
 - **위치**: `src/Renderer/Renderer.cpp` (UploadMesh)
 - **Phase**: 12
 
-### 1-4. 메시별 AABB (Bounding Box) 계산
-- **원본**: Mesh의 전체 정점 위치
-- **가공**: `BoundingBox::CreateFromPoints()`로 로컬 AABB 생성, SceneNode에서 WorldMatrix 변환하여 월드 AABB 캐싱
-- **파생 자료**: `DirectX::BoundingBox aabb` (Mesh 로컬) + `BoundingBox m_worldAABB` (SceneNode 월드 캐시, dirty flag 기반)
-- **위치**: `src/Renderer/Mesh.h`, `src/Scene/SceneNode.h/.cpp`, `src/Asset/SceneLoader.cpp`
-- **Phase**: 22 (프리미티브 분리 + AABB)
-
-### 1-5. 프리미티브 → SceneNode 분리
+### 1-4. 프리미티브 → SceneNode 분리
 - **원본**: Assimp의 aiNode가 참조하는 복수의 aiMesh (서브 프리미티브)
 - **가공**: 단일 aiNode에 연결된 N개 aiMesh를 각각 별도 SceneNode 자식으로 분리
   - Sponza 같은 모놀리식 씬: 1개 aiNode에 103개 aiMesh → 103개 SceneNode
@@ -44,7 +37,15 @@
 - **파생 자료**: 프리미티브 단위로 분리된 SceneNode 트리 (노드 단위 Culling/LOD/Instancing 가능)
 - **위치**: `src/Asset/SceneLoader.cpp` (ProcessNode)
 - **Phase**: 22 (프리미티브 분리 + AABB)
-- **비고**: 기존에도 index ≥ 1인 aiMesh는 자식으로 생성하지만, Phase 22에서 확인/강화
+- **비고**: 1-5(AABB 계산)의 선행 조건. 분리 없이는 전체 씬이 단일 AABB로 묶여 Culling 효과 없음
+
+### 1-5. 메시별 AABB (Bounding Box) 계산
+- **원본**: 프리미티브 분리(1-4) 후 생성된 개별 Mesh의 정점 위치
+- **가공**: `BoundingBox::CreateFromPoints()`로 로컬 AABB 생성, SceneNode에서 WorldMatrix 변환하여 월드 AABB 캐싱
+- **파생 자료**: `DirectX::BoundingBox aabb` (Mesh 로컬) + `BoundingBox m_worldAABB` (SceneNode 월드 캐시, dirty flag 기반)
+- **위치**: `src/Renderer/Mesh.h`, `src/Scene/SceneNode.h/.cpp`, `src/Asset/SceneLoader.cpp`
+- **Phase**: 22 (프리미티브 분리 + AABB)
+- **비고**: 1-4(프리미티브 분리) 완료 후 수행. 분리된 프리미티브 단위로 AABB를 계산해야 Culling이 의미 있음
 
 ### 1-6. 자동 LOD 메시 생성 (Auto-LOD)
 - **원본**: 원본 메시 (LOD 0, 씬 파일에 LOD 데이터가 없는 경우)
@@ -252,8 +253,8 @@
 | 1-1 | aiMesh | 타입 변환 | Engine Vertex/Index 배열 | 12 |
 | 1-2 | Mesh 정점/UV/Normal | Tangent 계산/보정 | Tangent 벡터 (w=handedness) | 13 |
 | 1-3 | CPU Vertex/Index | GPU 업로드 | VB/IB (ID3D12Resource) | 12 |
-| 1-4 | Mesh 정점 | CreateFromPoints | 로컬 AABB + 월드 AABB 캐시 | 22 |
-| 1-5 | aiNode의 복수 aiMesh | SceneNode 분리 | 프리미티브 단위 SceneNode 트리 | 22 |
+| 1-4 | aiNode의 복수 aiMesh | SceneNode 분리 | 프리미티브 단위 SceneNode 트리 | 22 |
+| 1-5 | 분리된 Mesh 정점 | CreateFromPoints | 로컬 AABB + 월드 AABB 캐시 | 22 |
 | 1-6 | 원본 메시 | Edge Collapse (QEM) | LOD 1(50%), LOD 2(25%) 메시 | 23 |
 | 1-7 | 면 인접 정보 | 그래프 컬러링 | 면별 색상 Vertex 배열 | 01 |
 | 2-1 | PNG/JPEG 파일 | 이미지 디코딩 | RGBA 픽셀 버퍼 | 14 |
@@ -284,8 +285,8 @@
 - 1-1 Vertex 포맷 변환
 - 1-2 Tangent 생성/보정
 - 1-3 GPU VB/IB 생성
-- 1-4 메시별 AABB 계산 (정적 오브젝트)
-- 1-5 프리미티브 → SceneNode 분리
+- 1-4 프리미티브 → SceneNode 분리
+- 1-5 메시별 AABB 계산 (분리된 프리미티브 단위)
 - 1-6 자동 LOD 메시 생성 (비동기)
 - 2-1 이미지 디코딩 (비동기)
 - 2-2 Mip chain 생성
@@ -330,7 +331,7 @@
 | **최대** | 1-6 Auto-LOD 메시 생성 | QEM Edge Collapse로 LOD 1/2 메시 생성 | 수 초~수십 초 (대형 메시) |
 | **최대** | 2-1 + 2-2 이미지 디코딩 + Mip Chain | PNG/JPEG 디코딩 + 전체 Mip chain 생성 → DDS/KTX 포맷 저장 | 수백 장 텍스처 시 수 초~수십 초 |
 | **대** | 1-1 + 1-2 Vertex 변환 + Tangent 생성 | Assimp 파싱 + 엔진 Vertex 포맷 변환 + Tangent 계산 | Assimp 런타임 의존성 제거, 대형 씬 수 초 |
-| **중** | 1-4 메시별 AABB | 정점 순회로 AABB 미리 계산 | 정점 수 많을 때 수백 ms |
+| **중** | 1-4 프리미티브 분리 + 1-5 메시별 AABB | 프리미티브 단위로 Mesh 분리 후 각 AABB 계산. 분리는 AABB의 선행 조건 | 정점 수 많을 때 수백 ms |
 | **중** | 3-1 + 3-2 + 3-3 씬 구조 | 노드 계층 + 씬 AABB + 카메라 초기 배치 직렬화 | Assimp 재파싱 불필요 |
 | **소** | 4-1 Material 파라미터 | PBR 파라미터 + 텍스처 매핑 정보 직렬화 | 파싱 비용 절감 |
 | **소** | 5-1 + 5-2 광원 데이터 | 광원 속성 + 유효 범위(BoundingSphere) 직렬화 | 파싱 비용 절감 |
