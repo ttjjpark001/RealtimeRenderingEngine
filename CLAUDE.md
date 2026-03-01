@@ -221,7 +221,26 @@ assimp-vc143-mt.lib — [Phase 02] Assimp (glTF/GLB 로딩)
 
 **추천 테스트 순서**: DamagedHelmet → MetalRoughSpheres → NormalTangentTest → WaterBottle → Lantern
 
-모든 모델은 GLB 포맷(임베딩 텍스처)이며, `aiProcess_ConvertToLeftHanded`로 좌표계 변환 후 정상 렌더링된다.
+### 대형 씬 / 멀티 머티리얼
+
+| 모델 | 포맷 | 크기 | 경로 | 테스트 항목 |
+|------|------|------|------|------------|
+| **Sponza** | glTF + JPG | 52 MB | `assets/test-models/Sponza/glTF/Sponza.gltf` | 대형 건축 씬 (~262K 삼각형), 다양한 머티리얼, 성능/최적화 벤치마크 |
+| **FlightHelmet** | glTF + PNG | 47 MB | `assets/test-models/FlightHelmet.gltf` | 5개 머티리얼 (가죽/고무/금속/유리/렌즈), BaseColor+Normal+OcclusionRoughMetal, 멀티 머티리얼 검증 |
+
+### 외부 대형 씬 (미포함, 수동 다운로드 필요)
+
+| 모델 | 출처 | 포맷 | 비고 |
+|------|------|------|------|
+| **Bistro** (FBX 원본) | [NVIDIA ORCA](https://developer.nvidia.com/orca/amazon-lumberyard-bistro) | FBX | NVIDIA 계정 필요, ~1.8GB |
+| **Bistro** (glTF 변환) | [rendering-demo-scenes](https://github.com/aclysma/rendering-demo-scenes) | glTF | Blender 스크립트로 FBX→glTF 변환 필요 |
+
+### 모델 공통 사항
+
+- GLB: 텍스처가 바이너리에 임베딩됨 (embedded texture 로딩)
+- glTF: 텍스처가 별도 파일로 존재 (Assimp이 상대 경로로 자동 참조)
+- `aiProcess_ConvertToLeftHanded`로 좌표계 변환 후 정상 렌더링
+- `stbi_set_flip_vertically_on_load(false)` 상태에서 동작
 
 ## 주요 참조 문서
 
