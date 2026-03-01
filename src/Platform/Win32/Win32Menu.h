@@ -36,7 +36,6 @@ constexpr UINT ID_LIGHT_BLUE        = 4005;
 constexpr UINT ID_LIGHT_YELLOW      = 4006;
 constexpr UINT ID_LIGHT_CYAN        = 4007;
 constexpr UINT ID_LIGHT_MAGENTA     = 4008;
-constexpr UINT ID_LIGHT_RESET_POS   = 4009;
 
 constexpr UINT ID_CAMERA_SHOW_INFO    = 5001;
 constexpr UINT ID_CAMERA_PERSPECTIVE  = 5002;
@@ -62,7 +61,6 @@ public:
     using AnimCallback = std::function<void()>;
     using LightColorCallback = std::function<void(float, float, float)>;
     using LightToggleInfoCallback = std::function<void()>;
-    using LightResetCallback = std::function<void()>;
     using CameraProjectionCallback = std::function<void(bool perspective)>;
     using CameraToggleInfoCallback = std::function<void()>;
     using CameraFovCallback = std::function<void(float deltaDegrees)>;
@@ -83,7 +81,6 @@ public:
     void SetAnimCallback(AnimCallback callback) { m_animCallback = std::move(callback); }
     void SetLightColorCallback(LightColorCallback callback) { m_lightColorCallback = std::move(callback); }
     void SetLightToggleInfoCallback(LightToggleInfoCallback callback) { m_lightToggleInfoCallback = std::move(callback); }
-    void SetLightResetCallback(LightResetCallback callback) { m_lightResetCallback = std::move(callback); }
     void SetCameraProjectionCallback(CameraProjectionCallback callback) { m_cameraProjectionCallback = std::move(callback); }
     void SetCameraToggleInfoCallback(CameraToggleInfoCallback callback) { m_cameraToggleInfoCallback = std::move(callback); }
     void SetCameraFovCallback(CameraFovCallback callback) { m_cameraFovCallback = std::move(callback); }
@@ -110,7 +107,6 @@ private:
     AnimCallback m_animCallback;
     LightColorCallback m_lightColorCallback;
     LightToggleInfoCallback m_lightToggleInfoCallback;
-    LightResetCallback m_lightResetCallback;
     CameraProjectionCallback m_cameraProjectionCallback;
     CameraToggleInfoCallback m_cameraToggleInfoCallback;
     CameraFovCallback m_cameraFovCallback;

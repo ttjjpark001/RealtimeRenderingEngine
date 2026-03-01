@@ -204,6 +204,10 @@ public:
     ID3D12CommandQueue* GetCommandQueue() const { return m_commandQueue.Get(); }
     ID3D12GraphicsCommandList* GetCommandList() const { return m_commandList.Get(); }
 
+    // Open/execute command list for resource uploads (outside render loop)
+    void BeginUploadCommands();
+    void EndUploadCommands();
+
     // Descriptor heap access for texture SRV creation
     D3D12DescriptorHeap& GetCBVSRVHeap() { return m_cbvSrvHeap; }
 

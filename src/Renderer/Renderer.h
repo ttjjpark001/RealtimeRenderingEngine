@@ -23,7 +23,6 @@ class IRHIBuffer;
 class Mesh;
 class SceneGraph;
 class Camera;
-class PointLight;
 class LightManager;
 class TextureCache;
 
@@ -43,12 +42,8 @@ public:
     void UploadMesh(Mesh* mesh);
 
     // Render entire scene graph
-    void RenderScene(SceneGraph& graph, Camera& camera, PointLight* light,
+    void RenderScene(SceneGraph& graph, Camera& camera,
         float aspectRatio, LightManager* lightManager = nullptr);
-
-    // Render light indicator sphere (unlit)
-    void RenderLightIndicator(PointLight* light, bool show,
-        IRHIBuffer* sphereVB, IRHIBuffer* sphereIB);
 
     void ClearMeshCache();
 

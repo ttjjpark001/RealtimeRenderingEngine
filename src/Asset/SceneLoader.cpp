@@ -84,11 +84,12 @@ void SceneLoader::ProcessNode(AssimpContext& ctx, const void* aiNodePtr,
     // Extract transform from aiNode
     const aiMatrix4x4& m = node->mTransformation;
     // Assimp uses row-major matrices, DirectXMath also row-major — direct copy
+    // aiMatrix4x4: a=row0, b=row1, c=row2, d=row3; 1=col0, 2=col1, 3=col2, 4=col3
     DirectX::XMMATRIX localMatrix(
-        m.a1, m.b1, m.c1, m.d1,
-        m.a2, m.b2, m.c2, m.d2,
-        m.a3, m.b3, m.c3, m.d3,
-        m.a4, m.b4, m.c4, m.d4
+        m.a1, m.a2, m.a3, m.a4,
+        m.b1, m.b2, m.b3, m.b4,
+        m.c1, m.c2, m.c3, m.c4,
+        m.d1, m.d2, m.d3, m.d4
     );
 
     // Decompose into TRS

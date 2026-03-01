@@ -15,7 +15,6 @@ class IRHIBuffer;
 class Mesh;
 class Material;
 class DebugHUD;
-class PointLight;
 class LightManager;
 class Camera;
 class Renderer;
@@ -74,15 +73,9 @@ private:
     // Debug HUD
     std::unique_ptr<DebugHUD> m_debugHUD;
 
-    // Point light (Phase 01 compat) + LightManager (Phase 17)
-    std::unique_ptr<PointLight> m_pointLight;
+    // Light manager
     std::unique_ptr<LightManager> m_lightManager;
     bool m_showLightInfo = true;
-
-    // Light indicator sphere
-    std::unique_ptr<Mesh> m_lightSphereMesh;
-    std::unique_ptr<IRHIBuffer> m_lightSphereVB;
-    std::unique_ptr<IRHIBuffer> m_lightSphereIB;
 
     // Camera
     std::unique_ptr<Camera> m_camera;

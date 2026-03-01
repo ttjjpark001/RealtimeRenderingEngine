@@ -6,8 +6,8 @@
 #include "Scene/SceneGraph.h"
 #include "Scene/SceneNode.h"
 #include "Scene/Camera.h"
-#include "Lighting/PointLight.h"
 #include "Lighting/LightManager.h"
+#include "Lighting/Light.h"
 #include "Asset/Material.h"
 #include "Asset/TextureCache.h"
 #include <DirectXMath.h>
@@ -53,7 +53,7 @@ void Renderer::ClearMeshCache()
     m_meshCache.clear();
 }
 
-void Renderer::RenderScene(SceneGraph& graph, Camera& camera, PointLight* light,
+void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
     float aspectRatio, LightManager* lightManager)
 {
     if (!m_context)
@@ -67,37 +67,23 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera, PointLight* light,
     XMStoreFloat4x4(&viewProjFloat, viewProj);
     m_context->SetViewProjection(viewProjFloat);
 
-    // Set lighting data (BasicColor path)
+    // Set lighting data (BasicColor path — use first light from LightManager)
     XMFLOAT3 camPos = camera.GetPosition();
-    if (light)
+    if (lightManager && lightManager->GetActiveLightCount() > 0)
     {
+        const Light& firstLight = lightManager->GetLight(0);
         XMFLOAT3 ambient = { 0.15f, 0.15f, 0.15f };
         m_context->SetLightData(
-            light->GetPosition(), light->GetColor(),
+            firstLight.position, firstLight.color,
             camPos, ambient,
-            light->GetConstantAttenuation(),
-            light->GetLinearAttenuation(),
-            light->GetQuadraticAttenuation());
+            firstLight.Kc, firstLight.Kl, firstLight.Kq);
     }
 
-    // Set PBR light data from LightManager (or fallback to PointLight)
+    // Set PBR light data from LightManager
     LightConstants builtLights = {};
     if (lightManager && lightManager->GetActiveLightCount() > 0)
     {
         builtLights = lightManager->BuildLightConstants();
-        m_context->SetPBRLightData(builtLights);
-    }
-    else if (light)
-    {
-        builtLights.numActiveLights = 1;
-        builtLights.lights[0].position = light->GetPosition();
-        builtLights.lights[0].color = light->GetColor();
-        builtLights.lights[0].intensity = 1.0f;
-        builtLights.lights[0].type = 1; // Point
-        builtLights.lights[0].Kc = light->GetConstantAttenuation();
-        builtLights.lights[0].Kl = light->GetLinearAttenuation();
-        builtLights.lights[0].Kq = light->GetQuadraticAttenuation();
-        builtLights.lights[0].shadowMapIndex = -1;
         m_context->SetPBRLightData(builtLights);
     }
 
@@ -282,23 +268,6 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera, PointLight* light,
                 dc.worldFloat, dc.node->GetMaterial(), m_textureCache);
         }
     }
-}
-
-void Renderer::RenderLightIndicator(PointLight* light, bool show,
-    IRHIBuffer* sphereVB, IRHIBuffer* sphereIB)
-{
-    if (!m_context || !show || !light || !sphereVB || !sphereIB)
-        return;
-
-    XMFLOAT3 lp = light->GetPosition();
-    XMMATRIX lightWorld = XMMatrixTranspose(
-        XMMatrixScaling(0.06f, 0.06f, 0.06f) * XMMatrixTranslation(lp.x, lp.y, lp.z));
-    XMFLOAT4X4 lightWorldFloat;
-    XMStoreFloat4x4(&lightWorldFloat, lightWorld);
-
-    m_context->SetUnlitMode(true, light->GetColor());
-    m_context->DrawPrimitives(sphereVB, sphereIB, lightWorldFloat);
-    m_context->SetUnlitMode(false, { 1.0f, 1.0f, 1.0f });
 }
 
 } // namespace RRE

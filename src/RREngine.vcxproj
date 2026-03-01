@@ -149,7 +149,6 @@
     <ClInclude Include="Scene\SceneGraph.h" />
     <ClInclude Include="Lighting\Light.h" />
     <ClInclude Include="Lighting\LightManager.h" />
-    <ClInclude Include="Lighting\PointLight.h" />
     <ClInclude Include="Scene\Camera.h" />
     <ClInclude Include="Asset\SceneLoader.h" />
     <ClInclude Include="Asset\Material.h" />

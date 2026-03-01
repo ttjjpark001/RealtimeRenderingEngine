@@ -28,7 +28,7 @@ struct LightData
     float innerConeAngle;
     float outerConeAngle;
     int shadowMapIndex;   // -1 = no shadow, 0~7 = shadow map index
-    float _pad1[2];
+    float2 _pad1;         // NOTE: must be float2, NOT float[2] — HLSL array packing pads each element to 16 bytes
 };
 
 cbuffer LightsCB : register(b1)
@@ -234,6 +234,7 @@ float4 PSMain(PSInput input) : SV_TARGET
         albedo4 = AlbedoMap.Sample(LinearSampler, input.texCoord) * baseColorFactor;
     else
         albedo4 = baseColorFactor;
+
     float3 albedo = albedo4.rgb;
     float alpha = albedo4.a;
 
@@ -336,8 +337,8 @@ float4 PSMain(PSInput input) : SV_TARGET
         Lo += (diffuse + specular) * lightColor * attenuation * NdotL * shadowFactor;
     }
 
-    // Ambient (simple constant)
-    float3 ambient = float3(0.03f, 0.03f, 0.03f) * albedo * ao;
+    // Ambient (IBL approximation)
+    float3 ambient = float3(0.15f, 0.15f, 0.15f) * albedo * ao;
 
     float3 color = ambient + Lo + emissive;
 

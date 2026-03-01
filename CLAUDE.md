@@ -46,7 +46,7 @@ src/
     D3D12/      — DirectX 12 백엔드 (Device, Context, SwapChain, Buffer, PSO, DescriptorHeap)
   Renderer/     — Vertex, Mesh, FaceColorPalette, MeshFactory, Renderer, DebugHUD, FrustumCuller, LODSelector, LightCuller, InstanceBatcher
   Scene/        — SceneNode, SceneGraph, Transform, Camera
-  Lighting/     — Light (Directional/Point/Spot), LightManager, PointLight(Phase 01 호환)
+  Lighting/     — Light (Directional/Point/Spot), LightManager
 tests/
   unit/         — DirectXMath 유틸리티, Scene Graph, 면 색상 규칙, 카메라 유닛 테스트
   smoke/        — 엔진 초기화, RHI 초기화 스모크 테스트
@@ -129,16 +129,18 @@ tests/
 - 기본 상태: Play (회전 애니메이션 재생)
 
 ### 광원 시스템 (Lighting)
-- **Phase 01**: 장면에 1개의 포인트 광원이 존재
-- 속성: 위치(XMFLOAT3), 색상(XMFLOAT3), 감쇠 계수 (constant/linear/quadratic)
+- **Phase 20**: LightManager 기반 3-포인트 라이팅 자동 배치 (PointLight 레거시 제거)
+- 기본 씬 및 씬 로드 시 Key/Fill/Back 3개 포인트 광원이 자동 배치됨
+  - Key Light: warm(1.0, 0.95, 0.9), intensity=12 — 우측 상단 전면
+  - Fill Light: cool(0.8, 0.85, 1.0), intensity=6 — 좌측
+  - Back Light: neutral(1, 1, 1), intensity=8 — 후면 상단 (rim)
+- 씬 로드 시: 바운딩 박스 center + diagonal*0.5 반경 기준 배치, 감쇠 자동 스케일링
+- 거리 기반 감쇠 수식: `attenuation = 1 / (Kc + Kl·d + Kq·d²)` (기본값: Kc=1.0, Kl=0.027, Kq=0.005)
 - 라이팅은 Pixel Shader에서 픽셀 단위(Per-Pixel Lighting)로 계산
-- 거리 기반 감쇠 수식: `attenuation = 1 / (Kc + Kl·d + Kq·d²)` (기본값: Kc=1.0, Kl=0.09, Kq=0.032)
-- HLSL Pixel Shader에서 Diffuse + Ambient 라이팅 계산: `(ambient + diff * lightColor * attenuation) * faceColor`
 - Constant Buffer로 매 프레임 광원 데이터를 GPU에 전달
 - 화면에 광원 정보(색상명, 위치) 표시 가능, "Light" 메뉴에서 on/off 토글
-- 메뉴에서 광원 색상 선택 (White/Red/Green/Blue/Yellow/Cyan/Magenta)
-- 방향키 + PgUp/PgDn으로 광원 위치 실시간 이동
-- 광원 인디케이터: 광원 정보 표시 시 광원 위치에 작은 구(스케일 0.06) 렌더링, Unlit 모드(광원 색상 그대로)
+- 메뉴에서 광원 색상 선택 시 모든 광원에 일괄 적용 (White/Red/Green/Blue/Yellow/Cyan/Magenta)
+- ~~방향키 광원 이동~~, ~~광원 인디케이터 구~~, ~~Reset Position~~ — Phase 20에서 삭제됨
 
 ### 카메라 (Camera)
 - Scene/Camera.h/.cpp에 위치

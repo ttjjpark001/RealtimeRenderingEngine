@@ -515,7 +515,33 @@ tests/
 11. Renderer에 `SetRenderMode()` + 모드별 PSO/패스 분기
 12. DebugHUD에 현재 모드명 표시
 
-**완료 기준**: glTF/GLB 씬 로드 시 텍스처가 정상 렌더링됨, Alpha Mask/Blend 오브젝트 정상 표시, 메뉴에서 5단계 렌더링 모드를 즉시 전환 가능
+**Part C: PBR 라이팅 버그 수정 (HLSL cbuffer 배열 패킹)**
+13. `PBR.hlsl` — LightData 구조체의 `float _pad1[2]`를 `float2 _pad1`로 수정
+    - HLSL cbuffer에서 `float arr[N]`은 각 원소가 16바이트 경계에 정렬됨
+    - C++ 측 `float[2]` = 8바이트 vs HLSL `float[2]` = 32바이트 → 구조체 크기 불일치
+    - 이로 인해 `numActiveLights`가 잘못된 오프셋에서 읽혀 0으로 판독 → 라이팅 미적용(검은 화면)
+    - `float2` 벡터 타입으로 교체하여 C++/HLSL 레이아웃 일치
+
+**Part D: 자동 3-포인트 라이팅 + PointLight 레거시 제거**
+14. Phase 01의 `PointLight` 클래스 의존성 완전 제거
+    - `src/Lighting/PointLight.h` 더 이상 사용하지 않음 (vcxproj 참조 제거)
+    - Engine.h/cpp: `m_pointLight`, `m_lightSphereMesh`, `m_lightSphereVB/IB` 멤버 삭제
+    - Renderer.h/cpp: `RenderLightIndicator()` 삭제, `RenderScene()` 시그니처에서 `PointLight*` 제거
+15. 광원 인디케이터 구 렌더링 삭제
+16. 방향키(Arrow/PgUp/PgDn) 광원 위치 이동 기능 삭제
+17. Win32Menu에서 "Reset Position" 메뉴 항목 + 콜백 삭제
+18. 기본 씬: LightManager에 3-포인트 라이팅 자동 배치
+    - Key Light (warm, 밝음): position=(2,2.5,-2), intensity=12, color=(1.0, 0.95, 0.9)
+    - Fill Light (cool, 부드러움): position=(-2.5,1.5,1.5), intensity=6, color=(0.8, 0.85, 1.0)
+    - Back Light (rim): position=(0,3,2.5), intensity=8, color=(1,1,1)
+    - 감쇠: Kc=1.0, Kl=0.027, Kq=0.005
+19. 씬 로드 시: 바운딩 박스 기반 3-포인트 라이팅 자동 배치
+    - 씬 중심 + 대각선 50% 반경으로 Key/Fill/Back 배치
+    - 감쇠 계수를 씬 크기에 비례하여 자동 스케일링
+20. 색상 변경 메뉴: LightManager의 모든 광원 색상 일괄 변경
+21. DebugHUD 광원 정보: LightManager에서 직접 조회
+
+**완료 기준**: glTF/GLB 씬 로드 시 텍스처가 정상 렌더링됨, Alpha Mask/Blend 오브젝트 정상 표시, 메뉴에서 5단계 렌더링 모드를 즉시 전환 가능, 씬 로드 시 3-포인트 라이팅 자동 배치, PointLight 레거시 코드 완전 제거
 
 ### Phase 21: 렌더링 최적화 — Culling + LOD + Light Culling
 **목표**: Frustum/Occlusion Culling, LOD 시스템 (자동 LOD 생성 포함), 광원 컬링

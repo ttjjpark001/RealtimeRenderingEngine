@@ -1103,6 +1103,46 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 20를 구현
 8. DebugHUD에 현재 렌더링 모드 이름을 표시한다 (P1).
    - "Render: Full PBR + Shadows" 등
 
+=== Part C: PBR 라이팅 버그 수정 ===
+
+9. HLSL cbuffer 배열 패킹 규칙에 의한 C++/HLSL 구조체 레이아웃 불일치를 수정한다.
+   - PBR.hlsl의 LightData 구조체에서 `float _pad1[2]`를 `float2 _pad1`로 변경
+   - HLSL cbuffer에서 float 배열은 각 원소가 16바이트 경계에 정렬되어
+     C++ float[2](8바이트) ≠ HLSL float[2](32바이트) 크기 불일치 발생
+   - 이로 인해 numActiveLights 오프셋이 밀려 0으로 읽힘 → 라이팅 미적용(검은 화면)
+   - 규칙: HLSL cbuffer 내에서 스칼라 배열(float[], uint[]) 대신 벡터 타입(float2 등) 사용
+
+=== Part D: 자동 3-포인트 라이팅 + PointLight 레거시 제거 ===
+
+10. Phase 01의 PointLight 클래스 의존성을 완전 제거한다.
+    - src/Lighting/PointLight.h 참조 제거 (vcxproj에서도 삭제)
+    - Engine.h: m_pointLight, m_lightSphereMesh, m_lightSphereVB/IB 멤버 삭제
+    - Engine.cpp: PointLight.h include, 생성/사용/정리 코드 전부 제거
+    - Renderer.h/cpp: RenderLightIndicator() 삭제, RenderScene() 시그니처에서 PointLight* 제거
+    - Win32Menu.h/cpp: "Reset Position" 항목, LightResetCallback, ID_LIGHT_RESET_POS 삭제
+
+11. 광원 인디케이터 구 렌더링 및 방향키 광원 이동 기능을 삭제한다.
+    - Engine::Render()에서 RenderLightIndicator() 호출 제거
+    - Engine::Update()에서 방향키(Arrow/PgUp/PgDn) 광원 위치 이동 블록 전체 제거
+
+12. 기본 씬에서 LightManager에 3-포인트 라이팅을 설정한다.
+    - Engine::Initialize()에서 PointLight 생성 대신 3개 광원을 LightManager에 추가:
+      · Key Light: pos=(2,2.5,-2), color=(1.0,0.95,0.9), intensity=12, Kl=0.027, Kq=0.005
+      · Fill Light: pos=(-2.5,1.5,1.5), color=(0.8,0.85,1.0), intensity=6
+      · Back Light: pos=(0,3,2.5), color=(1,1,1), intensity=8
+
+13. 씬 로드 시 바운딩 박스 기반 3-포인트 라이팅을 자동 배치한다.
+    - Engine::LoadScene()에서 기존 1-light 배치를 3-light로 교체:
+      · LightManager::Clear() 후 center/radius 기반 Key/Fill/Back 배치
+      · radius = sceneDiagonal * 0.5
+      · 감쇠: Kl = 0.027 / (diagonal*0.1+1), Kq = 0.005 / (diagonal*0.1+1)
+
+14. 색상 변경 메뉴 콜백을 LightManager의 모든 광원 색상 일괄 변경으로 수정한다.
+
+15. DebugHUD 광원 정보를 LightManager에서 직접 조회하도록 수정한다.
+    - LightManager 첫 번째 광원의 position과 color로 정보 표시
+    - 색상명은 RGB 값 비교로 자동 산출 (White/Red/Green 등)
+
 === 검증 ===
 
 빌드하여 다음을 확인하라:
@@ -1110,6 +1150,9 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 20를 구현
 - Alpha Mask/Blend 오브젝트가 올바르게 렌더링됨
 - 메뉴에서 5단계 렌더링 모드를 전환할 수 있고, 각 모드별로 정상 렌더링됨
 - 기존 Phase 01 데모 씬(vertex-color 큐브)은 BasicColor 경로로 여전히 정상 동작
+- 기본 씬과 glTF 씬 로드 시 3-포인트 라이팅이 자동 배치됨
+- PointLight 관련 레거시 기능(인디케이터 구, 방향키 이동, Reset Position)이 삭제됨
+- Light 메뉴의 색상 변경 시 모든 광원에 일괄 적용됨
 ```
 
 ---

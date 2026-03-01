@@ -937,6 +937,20 @@ void D3D12Context::DrawText(int x, int y, const char* text,
     m_textCommands.push_back(std::move(cmd));
 }
 
+void D3D12Context::BeginUploadCommands()
+{
+    m_commandAllocator->Reset();
+    m_commandList->Reset(m_commandAllocator.Get(), nullptr);
+}
+
+void D3D12Context::EndUploadCommands()
+{
+    m_commandList->Close();
+    ID3D12CommandList* cmdLists[] = { m_commandList.Get() };
+    m_commandQueue->ExecuteCommandLists(1, cmdLists);
+    WaitForGPU();
+}
+
 void D3D12Context::WaitForGPU()
 {
     m_fenceValue++;

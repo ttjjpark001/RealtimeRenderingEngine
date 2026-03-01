@@ -9,7 +9,6 @@
 #include "Renderer/MeshFactory.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/DebugHUD.h"
-#include "Lighting/PointLight.h"
 #include "Lighting/LightManager.h"
 #include "Lighting/Light.h"
 #include "Scene/Camera.h"
@@ -92,10 +91,14 @@ bool Engine::Initialize(const EngineInitParams& params)
         m_renderer->SetContext(context, d3dDevice->GetD3DDevice());
 
         // Create texture cache and connect to renderer
+        // Open command list for fallback texture upload
+        context->BeginUploadCommands();
         m_textureCache = std::make_unique<TextureCache>();
         m_textureCache->Initialize(d3dDevice->GetD3DDevice(),
                                    context->GetCommandList(),
                                    &context->GetCBVSRVHeap());
+        context->EndUploadCommands();
+        m_textureCache->ReleaseUploadBuffers();
         m_renderer->SetTextureCache(m_textureCache.get());
     }
 
@@ -182,55 +185,47 @@ bool Engine::Initialize(const EngineInitParams& params)
         LoadScene(filePath);
     });
 
-    // Create point light
-    m_pointLight = std::make_unique<PointLight>();
-
-    // Create light manager and add the point light
+    // Create light manager with default 3-point lighting
     m_lightManager = std::make_unique<LightManager>();
     {
-        Light mainLight;
-        mainLight.type = LightType::Point;
-        mainLight.position = m_pointLight->GetPosition();
-        mainLight.color = m_pointLight->GetColor();
-        mainLight.intensity = 1.0f;
-        mainLight.Kc = m_pointLight->GetConstantAttenuation();
-        mainLight.Kl = m_pointLight->GetLinearAttenuation();
-        mainLight.Kq = m_pointLight->GetQuadraticAttenuation();
-        m_lightManager->AddLight(mainLight);
-    }
+        // Key Light: warm, bright, upper-right-front
+        Light keyLight;
+        keyLight.type = LightType::Point;
+        keyLight.position = { 2.0f, 2.5f, -2.0f };
+        keyLight.color = { 1.0f, 0.95f, 0.9f };
+        keyLight.intensity = 12.0f;
+        keyLight.Kc = 1.0f; keyLight.Kl = 0.027f; keyLight.Kq = 0.005f;
+        m_lightManager->AddLight(keyLight);
 
-    // Create light indicator sphere (low-poly, uploaded separately from scene meshes)
-    m_lightSphereMesh = std::make_unique<Mesh>(MeshFactory::CreateSphere(8, 8));
-    {
-        auto* d3dDevice = static_cast<D3D12Device*>(m_rhiDevice.get());
-        auto vb = std::make_unique<D3D12Buffer>();
-        uint32 vbSize = static_cast<uint32>(m_lightSphereMesh->vertices.size() * sizeof(Vertex));
-        vb->Initialize(d3dDevice->GetD3DDevice(), m_lightSphereMesh->vertices.data(), vbSize, sizeof(Vertex));
-        m_lightSphereVB = std::move(vb);
+        // Fill Light: cool, softer, left-side
+        Light fillLight;
+        fillLight.type = LightType::Point;
+        fillLight.position = { -2.5f, 1.5f, 1.5f };
+        fillLight.color = { 0.8f, 0.85f, 1.0f };
+        fillLight.intensity = 6.0f;
+        fillLight.Kc = 1.0f; fillLight.Kl = 0.027f; fillLight.Kq = 0.005f;
+        m_lightManager->AddLight(fillLight);
 
-        auto ib = std::make_unique<D3D12Buffer>();
-        uint32 ibSize = static_cast<uint32>(m_lightSphereMesh->indices.size() * sizeof(uint32));
-        ib->Initialize(d3dDevice->GetD3DDevice(), m_lightSphereMesh->indices.data(), ibSize, sizeof(uint32));
-        m_lightSphereIB = std::move(ib);
+        // Back Light: neutral rim light
+        Light backLight;
+        backLight.type = LightType::Point;
+        backLight.position = { 0.0f, 3.0f, 2.5f };
+        backLight.color = { 1.0f, 1.0f, 1.0f };
+        backLight.intensity = 8.0f;
+        backLight.Kc = 1.0f; backLight.Kl = 0.027f; backLight.Kq = 0.005f;
+        m_lightManager->AddLight(backLight);
     }
 
     // Set light menu callbacks
     m_menu->SetLightColorCallback([this](float r, float g, float b) {
-        m_pointLight->SetColor({ r, g, b });
-        if (m_lightManager && m_lightManager->GetActiveLightCount() > 0)
-            m_lightManager->GetLightMutable(0).color = { r, g, b };
+        if (m_lightManager)
+        {
+            for (size_t i = 0; i < m_lightManager->GetActiveLightCount(); i++)
+                m_lightManager->GetLightMutable(i).color = { r, g, b };
+        }
     });
     m_menu->SetLightToggleInfoCallback([this]() {
         m_showLightInfo = !m_showLightInfo;
-    });
-    m_menu->SetLightResetCallback([this]() {
-        m_pointLight->Reset();
-        if (m_lightManager && m_lightManager->GetActiveLightCount() > 0)
-        {
-            Light& light = m_lightManager->GetLightMutable(0);
-            light.position = m_pointLight->GetPosition();
-            light.color = m_pointLight->GetColor();
-        }
     });
 
     // Create camera
@@ -268,6 +263,7 @@ bool Engine::Initialize(const EngineInitParams& params)
     m_lastFrameTime = counter.QuadPart;
 
     m_isInitialized = true;
+
     return true;
 }
 
@@ -315,10 +311,6 @@ void Engine::Shutdown()
     m_tetrahedronMesh.reset();
     m_cubeMesh.reset();
     m_cylinderMesh.reset();
-    m_lightSphereVB.reset();
-    m_lightSphereIB.reset();
-    m_lightSphereMesh.reset();
-    m_pointLight.reset();
     m_lightManager.reset();
     m_camera.reset();
     m_menu.reset();
@@ -342,24 +334,6 @@ void Engine::Update(float deltaTime)
         m_orbitPivotNode->GetTransform().SetRotation({ 0.0f, m_orbitAngle, 0.0f });
     if (m_childNode)
         m_childNode->GetTransform().SetRotation({ 0.0f, m_childRotationAngle, 0.0f });
-
-    // Move light with arrow keys and PgUp/PgDn
-    if (m_pointLight)
-    {
-        float speed = 3.0f * deltaTime;
-        XMFLOAT3 pos = m_pointLight->GetPosition();
-
-        if (GetAsyncKeyState(VK_LEFT) & 0x8000)   pos.x -= speed;
-        if (GetAsyncKeyState(VK_RIGHT) & 0x8000)  pos.x += speed;
-        if (GetAsyncKeyState(VK_UP) & 0x8000)     pos.z += speed;
-        if (GetAsyncKeyState(VK_DOWN) & 0x8000)   pos.z -= speed;
-        if (GetAsyncKeyState(VK_PRIOR) & 0x8000)  pos.y += speed;  // PgUp
-        if (GetAsyncKeyState(VK_NEXT) & 0x8000)   pos.y -= speed;  // PgDn
-
-        m_pointLight->SetPosition(pos);
-        if (m_lightManager && m_lightManager->GetActiveLightCount() > 0)
-            m_lightManager->GetLightMutable(0).position = pos;
-    }
 
     // Move camera with WASD+QE, adjust FOV with +/-
     if (m_camera)
@@ -388,10 +362,20 @@ void Engine::Update(float deltaTime)
         stats.totalPolygons = m_sceneGraph ? m_sceneGraph->GetTotalPolygonCount() : 0;
         stats.polygonsPerSec = stats.totalPolygons * (1.0f / deltaTime);
         stats.showLightInfo = m_showLightInfo;
-        if (m_pointLight)
+        if (m_lightManager && m_lightManager->GetActiveLightCount() > 0)
         {
-            stats.lightColorName = m_pointLight->GetColorName();
-            stats.lightPosition = m_pointLight->GetPosition();
+            const Light& firstLight = m_lightManager->GetLight(0);
+            stats.lightPosition = firstLight.position;
+            // Derive color name from first light's color
+            XMFLOAT3 c = firstLight.color;
+            if (c.x > 0.9f && c.y > 0.9f && c.z > 0.9f) stats.lightColorName = "White";
+            else if (c.x > 0.9f && c.y < 0.1f && c.z < 0.1f) stats.lightColorName = "Red";
+            else if (c.x < 0.1f && c.y > 0.9f && c.z < 0.1f) stats.lightColorName = "Green";
+            else if (c.x < 0.1f && c.y < 0.1f && c.z > 0.9f) stats.lightColorName = "Blue";
+            else if (c.x > 0.9f && c.y > 0.9f && c.z < 0.1f) stats.lightColorName = "Yellow";
+            else if (c.x < 0.1f && c.y > 0.9f && c.z > 0.9f) stats.lightColorName = "Cyan";
+            else if (c.x > 0.9f && c.y < 0.1f && c.z > 0.9f) stats.lightColorName = "Magenta";
+            else stats.lightColorName = "Custom";
         }
         stats.showCameraInfo = m_showCameraInfo;
         if (m_camera)
@@ -434,12 +418,7 @@ void Engine::Render()
     context->Clear(cobaltBlue);
 
     // Render all scene objects via SceneGraph traversal
-    m_renderer->RenderScene(*m_sceneGraph, *m_camera, m_pointLight.get(), aspectRatio,
-        m_lightManager.get());
-
-    // Render light indicator sphere (unlit, only when light info visible)
-    m_renderer->RenderLightIndicator(m_pointLight.get(), m_showLightInfo,
-        m_lightSphereVB.get(), m_lightSphereIB.get());
+    m_renderer->RenderScene(*m_sceneGraph, *m_camera, aspectRatio, m_lightManager.get());
 
     // Render debug HUD (before EndFrame so text commands are queued)
     if (m_debugHUD)
@@ -548,8 +527,8 @@ void Engine::LoadScene(const std::string& filePath)
     {
         auto* device = static_cast<D3D12Device*>(m_rhiDevice.get())->GetD3DDevice();
 
-        // Open command list for texture upload commands
-        context->BeginFrame();
+        // Open command list for texture uploads (no CBPool/descriptor reset)
+        context->BeginUploadCommands();
         auto* cmdList = context->GetCommandList();
 
         for (auto& mat : m_loadedMaterials)
@@ -567,10 +546,7 @@ void Engine::LoadScene(const std::string& filePath)
         }
 
         // Execute upload commands and wait for completion
-        cmdList->Close();
-        ID3D12CommandList* cmdLists[] = { cmdList };
-        context->GetCommandQueue()->ExecuteCommandLists(1, cmdLists);
-        context->WaitForGPU();
+        context->EndUploadCommands();
 
         // Release upload buffers now that GPU copy is complete
         m_textureCache->ReleaseUploadBuffers();
@@ -595,27 +571,46 @@ void Engine::LoadScene(const std::string& filePath)
         m_camera->FitToScene(data.sceneBounds.GetCenter(), m_sceneDiagonal);
     }
 
-    // Adjust movement speed to scene size + reposition light
+    // Adjust movement speed to scene size + setup 3-point lighting
     if (data.sceneBounds.IsValid())
     {
         m_sceneDiagonal = data.sceneBounds.GetDiagonalLength();
         m_camera->SetMoveSpeedScale(m_sceneDiagonal / 10.0f);
 
-        // Reposition point light relative to scene bounds
+        // Setup 3-point lighting relative to scene bounds
         DirectX::XMFLOAT3 center = data.sceneBounds.GetCenter();
-        float offset = m_sceneDiagonal * 0.5f;
-        DirectX::XMFLOAT3 lightPos = { center.x + offset, center.y + offset, center.z - offset };
-        if (m_pointLight)
-            m_pointLight->SetPosition(lightPos);
-        if (m_lightManager && m_lightManager->GetActiveLightCount() > 0)
-        {
-            m_lightManager->GetLightMutable(0).position = lightPos;
-            // Scale attenuation to scene size so light reaches entire scene
-            float Kl = 0.09f / (m_sceneDiagonal * 0.1f + 1.0f);
-            float Kq = 0.032f / (m_sceneDiagonal * 0.1f + 1.0f);
-            m_lightManager->GetLightMutable(0).Kl = Kl;
-            m_lightManager->GetLightMutable(0).Kq = Kq;
-        }
+        float radius = m_sceneDiagonal * 0.5f;
+        float Kl = 0.027f / (m_sceneDiagonal * 0.1f + 1.0f);
+        float Kq = 0.005f / (m_sceneDiagonal * 0.1f + 1.0f);
+
+        m_lightManager->Clear();
+
+        // Key Light: warm, bright, upper-right-front
+        Light keyLight;
+        keyLight.type = LightType::Point;
+        keyLight.position = { center.x + 0.5f * radius, center.y + 0.7f * radius, center.z - 0.5f * radius };
+        keyLight.color = { 1.0f, 0.95f, 0.9f };
+        keyLight.intensity = 12.0f;
+        keyLight.Kc = 1.0f; keyLight.Kl = Kl; keyLight.Kq = Kq;
+        m_lightManager->AddLight(keyLight);
+
+        // Fill Light: cool, softer, left-side
+        Light fillLight;
+        fillLight.type = LightType::Point;
+        fillLight.position = { center.x - 0.6f * radius, center.y + 0.3f * radius, center.z + 0.4f * radius };
+        fillLight.color = { 0.8f, 0.85f, 1.0f };
+        fillLight.intensity = 6.0f;
+        fillLight.Kc = 1.0f; fillLight.Kl = Kl; fillLight.Kq = Kq;
+        m_lightManager->AddLight(fillLight);
+
+        // Back Light: neutral rim light
+        Light backLight;
+        backLight.type = LightType::Point;
+        backLight.position = { center.x, center.y + 0.8f * radius, center.z + 0.6f * radius };
+        backLight.color = { 1.0f, 1.0f, 1.0f };
+        backLight.intensity = 8.0f;
+        backLight.Kc = 1.0f; backLight.Kl = Kl; backLight.Kq = Kq;
+        m_lightManager->AddLight(backLight);
     }
 
     m_isExternalScene = true;

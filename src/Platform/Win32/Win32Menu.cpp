@@ -61,8 +61,6 @@ bool Win32Menu::Initialize(HWND hwnd)
     AppendMenuW(m_lightMenu, MF_STRING, ID_LIGHT_YELLOW, L"Yellow");
     AppendMenuW(m_lightMenu, MF_STRING, ID_LIGHT_CYAN, L"Cyan");
     AppendMenuW(m_lightMenu, MF_STRING, ID_LIGHT_MAGENTA, L"Magenta");
-    AppendMenuW(m_lightMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m_lightMenu, MF_STRING, ID_LIGHT_RESET_POS, L"Reset Position");
     AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_lightMenu), L"Light");
 
     // Default check: White
@@ -207,10 +205,6 @@ bool Win32Menu::HandleCommand(WPARAM wParam)
     case ID_LIGHT_MAGENTA:
         CheckMenuRadioItem(m_lightMenu, ID_LIGHT_WHITE, ID_LIGHT_MAGENTA, ID_LIGHT_MAGENTA, MF_BYCOMMAND);
         if (m_lightColorCallback) m_lightColorCallback(1.0f, 0.0f, 1.0f);
-        return true;
-
-    case ID_LIGHT_RESET_POS:
-        if (m_lightResetCallback) m_lightResetCallback();
         return true;
 
     // Camera commands
