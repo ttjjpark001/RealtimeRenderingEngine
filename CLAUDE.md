@@ -167,7 +167,15 @@ tests/
 - `struct Vertex { XMFLOAT3 position; XMFLOAT4 color; XMFLOAT3 normal; }` — 연속 메모리 배치
 - D3D12 Input Layout: POSITION (R32G32B32_FLOAT, offset 0) + COLOR (R32G32B32A32_FLOAT, offset 12) + NORMAL (R32G32B32_FLOAT, offset 28)
 - `static_assert`로 각 멤버 오프셋과 `sizeof(Vertex) == 40`을 빌드 타임 검증
-- Mesh는 Vertex 배열 + Index 배열로 구성
+- Mesh는 Vertex 배열 + Index 배열 + AABB(BoundingBox)로 구성
+- 각 Mesh에 `DirectX::BoundingBox aabb`를 보유 — SceneLoader에서 로딩 시 `CreateFromPoints()`로 계산
+
+### 프리미티브 분리 + Per-Mesh AABB (Phase 22)
+- glTF/GLB 로딩 시 단일 aiNode에 연결된 복수의 aiMesh를 각각 별도 SceneNode로 분리
+- Sponza 같은 모놀리식 씬(103개 서브 프리미티브)도 개별 SceneNode로 분리되어 노드 단위 Culling/LOD/Instancing 적용 가능
+- SceneNode에 `BoundingBox m_worldAABB` + `bool m_aabbDirty` 캐싱
+  - `GetWorldAABB()`: Mesh 로컬 AABB를 WorldMatrix로 변환하여 월드 공간 AABB 반환
+  - Transform 변경 시 dirty flag 설정 → 다음 호출 시 재계산
 
 ## 코딩 컨벤션
 

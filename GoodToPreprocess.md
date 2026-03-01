@@ -30,13 +30,23 @@
 - **Phase**: 12
 
 ### 1-4. 메시별 AABB (Bounding Box) 계산
-- **원본**: Mesh의 전체 정점 위치 + SceneNode의 World Transform
-- **가공**: 모든 정점의 Min/Max 좌표를 구해 축 정렬 바운딩 박스 생성
-- **파생 자료**: `DirectX::BoundingBox` (center + extents)
-- **위치**: `src/Scene/SceneNode.h/.cpp`, `src/Renderer/FrustumCuller.h/.cpp`
-- **Phase**: 21 (Frustum Culling)
+- **원본**: Mesh의 전체 정점 위치
+- **가공**: `BoundingBox::CreateFromPoints()`로 로컬 AABB 생성, SceneNode에서 WorldMatrix 변환하여 월드 AABB 캐싱
+- **파생 자료**: `DirectX::BoundingBox aabb` (Mesh 로컬) + `BoundingBox m_worldAABB` (SceneNode 월드 캐시, dirty flag 기반)
+- **위치**: `src/Renderer/Mesh.h`, `src/Scene/SceneNode.h/.cpp`, `src/Asset/SceneLoader.cpp`
+- **Phase**: 22 (프리미티브 분리 + AABB)
 
-### 1-5. 자동 LOD 메시 생성 (Auto-LOD)
+### 1-5. 프리미티브 → SceneNode 분리
+- **원본**: Assimp의 aiNode가 참조하는 복수의 aiMesh (서브 프리미티브)
+- **가공**: 단일 aiNode에 연결된 N개 aiMesh를 각각 별도 SceneNode 자식으로 분리
+  - Sponza 같은 모놀리식 씬: 1개 aiNode에 103개 aiMesh → 103개 SceneNode
+  - 각 SceneNode에 해당 Mesh + Material을 연결
+- **파생 자료**: 프리미티브 단위로 분리된 SceneNode 트리 (노드 단위 Culling/LOD/Instancing 가능)
+- **위치**: `src/Asset/SceneLoader.cpp` (ProcessNode)
+- **Phase**: 22 (프리미티브 분리 + AABB)
+- **비고**: 기존에도 index ≥ 1인 aiMesh는 자식으로 생성하지만, Phase 22에서 확인/강화
+
+### 1-6. 자동 LOD 메시 생성 (Auto-LOD)
 - **원본**: 원본 메시 (LOD 0, 씬 파일에 LOD 데이터가 없는 경우)
 - **가공**: Edge Collapse + QEM(Quadric Error Metrics) 기반 메시 심플리피케이션
   - LOD 1: 원본 삼각형의 ~50%
@@ -44,10 +54,10 @@
   - 정점 위치, 법선, UV 보존
 - **파생 자료**: `LODMesh` 구조체 (Mesh 포인터 배열 + 전환 거리 배열)
 - **위치**: `src/Renderer/LODSelector.h/.cpp`
-- **Phase**: 21 (Culling + LOD)
+- **Phase**: 23 (Culling + LOD)
 - **비고**: 백그라운드 스레드에서 비동기 수행, 완료 전까지 LOD 0으로 렌더링
 
-### 1-6. Face Coloring (Phase 01 전용)
+### 1-7. Face Coloring (Phase 01 전용)
 - **원본**: MeshFactory가 생성한 프로시저럴 메시의 면 인접 정보
 - **가공**: Greedy 그래프 컬러링 알고리즘으로 인접면에 서로 다른 색상 배정
 - **파생 자료**: 면별 색상이 적용된 Vertex 배열 (flat shading용 정점 중복)
@@ -72,7 +82,7 @@
   - Mip 레벨 수 = `floor(log2(max(width, height))) + 1`
 - **파생 자료**: 전체 Mip chain 데이터 (각 레벨별 픽셀 배열)
 - **위치**: `src/Asset/Texture.cpp`, `src/Asset/TextureStreamer.cpp`
-- **Phase**: 22 (Texture Streaming + Mip-Mapping)
+- **Phase**: 24 (Texture Streaming + Mip-Mapping)
 
 ### 2-3. GPU 텍스처 리소스 + SRV 생성
 - **원본**: 디코딩된 이미지 버퍼 (+ Mip chain)
@@ -205,14 +215,14 @@
 - **가공**: VP 행렬로부터 6개 절두체 평면(Left, Right, Top, Bottom, Near, Far) 추출
 - **파생 자료**: `DirectX::BoundingFrustum`
 - **위치**: `src/Renderer/FrustumCuller.cpp`
-- **Phase**: 21
+- **Phase**: 23
 
 ### 6-2. Hi-Z (Hierarchical-Z) 버퍼
 - **원본**: 이전 프레임의 Depth Buffer
 - **가공**: 2×2 max reduction으로 Mip chain 생성 (depth 보수적 축소)
 - **파생 자료**: Hi-Z 텍스처 피라미드 (Occlusion Culling 판정용)
 - **위치**: `src/Renderer/OcclusionCuller.cpp`
-- **Phase**: 21
+- **Phase**: 23
 
 ### 6-3. 인스턴스 그룹핑 + Instance Buffer
 - **원본**: SceneGraph 노드들 (동일 Mesh+Material 조합)
@@ -222,7 +232,7 @@
   - GPU Instance Buffer (per-instance VB slot 1) 생성
 - **파생 자료**: `InstanceData[]` (XMFLOAT4X4 world, 전치 적용) + Instance Buffer
 - **위치**: `src/Renderer/InstanceBatcher.cpp`
-- **Phase**: 23
+- **Phase**: 25
 
 ### 6-4. Constant Buffer Pool 슬롯 할당
 - **원본**: Per-Object/Per-Material/Per-Light CB 데이터
@@ -231,7 +241,7 @@
   - 링 버퍼 방식 (프레임 0/1 영역 번갈아 사용)
 - **파생 자료**: `CBAllocation` (GPU 가상 주소 + 오프셋 + 크기)
 - **위치**: `src/RHI/D3D12/D3D12CBPool.cpp`
-- **Phase**: 24
+- **Phase**: 26
 
 ---
 
@@ -242,11 +252,12 @@
 | 1-1 | aiMesh | 타입 변환 | Engine Vertex/Index 배열 | 12 |
 | 1-2 | Mesh 정점/UV/Normal | Tangent 계산/보정 | Tangent 벡터 (w=handedness) | 13 |
 | 1-3 | CPU Vertex/Index | GPU 업로드 | VB/IB (ID3D12Resource) | 12 |
-| 1-4 | Mesh 정점 + World Transform | Min/Max 계산 | AABB (BoundingBox) | 21 |
-| 1-5 | 원본 메시 | Edge Collapse (QEM) | LOD 1(50%), LOD 2(25%) 메시 | 21 |
-| 1-6 | 면 인접 정보 | 그래프 컬러링 | 면별 색상 Vertex 배열 | 01 |
+| 1-4 | Mesh 정점 | CreateFromPoints | 로컬 AABB + 월드 AABB 캐시 | 22 |
+| 1-5 | aiNode의 복수 aiMesh | SceneNode 분리 | 프리미티브 단위 SceneNode 트리 | 22 |
+| 1-6 | 원본 메시 | Edge Collapse (QEM) | LOD 1(50%), LOD 2(25%) 메시 | 23 |
+| 1-7 | 면 인접 정보 | 그래프 컬러링 | 면별 색상 Vertex 배열 | 01 |
 | 2-1 | PNG/JPEG 파일 | 이미지 디코딩 | RGBA 픽셀 버퍼 | 14 |
-| 2-2 | 원본 이미지 | Box filter 축소 | Mip chain (전체 레벨) | 22 |
+| 2-2 | 원본 이미지 | Box filter 축소 | Mip chain (전체 레벨) | 24 |
 | 2-3 | 디코딩 이미지 | GPU 리소스 생성 | TEXTURE2D + SRV | 14 |
 | 2-4 | 텍스처 용도 | 포맷 분류 | sRGB/Linear GPU 텍스처 | 14 |
 | 2-5 | (없음) | 1×1 white 생성 | 폴백 텍스처 | 14 |
@@ -257,13 +268,13 @@
 | 4-1 | aiMaterial | PBR 파라미터 추출 | Material 객체 | 13 |
 | 4-2 | Material 파라미터 | CB 구조체 패킹 | PerMaterialCB (GPU) | 16 |
 | 5-1 | aiLight | 타입/속성 추출 | Light 구조체 | 17 |
-| 5-2 | 감쇠 계수 + 강도 | 유효 거리 계산 | BoundingSphere | 21 |
+| 5-2 | 감쇠 계수 + 강도 | 유효 거리 계산 | BoundingSphere | 23 |
 | 5-3 | 광원 위치/방향/타입 | LVP 행렬 계산 | lightViewProj (전치) | 18 |
 | 5-4 | 씬 지오메트리 + LVP | Depth-only 렌더 | Shadow Map 텍스처 | 18 |
-| 6-1 | VP 행렬 | 평면 추출 | BoundingFrustum | 21 |
-| 6-2 | 이전 Depth Buffer | Max reduction | Hi-Z 피라미드 | 21 |
-| 6-3 | 동일 Mesh+Material 노드 | 그룹핑 + 행렬 수집 | Instance Buffer | 23 |
-| 6-4 | CB 데이터 | 256B 정렬 할당 | CBPool 슬롯 | 24 |
+| 6-1 | VP 행렬 | 평면 추출 | BoundingFrustum | 23 |
+| 6-2 | 이전 Depth Buffer | Max reduction | Hi-Z 피라미드 | 23 |
+| 6-3 | 동일 Mesh+Material 노드 | 그룹핑 + 행렬 수집 | Instance Buffer | 25 |
+| 6-4 | CB 데이터 | 256B 정렬 할당 | CBPool 슬롯 | 26 |
 
 ---
 
@@ -274,7 +285,8 @@
 - 1-2 Tangent 생성/보정
 - 1-3 GPU VB/IB 생성
 - 1-4 메시별 AABB 계산 (정적 오브젝트)
-- 1-5 자동 LOD 메시 생성 (비동기)
+- 1-5 프리미티브 → SceneNode 분리
+- 1-6 자동 LOD 메시 생성 (비동기)
 - 2-1 이미지 디코딩 (비동기)
 - 2-2 Mip chain 생성
 - 2-3 GPU 텍스처 + SRV 생성
@@ -315,7 +327,7 @@
 
 | 효과 | 항목 | 오프라인 처리 내용 | 절감 효과 |
 |------|------|-------------------|----------|
-| **최대** | 1-5 Auto-LOD 메시 생성 | QEM Edge Collapse로 LOD 1/2 메시 생성 | 수 초~수십 초 (대형 메시) |
+| **최대** | 1-6 Auto-LOD 메시 생성 | QEM Edge Collapse로 LOD 1/2 메시 생성 | 수 초~수십 초 (대형 메시) |
 | **최대** | 2-1 + 2-2 이미지 디코딩 + Mip Chain | PNG/JPEG 디코딩 + 전체 Mip chain 생성 → DDS/KTX 포맷 저장 | 수백 장 텍스처 시 수 초~수십 초 |
 | **대** | 1-1 + 1-2 Vertex 변환 + Tangent 생성 | Assimp 파싱 + 엔진 Vertex 포맷 변환 + Tangent 계산 | Assimp 런타임 의존성 제거, 대형 씬 수 초 |
 | **중** | 1-4 메시별 AABB | 정점 순회로 AABB 미리 계산 | 정점 수 많을 때 수백 ms |
@@ -333,7 +345,7 @@
 | 2-5 폴백 텍스처 | 1×1 white 텍스처, 비용 무시 가능 |
 | 2-6 텍스처 캐시 | 런타임 중복 방지 로직, 오프라인 의미 없음 |
 | 4-2 ~ 6-4 (Per-Frame 항목) | 카메라/광원 상태에 따라 매 프레임 변동 |
-| 1-6 Face Coloring | Phase 01 프로시저럴 메시 전용, 씬 파일과 무관 |
+| 1-7 Face Coloring | Phase 01 프로시저럴 메시 전용, 씬 파일과 무관 |
 
 ### `.rrscene` 파일 포맷 구상
 

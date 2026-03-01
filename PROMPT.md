@@ -1306,10 +1306,52 @@ Phase 02 마이그레이션 과정에서 남은 레거시 코드를 제거하고
 
 ---
 
-## Prompt 22: 렌더링 최적화 — Culling + LOD
+## Prompt 22: 프리미티브 → SceneNode 분리 + Per-Mesh AABB
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 22를 구현하라.
+
+1. Mesh에 AABB를 추가한다 (src/Renderer/Mesh.h).
+   - DirectX::BoundingBox aabb 멤버 추가
+   - #include <DirectXCollision.h>
+
+2. SceneLoader에서 Per-Mesh AABB를 계산한다 (src/Asset/SceneLoader.cpp).
+   - ConvertMesh() 끝에서 BoundingBox::CreateFromPoints()로 로컬 AABB 생성
+   - 모든 vertex의 position으로 AABB 계산
+
+3. SceneNode에 월드 AABB 캐싱을 추가한다 (src/Scene/SceneNode.h/.cpp).
+   - BoundingBox m_worldAABB, bool m_aabbDirty = true 멤버 추가
+   - GetWorldAABB(): dirty면 Mesh의 로컬 AABB를 WorldMatrix로 변환 후 캐시
+   - Transform 변경 시 dirty 설정 (자식 노드도 재귀적으로 dirty)
+
+4. ProcessNode의 프리미티브 분리를 확인/강화한다 (src/Asset/SceneLoader.cpp).
+   - aiNode가 여러 aiMesh를 참조할 때 각각 별도 SceneNode 자식으로 생성
+   - Sponza 같은 씬: 단일 aiNode에 N개 aiMesh → N개 SceneNode로 분리
+   - 각 SceneNode에 해당 Mesh와 Material을 올바르게 연결
+
+5. MeshFactory 오브젝트에도 AABB를 추가한다 (src/Renderer/MeshFactory.cpp).
+   - CreateCube/Sphere/Cylinder/Tetrahedron에서 생성된 Mesh에 AABB 계산
+
+6. DebugHUD에 노드/메시 통계를 추가한다 (src/Renderer/DebugHUD.cpp).
+   - 총 SceneNode 수, 총 Mesh 수를 HUD에 표시
+
+7. 유닛 테스트를 작성한다.
+   - AABB 계산 정확성 테스트 (Cube의 AABB = (-0.5,-0.5,-0.5) ~ (0.5,0.5,0.5))
+   - 월드 AABB: Transform 적용 후 올바른 월드 AABB 반환
+   - 프리미티브 분리: 여러 aiMesh를 가진 노드가 올바르게 분리되는지
+
+빌드하여 Sponza 로딩 시 103개+ SceneNode로 분리되고,
+각 노드에 유효한 AABB가 설정되며,
+기존 씬(DamagedHelmet 등)이 정상 동작하는지 확인하라.
+DebugHUD에서 노드 수와 메시 수를 확인하라.
+```
+
+---
+
+## Prompt 23: 렌더링 최적화 — Culling + LOD
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 23를 구현하라.
 
 1. src/Renderer/FrustumCuller.h/.cpp를 만든다.
    - DirectX::BoundingFrustum을 View-Projection 행렬에서 생성
@@ -1373,10 +1415,10 @@ DebugHUD에 culled 오브젝트 수와 culled 광원 수를 표시하라.
 
 ---
 
-## Prompt 23: Texture Streaming + Mip-Mapping
+## Prompt 24: Texture Streaming + Mip-Mapping
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 23를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 24를 구현하라.
 
 1. src/Asset/TextureStreamer.h/.cpp를 만든다.
    - 텍스처별 요구 Mip 레벨 관리
@@ -1411,10 +1453,10 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 23를 구현
 
 ---
 
-## Prompt 24: Instanced Rendering + 멀티스레드 로딩
+## Prompt 25: Instanced Rendering + 멀티스레드 로딩
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 24를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 25를 구현하라.
 
 1. src/Renderer/InstanceBatcher.h/.cpp를 만든다.
    - Scene Graph에서 동일 Mesh+Material 조합을 그룹핑
@@ -1447,10 +1489,10 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 24를 구현
 
 ---
 
-## Prompt 25: GPU 메모리 최적화
+## Prompt 26: GPU 메모리 최적화
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 25를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 26를 구현하라.
 
 1. CBPool을 Renderer에 통합한다.
    - 매 프레임 ResetFrame(frameIndex) 호출
@@ -1492,10 +1534,10 @@ VRAM 사용량이 HUD에 표시되는지 확인하라.
 
 ---
 
-## Prompt 26: Phase 02 통합 & 최종 검증
+## Prompt 27: Phase 02 통합 & 최종 검증
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 26를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 27를 구현하라.
 
 1. 전체 렌더 파이프라인을 11단계로 통합한다.
    ① Scene Graph 순회 → AABB + 월드 행렬 수집
@@ -1538,10 +1580,10 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 26를 구현
 
 ---
 
-## Prompt 27: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
+## Prompt 28: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 27를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 28를 구현하라.
 이 단계는 Phase 02의 마지막 단계로, 전체 코드 품질을 점검하고 ARCHITECTURE.md를 작성한다.
 
 1. 전체 코드 리뷰를 수행한다.

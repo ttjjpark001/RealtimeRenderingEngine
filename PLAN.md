@@ -600,7 +600,27 @@ tests/
 
 **완료 기준**: PointLight 레거시 코드 완전 제거, 모든 테스트가 현재 API로 빌드 및 통과, vcxproj.filters가 최신 파일 구조 반영
 
-### Phase 22: 렌더링 최적화 — Culling + LOD + Light Culling
+### Phase 22: 프리미티브 → SceneNode 분리 + Per-Mesh AABB
+
+**목표**: glTF/GLB 씬 로딩 시 단일 Mesh의 서브 프리미티브를 개별 SceneNode로 분리하여 노드 단위 최적화(Culling, LOD, Instancing)의 대상으로 만듦. 각 Mesh에 AABB를 추가.
+
+1. **Mesh에 AABB 추가**: `Renderer/Mesh.h`에 `DirectX::BoundingBox aabb` 멤버 추가
+2. **SceneLoader 프리미티브 분리 확인/강화**:
+   - Assimp의 aiScene::mMeshes 배열은 이미 primitive 단위로 분리됨
+   - `ProcessNode()`에서 aiNode가 여러 aiMesh를 참조할 때 각각 별도 SceneNode 자식으로 생성 (현재 index ≥ 1은 자식으로 생성 — 확인 및 강화)
+   - Sponza 같은 씬: 단일 aiNode에 103개 aiMesh 참조 → 103개 SceneNode로 분리
+3. **Per-Mesh AABB 계산**: `ConvertMesh()` 끝에서 `BoundingBox::CreateFromPoints()`로 로컬 AABB 생성
+4. **SceneNode 월드 AABB 캐싱**:
+   - `SceneNode`에 `BoundingBox m_worldAABB`, `bool m_aabbDirty = true` 추가
+   - `GetWorldAABB()`: dirty면 Mesh의 로컬 AABB를 WorldMatrix로 변환 후 캐시
+   - Transform 변경 시 dirty 설정
+5. **MeshFactory AABB**: Phase 01 오브젝트(Cube, Sphere 등)에도 AABB 계산 적용
+6. **DebugHUD 확장**: 총 SceneNode 수, 총 Mesh 수를 HUD에 표시
+7. **유닛 테스트**: AABB 계산 정확성, 프리미티브 분리 후 노드 수 검증
+
+**완료 기준**: Sponza 로딩 시 103개+ SceneNode로 분리, 각 노드에 유효한 AABB, 기존 씬(DamagedHelmet 등) 정상 동작
+
+### Phase 23: 렌더링 최적화 — Culling + LOD + Light Culling
 **목표**: Frustum/Occlusion Culling, LOD 시스템 (자동 LOD 생성 포함), 광원 컬링
 
 1. `src/Renderer/FrustumCuller.h/.cpp` — AABB vs 6-plane 교차 검사
@@ -619,7 +639,7 @@ tests/
 
 **완료 기준**: Frustum 밖 오브젝트 culled, Occluded 오브젝트 스킵, 거리별 LOD 전환 (자동 생성 포함), 원거리/저기여 광원 컬링
 
-### Phase 23: Texture Streaming + Mip-Mapping
+### Phase 24: Texture Streaming + Mip-Mapping
 **목표**: 필요 Mip만 GPU 로드, 가시성/거리 기반 우선순위
 
 1. `src/Asset/TextureStreamer.h/.cpp` — Mip 레벨 기반 스트리밍
@@ -631,7 +651,7 @@ tests/
 
 **완료 기준**: 카메라 거리에 따라 Mip 레벨 동적 로딩/해제, Anisotropic 필터링 적용
 
-### Phase 24: Instanced Rendering + 멀티스레드 로딩
+### Phase 25: Instanced Rendering + 멀티스레드 로딩
 **목표**: 동일 Mesh+Material 인스턴싱, 병렬 리소스 로딩
 
 1. `src/Renderer/InstanceBatcher.h/.cpp` — 동일 Mesh+Material 그룹핑
@@ -643,7 +663,7 @@ tests/
 
 **완료 기준**: 동일 메시 인스턴싱으로 드로우콜 감소, 멀티스레드 텍스처 디코딩
 
-### Phase 25: GPU 메모리 최적화
+### Phase 26: GPU 메모리 최적화
 **목표**: CB 풀링, VRAM 적응, Shared Material CB, Dirty Flag, Front-to-Back
 
 1. CBPool: Upload Heap 풀링, 256바이트 정렬, 링 버퍼
@@ -656,7 +676,7 @@ tests/
 
 **완료 기준**: CB 풀에서 슬롯 할당, VRAM 예산 초과 시 적응적 동작, Dirty Flag 갱신 스킵
 
-### Phase 26: Phase 02 통합 & 최종 검증
+### Phase 27: Phase 02 통합 & 최종 검증
 **목표**: 전체 Phase 02 기능 통합, 대형 씬 벤치마크
 
 1. 전체 렌더 파이프라인 통합 (12단계):
@@ -670,7 +690,7 @@ tests/
 
 **완료 기준**: Sponza급 씬을 PBR+Shadow+최적화로 60fps 이상 렌더링, 모든 테스트 통과
 
-### Phase 27: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
+### Phase 28: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
 **목표**: 전체 코드 품질 점검, 성능 최적화, 버그 수정, ARCHITECTURE.md 작성
 
 1. **전체 코드 리뷰**:
@@ -728,14 +748,15 @@ Phase 11 (Phase 01 완료)
     │                                        └── Phase 20 (렌더 모드) ───────┤
     │                                                                        │
     ├── Phase 21 (레거시 정리+테스트) ────────────────────────────────────────┤
-    ├── Phase 22 (Culling+LOD) ──────────────────────────────────────────────┤
-    ├── Phase 23 (Texture Streaming) ────────────────────────────────────────┤
-    ├── Phase 24 (Instancing+멀티스레드) ────────────────────────────────────┤
-    ├── Phase 25 (GPU 메모리 최적화) ────────────────────────────────────────┤
+    ├── Phase 22 (프리미티브 분리+AABB) ────────────────────────────────────┤
+    │       └── Phase 23 (Culling+LOD) ────────────────────────────────────┤
+    ├── Phase 24 (Texture Streaming) ────────────────────────────────────────┤
+    ├── Phase 25 (Instancing+멀티스레드) ────────────────────────────────────┤
+    ├── Phase 26 (GPU 메모리 최적화) ────────────────────────────────────────┤
     │                                                                        │
-    └────────────────────────────────────────────────────── Phase 26 (통합) ─┘
+    └────────────────────────────────────────────────────── Phase 27 (통합) ─┘
                                                                              │
-                                                            Phase 27 (코드 리뷰 + ARCHITECTURE.md) ─┘
+                                                            Phase 28 (코드 리뷰 + ARCHITECTURE.md) ─┘
 ```
 
 ## Phase 02 리스크 & 대응

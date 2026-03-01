@@ -258,7 +258,15 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | SH-16 | Shadow depth 패스용 간소화 셰이더를 구현한다 (VS: position 변환만, PS: 없음 또는 depth 출력만) | P0 |
 | SH-17 | 최종 픽셀 출력에 Gamma Correction을 적용한다. 셰이더 내부 라이팅 연산은 리니어 공간에서 수행하고, 최종 결과에 `pow(color, 1/2.2)` 변환을 적용하여 sRGB 출력한다 (SRGB 렌더 타겟 또는 셰이더 수동 변환) | P0 |
 
-### 3.19 렌더링 최적화
+### 3.19 프리미티브 분리 + Per-Mesh AABB
+
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| PRIM-01 | glTF/GLB 씬 로딩 시, 단일 aiNode에 연결된 복수의 aiMesh(서브 프리미티브)를 각각 별도 SceneNode로 분리하여 노드 단위 Culling/LOD/Instancing이 적용될 수 있게 한다 | P0 |
+| PRIM-02 | 각 Mesh에 로컬 AABB(BoundingBox)를 계산하여 저장한다. `BoundingBox::CreateFromPoints()`를 사용한다 | P0 |
+| PRIM-03 | SceneNode에 월드 공간 AABB를 캐싱한다. Transform 변경 시 dirty flag를 설정하고, GetWorldAABB() 호출 시 재계산한다 | P0 |
+
+### 3.20 렌더링 최적화
 
 #### Frustum Culling & Occlusion Culling
 | ID | 요구사항 | 우선순위 |
