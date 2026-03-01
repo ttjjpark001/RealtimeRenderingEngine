@@ -9,7 +9,8 @@
 #include "Scene/SceneGraph.h"
 #include "Scene/SceneNode.h"
 #include "Scene/Camera.h"
-#include "Lighting/PointLight.h"
+#include "Lighting/Light.h"
+#include "Lighting/LightManager.h"
 #include <windows.h>
 
 namespace
@@ -71,9 +72,15 @@ TEST(EngineInit, SceneGraphWithRendererOneCycle)
     RRE::Renderer renderer;
     renderer.SetContext(context, device.GetD3DDevice());
 
-    // Create camera and light
+    // Create camera and light manager
     RRE::Camera camera;
-    RRE::PointLight light;
+    RRE::LightManager lightManager;
+    RRE::Light defaultLight;
+    defaultLight.type = RRE::LightType::Point;
+    defaultLight.position = { 2.0f, 3.0f, -2.0f };
+    defaultLight.color = { 1.0f, 1.0f, 1.0f };
+    defaultLight.intensity = 8.0f;
+    lightManager.AddLight(defaultLight);
 
     // Run one render cycle without crashing
     context->BeginFrame();
@@ -81,7 +88,7 @@ TEST(EngineInit, SceneGraphWithRendererOneCycle)
     context->Clear(clearColor);
 
     float aspectRatio = 320.0f / 240.0f;
-    renderer.RenderScene(sceneGraph, camera, &light, aspectRatio);
+    renderer.RenderScene(sceneGraph, camera, aspectRatio, &lightManager);
 
     context->EndFrame();
 

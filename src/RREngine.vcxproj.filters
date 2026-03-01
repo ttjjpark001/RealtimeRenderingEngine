@@ -28,6 +28,12 @@
     <Filter Include="Shaders">
       <UniqueIdentifier>{DE9DCF08-1E2F-5FA0-0D8E-CF5A9B1CD3E4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Asset">
+      <UniqueIdentifier>{EF0EDF09-2F3A-6AB1-1E9F-DA6BAC2DE4F5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Lighting">
+      <UniqueIdentifier>{FA1FEA10-3A4B-7BC2-2FA0-EB7CBD3EF5A6}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
 
   <ItemGroup>
@@ -35,7 +41,19 @@
     <ClCompile Include="Core\Engine.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="Asset\SceneLoader.cpp">
+      <Filter>Asset</Filter>
+    </ClCompile>
+    <ClCompile Include="Asset\Texture.cpp">
+      <Filter>Asset</Filter>
+    </ClCompile>
+    <ClCompile Include="Asset\TextureCache.cpp">
+      <Filter>Asset</Filter>
+    </ClCompile>
     <ClCompile Include="Platform\Win32\Win32Window.cpp">
+      <Filter>Platform\Win32</Filter>
+    </ClCompile>
+    <ClCompile Include="Platform\Win32\Win32Menu.cpp">
       <Filter>Platform\Win32</Filter>
     </ClCompile>
     <ClCompile Include="RHI\D3D12\D3D12Device.cpp">
@@ -56,8 +74,32 @@
     <ClCompile Include="RHI\D3D12\D3D12PipelineState.cpp">
       <Filter>RHI\D3D12</Filter>
     </ClCompile>
+    <ClCompile Include="RHI\D3D12\D3D12CBPool.cpp">
+      <Filter>RHI\D3D12</Filter>
+    </ClCompile>
     <ClCompile Include="Renderer\MeshFactory.cpp">
       <Filter>Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\Renderer.cpp">
+      <Filter>Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\DebugHUD.cpp">
+      <Filter>Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="Scene\Transform.cpp">
+      <Filter>Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Scene\SceneNode.cpp">
+      <Filter>Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Scene\SceneGraph.cpp">
+      <Filter>Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Scene\Camera.cpp">
+      <Filter>Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Lighting\LightManager.cpp">
+      <Filter>Lighting</Filter>
     </ClCompile>
   </ItemGroup>
 
@@ -68,7 +110,22 @@
     <ClInclude Include="Core\Engine.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="Asset\SceneLoader.h">
+      <Filter>Asset</Filter>
+    </ClInclude>
+    <ClInclude Include="Asset\Material.h">
+      <Filter>Asset</Filter>
+    </ClInclude>
+    <ClInclude Include="Asset\Texture.h">
+      <Filter>Asset</Filter>
+    </ClInclude>
+    <ClInclude Include="Asset\TextureCache.h">
+      <Filter>Asset</Filter>
+    </ClInclude>
     <ClInclude Include="Platform\Win32\Win32Window.h">
+      <Filter>Platform\Win32</Filter>
+    </ClInclude>
+    <ClInclude Include="Platform\Win32\Win32Menu.h">
       <Filter>Platform\Win32</Filter>
     </ClInclude>
     <ClInclude Include="Math\MathUtil.h">
@@ -101,6 +158,9 @@
     <ClInclude Include="RHI\D3D12\D3D12PipelineState.h">
       <Filter>RHI\D3D12</Filter>
     </ClInclude>
+    <ClInclude Include="RHI\D3D12\D3D12CBPool.h">
+      <Filter>RHI\D3D12</Filter>
+    </ClInclude>
     <ClInclude Include="Renderer\Vertex.h">
       <Filter>Renderer</Filter>
     </ClInclude>
@@ -113,11 +173,44 @@
     <ClInclude Include="Renderer\MeshFactory.h">
       <Filter>Renderer</Filter>
     </ClInclude>
+    <ClInclude Include="Renderer\Renderer.h">
+      <Filter>Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\DebugHUD.h">
+      <Filter>Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Scene\Transform.h">
+      <Filter>Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="Scene\SceneNode.h">
+      <Filter>Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="Scene\SceneGraph.h">
+      <Filter>Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="Scene\Camera.h">
+      <Filter>Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="Lighting\Light.h">
+      <Filter>Lighting</Filter>
+    </ClInclude>
+    <ClInclude Include="Lighting\LightManager.h">
+      <Filter>Lighting</Filter>
+    </ClInclude>
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="Shaders\BasicColor.hlsl">
+    <CustomBuild Include="Shaders\BasicColor.hlsl">
       <Filter>Shaders</Filter>
-    </None>
+    </CustomBuild>
+    <CustomBuild Include="Shaders\PBR.hlsl">
+      <Filter>Shaders</Filter>
+    </CustomBuild>
+    <CustomBuild Include="Shaders\ShadowDepth.hlsl">
+      <Filter>Shaders</Filter>
+    </CustomBuild>
+    <CustomBuild Include="Shaders\Wireframe.hlsl">
+      <Filter>Shaders</Filter>
+    </CustomBuild>
   </ItemGroup>
 </Project>
