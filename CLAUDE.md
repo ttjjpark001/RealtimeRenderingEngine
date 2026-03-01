@@ -204,6 +204,25 @@ assimp-vc143-mt.lib — [Phase 02] Assimp (glTF/GLB 로딩)
 - 전체 통합 변경 시: 모든 테스트 실행
 - D3D12 스모크 테스트는 WARP 어댑터로 GPU 없이도 실행 가능
 
+## PBR 테스트 모델 (Khronos glTF-Sample-Assets)
+
+저장 위치: `assets/test-models/`
+
+| 모델 | 크기 | 테스트 항목 |
+|------|------|------------|
+| **DamagedHelmet.glb** | 3.6 MB | Normal + MetallicRoughness + Emissive + AO (전체 PBR 채널 종합) |
+| **MetalRoughSpheres.glb** | 11 MB | Metallic/Roughness 조합 그리드 (시각적 검증 최적) |
+| **NormalTangentTest.glb** | 1.8 MB | Normal map + 탄젠트 공간 변환 정확성 검증 |
+| **WaterBottle.glb** | 8.6 MB | Normal + MetallicRoughness + Emissive |
+| **BoomBox.glb** | 11 MB | Normal + MetallicRoughness + Emissive |
+| **Avocado.glb** | 7.8 MB | Normal + MetallicRoughness + AO |
+| **BarramundiFish.glb** | 12 MB | Normal + MetallicRoughness |
+| **Lantern.glb** | 9.2 MB | Normal + MetallicRoughness + Emissive (복잡 멀티파트) |
+
+**추천 테스트 순서**: DamagedHelmet → MetalRoughSpheres → NormalTangentTest → WaterBottle → Lantern
+
+모든 모델은 GLB 포맷(임베딩 텍스처)이며, `aiProcess_ConvertToLeftHanded`로 좌표계 변환 후 정상 렌더링된다.
+
 ## 주요 참조 문서
 
 - `PRD.md` — 제품 요구사항 정의
