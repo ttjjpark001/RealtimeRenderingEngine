@@ -1220,6 +1220,44 @@ metallic-roughness, normal, occlusion 텍스처와 factor 값이 누락 없이 �
 - 다양한 익스포터로 생성된 glTF 파일에서 PBR 텍스처가 누락 없이 로드됨
 ```
 
+### Part G: 궤도 회전 광원 + 4-광원 밸런싱
+
+```
+=== 목표 ===
+PBR 효과(노멀맵, 금속성, 거칠기, AO 등)를 실시간으로 시각 검증할 수 있도록
+카메라 시선 축 주변을 궤도 회전하는 포인트 라이트를 추가하고,
+4-광원 체제에 맞게 전체 광원 강도를 밸런싱한다.
+
+=== 작업 ===
+
+23. Engine.h에 궤도 광원 멤버 변수를 추가한다.
+    - `size_t m_orbitLightIndex` — LightManager 내 궤도 광원 인덱스
+    - `float m_orbitLightAngle` — 현재 궤도 각도 (라디안)
+
+24. Engine::Initialize()와 Engine::LoadScene()에서 3-포인트 라이팅 뒤에 궤도 광원을 추가한다.
+    - LightType::Point, 흰색(1,1,1), intensity=6
+    - 감쇠 계수는 나머지 3-포인트 라이팅과 동일
+
+25. Engine::Update()에서 매 프레임 궤도 광원 위치를 갱신한다.
+    - 궤도 중심: 카메라 위치에서 시선 방향으로 씬 대각선의 30% 지점
+    - 궤도 반지름: 씬 대각선의 25%
+    - 시선 벡터에 수직인 로컬 좌표축(right, up) 생성 → cos/sin으로 원형 궤도
+    - 회전 속도: ~0.8 rad/s (약 8초에 1바퀴)
+    - 애니메이션 토글과 독립적으로 항상 회전
+
+26. 4-광원 체제 intensity 밸런싱:
+    - Key: 12→8, Fill: 6→3, Back: 8→4, Orbit: 6
+    - Initialize()와 LoadScene() 모두 동일 적용
+
+=== 검증 ===
+
+빌드하여 다음을 확인하라:
+- DamagedHelmet.glb 로드 시 광원이 물체 주변을 회전함
+- 금속/거칠기 표면에 스페큘러 하이라이트가 이동하며 변화함
+- 전체 밝기가 과도하지 않고 적절함
+- 카메라 이동/회전 시 궤도 광원이 자연스럽게 따라옴
+```
+
 ---
 
 ## Prompt 21: 렌더링 최적화 — Culling + LOD

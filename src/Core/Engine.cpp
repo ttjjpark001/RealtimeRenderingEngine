@@ -193,7 +193,7 @@ bool Engine::Initialize(const EngineInitParams& params)
         keyLight.type = LightType::Point;
         keyLight.position = { 2.0f, 2.5f, -2.0f };
         keyLight.color = { 1.0f, 0.95f, 0.9f };
-        keyLight.intensity = 12.0f;
+        keyLight.intensity = 8.0f;
         keyLight.Kc = 1.0f; keyLight.Kl = 0.027f; keyLight.Kq = 0.005f;
         m_lightManager->AddLight(keyLight);
 
@@ -202,7 +202,7 @@ bool Engine::Initialize(const EngineInitParams& params)
         fillLight.type = LightType::Point;
         fillLight.position = { -2.5f, 1.5f, 1.5f };
         fillLight.color = { 0.8f, 0.85f, 1.0f };
-        fillLight.intensity = 6.0f;
+        fillLight.intensity = 3.0f;
         fillLight.Kc = 1.0f; fillLight.Kl = 0.027f; fillLight.Kq = 0.005f;
         m_lightManager->AddLight(fillLight);
 
@@ -211,9 +211,18 @@ bool Engine::Initialize(const EngineInitParams& params)
         backLight.type = LightType::Point;
         backLight.position = { 0.0f, 3.0f, 2.5f };
         backLight.color = { 1.0f, 1.0f, 1.0f };
-        backLight.intensity = 8.0f;
+        backLight.intensity = 4.0f;
         backLight.Kc = 1.0f; backLight.Kl = 0.027f; backLight.Kq = 0.005f;
         m_lightManager->AddLight(backLight);
+
+        // Orbiting light: orbits around camera view axis for PBR visualization
+        Light orbitLight;
+        orbitLight.type = LightType::Point;
+        orbitLight.position = { 1.0f, 1.0f, -1.0f };
+        orbitLight.color = { 1.0f, 1.0f, 1.0f };
+        orbitLight.intensity = 6.0f;
+        orbitLight.Kc = 1.0f; orbitLight.Kl = 0.027f; orbitLight.Kq = 0.005f;
+        m_orbitLightIndex = m_lightManager->AddLight(orbitLight);
     }
 
     // Set light menu callbacks
@@ -334,6 +343,35 @@ void Engine::Update(float deltaTime)
         m_orbitPivotNode->GetTransform().SetRotation({ 0.0f, m_orbitAngle, 0.0f });
     if (m_childNode)
         m_childNode->GetTransform().SetRotation({ 0.0f, m_childRotationAngle, 0.0f });
+
+    // Update orbiting light position (always active, independent of animation toggle)
+    if (m_camera && m_lightManager && m_orbitLightIndex < m_lightManager->GetActiveLightCount())
+    {
+        m_orbitLightAngle += 0.8f * deltaTime;
+
+        XMFLOAT3 camPos = m_camera->GetPosition();
+        XMFLOAT3 camDir = m_camera->GetDirection();
+        XMVECTOR vCamPos = XMLoadFloat3(&camPos);
+        XMVECTOR vCamDir = XMLoadFloat3(&camDir);
+
+        XMVECTOR orbitCenter = XMVectorAdd(vCamPos, XMVectorScale(vCamDir, m_sceneDiagonal * 0.3f));
+        float orbitRadius = m_sceneDiagonal * 0.25f;
+
+        XMVECTOR worldUp = XMVectorSet(0, 1, 0, 0);
+        XMVECTOR right = XMVector3Normalize(XMVector3Cross(worldUp, vCamDir));
+        XMVECTOR up = XMVector3Cross(vCamDir, right);
+
+        float cosA = cosf(m_orbitLightAngle);
+        float sinA = sinf(m_orbitLightAngle);
+        XMVECTOR offset = XMVectorAdd(
+            XMVectorScale(right, orbitRadius * cosA),
+            XMVectorScale(up, orbitRadius * sinA)
+        );
+
+        XMFLOAT3 lightPos;
+        XMStoreFloat3(&lightPos, XMVectorAdd(orbitCenter, offset));
+        m_lightManager->GetLightMutable(m_orbitLightIndex).position = lightPos;
+    }
 
     // Move camera with WASD+QE, adjust FOV with +/-
     if (m_camera)
@@ -610,7 +648,7 @@ void Engine::LoadScene(const std::string& filePath)
         keyLight.type = LightType::Point;
         keyLight.position = { center.x + 0.5f * radius, center.y + 0.7f * radius, center.z - 0.5f * radius };
         keyLight.color = { 1.0f, 0.95f, 0.9f };
-        keyLight.intensity = 12.0f;
+        keyLight.intensity = 8.0f;
         keyLight.Kc = 1.0f; keyLight.Kl = Kl; keyLight.Kq = Kq;
         m_lightManager->AddLight(keyLight);
 
@@ -619,7 +657,7 @@ void Engine::LoadScene(const std::string& filePath)
         fillLight.type = LightType::Point;
         fillLight.position = { center.x - 0.6f * radius, center.y + 0.3f * radius, center.z + 0.4f * radius };
         fillLight.color = { 0.8f, 0.85f, 1.0f };
-        fillLight.intensity = 6.0f;
+        fillLight.intensity = 3.0f;
         fillLight.Kc = 1.0f; fillLight.Kl = Kl; fillLight.Kq = Kq;
         m_lightManager->AddLight(fillLight);
 
@@ -628,9 +666,18 @@ void Engine::LoadScene(const std::string& filePath)
         backLight.type = LightType::Point;
         backLight.position = { center.x, center.y + 0.8f * radius, center.z + 0.6f * radius };
         backLight.color = { 1.0f, 1.0f, 1.0f };
-        backLight.intensity = 8.0f;
+        backLight.intensity = 4.0f;
         backLight.Kc = 1.0f; backLight.Kl = Kl; backLight.Kq = Kq;
         m_lightManager->AddLight(backLight);
+
+        // Orbiting light: orbits around camera view axis for PBR visualization
+        Light orbitLight;
+        orbitLight.type = LightType::Point;
+        orbitLight.position = center;
+        orbitLight.color = { 1.0f, 1.0f, 1.0f };
+        orbitLight.intensity = 6.0f;
+        orbitLight.Kc = 1.0f; orbitLight.Kl = Kl; orbitLight.Kq = Kq;
+        m_orbitLightIndex = m_lightManager->AddLight(orbitLight);
     }
 
     m_isExternalScene = true;

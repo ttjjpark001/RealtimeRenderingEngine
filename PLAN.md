@@ -569,7 +569,18 @@ tests/
     - 변경 전: `LIGHTMAP` → `AMBIENT_OCCLUSION`
     - 변경 후: `AMBIENT_OCCLUSION` → `LIGHTMAP` (glTF 표준 타입 우선)
 
-**완료 기준**: glTF/GLB 씬 로드 시 텍스처가 정상 렌더링됨, GLB 임베딩 텍스처 정상 로드, 좌표계 변환으로 모델 방향/텍스처 매핑 정상, Alpha Mask/Blend 오브젝트 정상 표시, 메뉴에서 5단계 렌더링 모드를 즉시 전환 가능, 씬 로드 시 3-포인트 라이팅 자동 배치, PointLight 레거시 코드 완전 제거, PBR 머티리얼 파라미터/텍스처가 다양한 glTF 익스포터에서 올바르게 추출됨
+**Part G: 궤도 회전 광원 + 4-광원 밸런싱**
+
+28. 궤도 회전 포인트 라이트 추가
+    - 카메라 시선 축 주변을 원형 궤도로 회전하는 4번째 광원
+    - 궤도 중심: 카메라에서 시선 방향 30% 지점, 반지름: 씬 대각선 25%
+    - 회전 속도 ~0.8 rad/s (약 8초/바퀴), 애니메이션 토글과 독립
+    - Engine.h에 `m_orbitLightIndex`, `m_orbitLightAngle` 멤버 추가
+    - Engine::Update()에서 매 프레임 궤도 위치 계산 (카메라 시선 수직 좌표축 기반)
+29. 4-광원 체제 intensity 밸런싱
+    - Key: 12→8, Fill: 6→3, Back: 8→4, Orbit: 10→6 (Initialize + LoadScene 동일 적용)
+
+**완료 기준**: glTF/GLB 씬 로드 시 텍스처가 정상 렌더링됨, GLB 임베딩 텍스처 정상 로드, 좌표계 변환으로 모델 방향/텍스처 매핑 정상, Alpha Mask/Blend 오브젝트 정상 표시, 메뉴에서 5단계 렌더링 모드를 즉시 전환 가능, 씬 로드 시 4-광원 라이팅 자동 배치 (3-포인트 + 궤도), PointLight 레거시 코드 완전 제거, PBR 머티리얼 파라미터/텍스처가 다양한 glTF 익스포터에서 올바르게 추출됨
 
 ### Phase 21: 렌더링 최적화 — Culling + LOD + Light Culling
 **목표**: Frustum/Occlusion Culling, LOD 시스템 (자동 LOD 생성 포함), 광원 컬링

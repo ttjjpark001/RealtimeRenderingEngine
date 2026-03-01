@@ -96,6 +96,10 @@ private:
     float m_childRotationAngle = 0.0f;
     bool m_isAnimating = true;
 
+    // Orbiting light (for PBR visualization)
+    size_t m_orbitLightIndex = 0;
+    float m_orbitLightAngle = 0.0f;
+
     bool m_isInitialized = false;
 
     // High-resolution timer
