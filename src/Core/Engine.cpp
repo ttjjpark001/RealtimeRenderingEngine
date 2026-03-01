@@ -496,6 +496,25 @@ void Engine::LoadScene(const std::string& filePath)
     // Replace scene graph root
     m_sceneGraph->SetRoot(std::move(data.rootNode));
 
+    // Compute world-space scene bounds by applying each node's world transform to its mesh AABB.
+    // data.sceneBounds is computed from raw local-space vertices (no node transforms applied),
+    // which is incorrect for scenes whose node hierarchy has non-identity transforms (e.g. Sponza).
+    BoundingBox worldBounds;
+    m_sceneGraph->Traverse([&worldBounds](SceneNode* node, const XMMATRIX& world) {
+        Mesh* mesh = node->GetMesh();
+        if (mesh && !mesh->vertices.empty())
+        {
+            DirectX::BoundingBox worldAabb;
+            mesh->aabb.Transform(worldAabb, world);
+            XMFLOAT3 corners[8];
+            worldAabb.GetCorners(corners);
+            for (const auto& c : corners)
+                worldBounds.Expand(c);
+        }
+    });
+    if (!worldBounds.IsValid())
+        worldBounds = data.sceneBounds;  // fallback: local-space bounds if graph yields nothing
+
     // Camera placement
     if (data.camera.has_value())
     {
@@ -503,20 +522,20 @@ void Engine::LoadScene(const std::string& filePath)
         m_camera->SetLookAt(data.camera->lookAt);
         m_camera->SetFov(data.camera->fovY);
     }
-    else if (data.sceneBounds.IsValid())
+    else if (worldBounds.IsValid())
     {
-        m_sceneDiagonal = data.sceneBounds.GetDiagonalLength();
-        m_camera->FitToScene(data.sceneBounds.GetCenter(), m_sceneDiagonal);
+        m_sceneDiagonal = worldBounds.GetDiagonalLength();
+        m_camera->FitToScene(worldBounds.GetCenter(), m_sceneDiagonal);
     }
 
     // Adjust movement speed to scene size + setup 3-point lighting
-    if (data.sceneBounds.IsValid())
+    if (worldBounds.IsValid())
     {
-        m_sceneDiagonal = data.sceneBounds.GetDiagonalLength();
+        m_sceneDiagonal = worldBounds.GetDiagonalLength();
         m_camera->SetMoveSpeedScale(m_sceneDiagonal / 10.0f);
 
         // Setup 3-point lighting relative to scene bounds
-        DirectX::XMFLOAT3 center = data.sceneBounds.GetCenter();
+        DirectX::XMFLOAT3 center = worldBounds.GetCenter();
         float radius = m_sceneDiagonal * 0.5f;
         float Kl = 0.027f / (m_sceneDiagonal * 0.1f + 1.0f);
         float Kq = 0.005f / (m_sceneDiagonal * 0.1f + 1.0f);

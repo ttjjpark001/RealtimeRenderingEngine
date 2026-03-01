@@ -109,22 +109,22 @@ void Camera::FitToScene(const XMFLOAT3& sceneCenter, float sceneDiagonal)
 {
     m_lookAt = sceneCenter;
 
-    // Position camera on -Z axis looking in +Z direction (front view)
-    // Camera right = +X, Camera up = +Y, matching object axes
-    float dist = sceneDiagonal * 1.5f;
-    if (dist < 1.0f) dist = 1.0f;
+    // Elevated front-side view: camera above and in front at ~45 degrees.
+    // Works for both exterior objects and open-top interior scenes (e.g. Sponza atrium).
+    float half = sceneDiagonal * 0.5f;
+    if (half < 0.5f) half = 0.5f;
 
     m_position = {
         sceneCenter.x,
-        sceneCenter.y,
-        sceneCenter.z - dist
+        sceneCenter.y + half,   // elevated above center
+        sceneCenter.z - half    // in front of center (-Z)
     };
 
-    // Ensure up vector is world Y
     m_up = { 0.0f, 1.0f, 0.0f };
 
-    // Adjust far plane to encompass scene
-    m_farPlane = dist * 10.0f;
+    // Far plane: camera-to-center distance + full diagonal for margin
+    float distToCenter = half * 1.4142f;  // sqrt(2) * half
+    m_farPlane = (distToCenter + sceneDiagonal) * 3.0f;
     if (m_farPlane < 100.0f) m_farPlane = 100.0f;
 
     RecalcYawPitchFromLookAt();
