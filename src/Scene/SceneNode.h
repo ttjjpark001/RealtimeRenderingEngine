@@ -2,6 +2,7 @@
 
 #include "Scene/Transform.h"
 #include <DirectXMath.h>
+#include <DirectXCollision.h>
 #include <vector>
 #include <memory>
 
@@ -26,17 +27,20 @@ public:
     // World matrix: parent's world matrix * local matrix (recursive)
     DirectX::XMMATRIX GetWorldMatrix() const;
 
-    // Transform
-    Transform& GetTransform() { return m_localTransform; }
+    // Transform (mutable access marks AABB dirty)
+    Transform& GetTransform() { m_aabbDirty = true; return m_localTransform; }
     const Transform& GetTransform() const { return m_localTransform; }
 
     // Mesh (nullable)
-    void SetMesh(Mesh* mesh) { m_mesh = mesh; }
+    void SetMesh(Mesh* mesh) { m_mesh = mesh; m_aabbDirty = true; }
     Mesh* GetMesh() const { return m_mesh; }
 
-    // Material (nullable — nullptr means Phase 01 vertex-color fallback)
+    // Material (nullable — nullptr means vertex-color fallback)
     void SetMaterial(Material* material) { m_material = material; }
     Material* GetMaterial() const { return m_material; }
+
+    // World-space AABB (cached, recomputed when dirty)
+    DirectX::BoundingBox GetWorldAABB() const;
 
 private:
     Transform m_localTransform;
@@ -44,6 +48,9 @@ private:
     Material* m_material = nullptr;
     SceneNode* m_parent = nullptr;
     std::vector<std::unique_ptr<SceneNode>> m_children;
+
+    mutable DirectX::BoundingBox m_worldAABB;
+    mutable bool m_aabbDirty = true;
 };
 
 } // namespace RRE

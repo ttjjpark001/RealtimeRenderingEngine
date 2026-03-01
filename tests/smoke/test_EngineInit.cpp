@@ -4,7 +4,6 @@
 #include "RHI/D3D12/D3D12Buffer.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/Mesh.h"
-#include "Renderer/MeshFactory.h"
 #include "Renderer/Vertex.h"
 #include "Scene/SceneGraph.h"
 #include "Scene/SceneNode.h"
@@ -38,6 +37,19 @@ HWND CreateTestWindow()
     return hwnd;
 }
 
+// Create a minimal triangle mesh for testing (no MeshFactory dependency)
+std::unique_ptr<RRE::Mesh> CreateTestTriangleMesh()
+{
+    auto mesh = std::make_unique<RRE::Mesh>();
+    RRE::Vertex v0{}, v1{}, v2{};
+    v0.position = {  0.0f,  1.0f, 0.0f }; v0.color = {1,1,1,1}; v0.normal = {0,0,-1};
+    v1.position = { -1.0f, -1.0f, 0.0f }; v1.color = {1,1,1,1}; v1.normal = {0,0,-1};
+    v2.position = {  1.0f, -1.0f, 0.0f }; v2.color = {1,1,1,1}; v2.normal = {0,0,-1};
+    mesh->vertices = { v0, v1, v2 };
+    mesh->indices  = { 0, 1, 2 };
+    return mesh;
+}
+
 } // anonymous namespace
 
 TEST(EngineInit, SceneGraphWithRendererOneCycle)
@@ -55,14 +67,14 @@ TEST(EngineInit, SceneGraphWithRendererOneCycle)
 
     // Build scene graph: root -> parent -> child
     RRE::SceneGraph sceneGraph;
-    auto cubeMesh = std::make_unique<RRE::Mesh>(RRE::MeshFactory::CreateCube());
+    auto triangleMesh = CreateTestTriangleMesh();
 
     auto parentNode = std::make_unique<RRE::SceneNode>();
-    parentNode->SetMesh(cubeMesh.get());
+    parentNode->SetMesh(triangleMesh.get());
     sceneGraph.GetRoot()->AddChild(std::move(parentNode));
 
     auto childNode = std::make_unique<RRE::SceneNode>();
-    childNode->SetMesh(cubeMesh.get());
+    childNode->SetMesh(triangleMesh.get());
     childNode->GetTransform().SetPosition({ 3.0f, 0.0f, 0.0f });
     sceneGraph.GetRoot()->GetChildren()[0]->AddChild(std::move(childNode));
 
@@ -98,44 +110,17 @@ TEST(EngineInit, SceneGraphWithRendererOneCycle)
     DestroyWindow(hwnd);
 }
 
-TEST(EngineInit, MeshTypeChangeUpdatesSceneNodes)
-{
-    RRE::SceneGraph sceneGraph;
-    auto cubeMesh = std::make_unique<RRE::Mesh>(RRE::MeshFactory::CreateCube());
-    auto sphereMesh = std::make_unique<RRE::Mesh>(RRE::MeshFactory::CreateSphere());
-
-    auto parentNode = std::make_unique<RRE::SceneNode>();
-    parentNode->SetMesh(cubeMesh.get());
-    auto* parent = sceneGraph.GetRoot()->AddChild(std::move(parentNode));
-
-    auto childNode = std::make_unique<RRE::SceneNode>();
-    childNode->SetMesh(cubeMesh.get());
-    childNode->GetTransform().SetPosition({ 3.0f, 0.0f, 0.0f });
-    auto* child = parent->AddChild(std::move(childNode));
-
-    // Both should point to cube
-    EXPECT_EQ(parent->GetMesh(), cubeMesh.get());
-    EXPECT_EQ(child->GetMesh(), cubeMesh.get());
-
-    // Switch both to sphere (simulates OnMeshTypeChanged)
-    parent->SetMesh(sphereMesh.get());
-    child->SetMesh(sphereMesh.get());
-
-    EXPECT_EQ(parent->GetMesh(), sphereMesh.get());
-    EXPECT_EQ(child->GetMesh(), sphereMesh.get());
-}
-
 TEST(EngineInit, ParentRotationAffectsChildWorldMatrix)
 {
     RRE::SceneGraph sceneGraph;
-    auto cubeMesh = std::make_unique<RRE::Mesh>(RRE::MeshFactory::CreateCube());
+    auto triangleMesh = CreateTestTriangleMesh();
 
     auto parentNode = std::make_unique<RRE::SceneNode>();
-    parentNode->SetMesh(cubeMesh.get());
+    parentNode->SetMesh(triangleMesh.get());
     auto* parent = sceneGraph.GetRoot()->AddChild(std::move(parentNode));
 
     auto childNode = std::make_unique<RRE::SceneNode>();
-    childNode->SetMesh(cubeMesh.get());
+    childNode->SetMesh(triangleMesh.get());
     childNode->GetTransform().SetPosition({ 3.0f, 0.0f, 0.0f });
     auto* child = parent->AddChild(std::move(childNode));
 

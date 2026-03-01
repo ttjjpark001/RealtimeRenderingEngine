@@ -2,6 +2,7 @@
 
 #include "Renderer/Vertex.h"
 #include "Core/Types.h"
+#include <DirectXCollision.h>
 #include <vector>
 
 namespace RRE
@@ -17,8 +18,8 @@ public:
     std::vector<uint32> indices;
     int32 materialIndex = -1;  // Index into SceneData::materials (-1 = no material)
 
-    // Adjacency: for each face i, adjacency[i] is a list of adjacent face indices
-    std::vector<std::vector<uint32>> faceAdjacency;
+    // Local-space AABB (computed at load time via BoundingBox::CreateFromPoints)
+    DirectX::BoundingBox aabb;
 
     uint32 GetPolygonCount() const
     {

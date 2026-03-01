@@ -98,8 +98,8 @@
   <ItemGroup>
     <ClCompile Include="test_main.cpp" />
     <ClCompile Include="unit\test_MathUtil.cpp" />
-    <ClCompile Include="unit\test_FaceColoring.cpp" />
     <ClCompile Include="unit\test_Transform.cpp" />
+    <ClCompile Include="unit\test_AABBSceneNode.cpp" />
     <ClCompile Include="unit\test_SceneGraph.cpp" />
     <ClCompile Include="unit\test_Camera.cpp" />
     <ClCompile Include="smoke\test_RHIBackend.cpp" />
@@ -118,7 +118,6 @@
     <ClCompile Include="$(SolutionDir)src\RHI\D3D12\D3D12Buffer.cpp" />
     <ClCompile Include="$(SolutionDir)src\RHI\D3D12\D3D12PipelineState.cpp" />
     <ClCompile Include="$(SolutionDir)src\RHI\D3D12\D3D12CBPool.cpp" />
-    <ClCompile Include="$(SolutionDir)src\Renderer\MeshFactory.cpp" />
     <ClCompile Include="$(SolutionDir)src\Renderer\Renderer.cpp" />
     <ClCompile Include="$(SolutionDir)src\Scene\Transform.cpp" />
     <ClCompile Include="$(SolutionDir)src\Scene\SceneNode.cpp" />

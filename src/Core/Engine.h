@@ -19,9 +19,7 @@ class LightManager;
 class Camera;
 class Renderer;
 class SceneGraph;
-class SceneNode;
 class TextureCache;
-enum class MeshType;
 
 struct EngineInitParams
 {
@@ -45,8 +43,6 @@ private:
     void OnResize(uint32 width, uint32 height);
 
     void OnViewModeChanged(uint32 width, uint32 height, bool fullscreen);
-    void OnMeshTypeChanged(MeshType type);
-    void OnAnimationToggle();
 
     // Scene loading
     void LoadScene(const std::string& filePath);
@@ -59,16 +55,6 @@ private:
     // Renderer & Scene Graph
     std::unique_ptr<Renderer> m_renderer;
     std::unique_ptr<SceneGraph> m_sceneGraph;
-    SceneNode* m_parentNode = nullptr;      // non-owning
-    SceneNode* m_orbitPivotNode = nullptr;  // non-owning (controls child orbit speed)
-    SceneNode* m_childNode = nullptr;       // non-owning
-
-    // Meshes (all 4 types pre-created)
-    std::unique_ptr<Mesh> m_sphereMesh;
-    std::unique_ptr<Mesh> m_tetrahedronMesh;
-    std::unique_ptr<Mesh> m_cubeMesh;
-    std::unique_ptr<Mesh> m_cylinderMesh;
-    Mesh* m_currentMesh = nullptr;
 
     // Debug HUD
     std::unique_ptr<DebugHUD> m_debugHUD;
@@ -84,17 +70,10 @@ private:
     // Texture cache
     std::unique_ptr<TextureCache> m_textureCache;
 
-    // Loaded scene data (external scene)
+    // Loaded scene data
     std::vector<std::unique_ptr<Mesh>> m_loadedMeshes;
     std::vector<std::unique_ptr<Material>> m_loadedMaterials;
-    bool m_isExternalScene = false;
     float m_sceneDiagonal = 10.0f;
-
-    // Animation
-    float m_rotationAngle = 0.0f;
-    float m_orbitAngle = 0.0f;
-    float m_childRotationAngle = 0.0f;
-    bool m_isAnimating = true;
 
     // Orbiting light (for PBR visualization)
     size_t m_orbitLightIndex = 0;

@@ -99,8 +99,11 @@ void SceneLoader::ProcessNode(AssimpContext& ctx, const void* aiNodePtr,
     // causing geometry distortion (mirroring) for models with non-trivial transforms.
     parentNode->GetTransform().SetLocalMatrix(localMatrix);
 
-    // Assign mesh and material if this node has one
-    if (node->mNumMeshes > 0)
+    // Primitive splitting: each aiMesh becomes a separate SceneNode
+    // - Single mesh: assign directly to parentNode (avoids an extra empty node level)
+    // - Multiple meshes: ALL become individual child nodes so parentNode is a transform container
+    //   This ensures every mesh has its own SceneNode with a dedicated AABB → enables per-node Culling/LOD
+    if (node->mNumMeshes == 1)
     {
         uint32 meshIdx = ctx.meshIndexMap[node->mMeshes[0]];
         Mesh* mesh = ctx.sceneData->meshes[meshIdx].get();
@@ -111,20 +114,22 @@ void SceneLoader::ProcessNode(AssimpContext& ctx, const void* aiNodePtr,
             parentNode->SetMaterial(ctx.sceneData->materials[mesh->materialIndex].get());
         }
     }
-
-    // If this node has multiple meshes, create child nodes for extras
-    for (unsigned int i = 1; i < node->mNumMeshes; ++i)
+    else if (node->mNumMeshes > 1)
     {
-        auto childNode = std::make_unique<SceneNode>();
-        uint32 meshIdx = ctx.meshIndexMap[node->mMeshes[i]];
-        Mesh* mesh = ctx.sceneData->meshes[meshIdx].get();
-        childNode->SetMesh(mesh);
-        if (mesh->materialIndex >= 0 &&
-            mesh->materialIndex < static_cast<int32>(ctx.sceneData->materials.size()))
+        // All meshes become children; parentNode holds only the transform
+        for (unsigned int i = 0; i < node->mNumMeshes; ++i)
         {
-            childNode->SetMaterial(ctx.sceneData->materials[mesh->materialIndex].get());
+            auto childNode = std::make_unique<SceneNode>();
+            uint32 meshIdx = ctx.meshIndexMap[node->mMeshes[i]];
+            Mesh* mesh = ctx.sceneData->meshes[meshIdx].get();
+            childNode->SetMesh(mesh);
+            if (mesh->materialIndex >= 0 &&
+                mesh->materialIndex < static_cast<int32>(ctx.sceneData->materials.size()))
+            {
+                childNode->SetMaterial(ctx.sceneData->materials[mesh->materialIndex].get());
+            }
+            parentNode->AddChild(std::move(childNode));
         }
-        parentNode->AddChild(std::move(childNode));
     }
 
     // Process children
@@ -225,6 +230,20 @@ std::unique_ptr<Mesh> SceneLoader::ConvertMesh(const void* aiMeshPtr)
         {
             result->indices.push_back(static_cast<uint32>(face.mIndices[j]));
         }
+    }
+
+    // Compute local-space AABB
+    if (!result->vertices.empty())
+    {
+        std::vector<DirectX::XMFLOAT3> positions;
+        positions.reserve(result->vertices.size());
+        for (const auto& v : result->vertices)
+            positions.push_back(v.position);
+        DirectX::BoundingBox::CreateFromPoints(
+            result->aabb,
+            positions.size(),
+            positions.data(),
+            sizeof(DirectX::XMFLOAT3));
     }
 
     return result;

@@ -61,6 +61,11 @@ void DebugHUD::Render(IRHIContext& context)
     context.DrawText(x, y, buf, green);
     y += lineHeight;
 
+    snprintf(buf, sizeof(buf), "Nodes: %u  Meshes: %u",
+        m_lastStats.totalNodes, m_lastStats.totalMeshNodes);
+    context.DrawText(x, y, buf, green);
+    y += lineHeight;
+
     // Light info (conditional)
     if (m_lastStats.showLightInfo)
     {

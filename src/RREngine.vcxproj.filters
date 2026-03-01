@@ -77,9 +77,6 @@
     <ClCompile Include="RHI\D3D12\D3D12CBPool.cpp">
       <Filter>RHI\D3D12</Filter>
     </ClCompile>
-    <ClCompile Include="Renderer\MeshFactory.cpp">
-      <Filter>Renderer</Filter>
-    </ClCompile>
     <ClCompile Include="Renderer\Renderer.cpp">
       <Filter>Renderer</Filter>
     </ClCompile>
@@ -165,12 +162,6 @@
       <Filter>Renderer</Filter>
     </ClInclude>
     <ClInclude Include="Renderer\Mesh.h">
-      <Filter>Renderer</Filter>
-    </ClInclude>
-    <ClInclude Include="Renderer\FaceColorPalette.h">
-      <Filter>Renderer</Filter>
-    </ClInclude>
-    <ClInclude Include="Renderer\MeshFactory.h">
       <Filter>Renderer</Filter>
     </ClInclude>
     <ClInclude Include="Renderer\Renderer.h">

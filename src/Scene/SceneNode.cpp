@@ -1,4 +1,5 @@
 #include "Scene/SceneNode.h"
+#include "Renderer/Mesh.h"
 
 namespace RRE
 {
@@ -36,6 +37,23 @@ DirectX::XMMATRIX SceneNode::GetWorldMatrix() const
     }
 
     return localMatrix;
+}
+
+DirectX::BoundingBox SceneNode::GetWorldAABB() const
+{
+    if (m_aabbDirty)
+    {
+        if (m_mesh && !m_mesh->vertices.empty())
+        {
+            m_mesh->aabb.Transform(m_worldAABB, GetWorldMatrix());
+        }
+        else
+        {
+            m_worldAABB = DirectX::BoundingBox({ 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+        }
+        m_aabbDirty = false;
+    }
+    return m_worldAABB;
 }
 
 } // namespace RRE

@@ -14,7 +14,7 @@
     <ClCompile Include="unit\test_MathUtil.cpp">
       <Filter>unit</Filter>
     </ClCompile>
-    <ClCompile Include="unit\test_FaceColoring.cpp">
+    <ClCompile Include="unit\test_AABBSceneNode.cpp">
       <Filter>unit</Filter>
     </ClCompile>
     <ClCompile Include="smoke\test_RHIBackend.cpp">

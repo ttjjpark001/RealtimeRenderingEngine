@@ -17,6 +17,10 @@ struct RenderStats
     uint32 totalPolygons;
     float polygonsPerSec;
 
+    // Scene node / mesh counts (Phase 22)
+    uint32 totalNodes = 0;
+    uint32 totalMeshNodes = 0;
+
     // Light info (Phase 9)
     bool showLightInfo = false;
     const char* lightColorName = "White";

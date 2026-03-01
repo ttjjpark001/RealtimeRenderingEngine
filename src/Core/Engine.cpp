@@ -6,7 +6,6 @@
 #include "RHI/D3D12/D3D12Buffer.h"
 #include "RHI/D3D12/D3D12Context.h"
 #include "Renderer/Mesh.h"
-#include "Renderer/MeshFactory.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/DebugHUD.h"
 #include "Lighting/LightManager.h"
@@ -58,30 +57,8 @@ bool Engine::Initialize(const EngineInitParams& params)
         return false;
     }
 
-    // Create all 4 mesh types
-    m_sphereMesh = std::make_unique<Mesh>(MeshFactory::CreateSphere());
-    m_tetrahedronMesh = std::make_unique<Mesh>(MeshFactory::CreateTetrahedron());
-    m_cubeMesh = std::make_unique<Mesh>(MeshFactory::CreateCube());
-    m_cylinderMesh = std::make_unique<Mesh>(MeshFactory::CreateCylinder());
-    m_currentMesh = m_cubeMesh.get();
-
-    // Build scene graph:
-    //   Root -> Parent (self-rotation)
-    //   Root -> OrbitPivot (orbital rotation, no mesh) -> Child (offset + self-rotation)
+    // Build empty scene graph (no initial objects — load via File > Open Scene)
     m_sceneGraph = std::make_unique<SceneGraph>();
-    {
-        auto parentNode = std::make_unique<SceneNode>();
-        parentNode->SetMesh(m_currentMesh);
-        m_parentNode = m_sceneGraph->GetRoot()->AddChild(std::move(parentNode));
-
-        auto orbitPivot = std::make_unique<SceneNode>();  // no mesh, controls orbit speed
-        m_orbitPivotNode = m_sceneGraph->GetRoot()->AddChild(std::move(orbitPivot));
-
-        auto childNode = std::make_unique<SceneNode>();
-        childNode->SetMesh(m_currentMesh);
-        childNode->GetTransform().SetPosition({ 3.0f, 0.0f, 0.0f });
-        m_childNode = m_orbitPivotNode->AddChild(std::move(childNode));
-    }
 
     // Create renderer
     m_renderer = std::make_unique<Renderer>();
@@ -108,55 +85,36 @@ bool Engine::Initialize(const EngineInitParams& params)
     m_menu->SetViewCallback([this](uint32 w, uint32 h, bool fullscreen) {
         OnViewModeChanged(w, h, fullscreen);
     });
-    m_menu->SetMeshCallback([this](MeshType type) {
-        OnMeshTypeChanged(type);
-    });
-    m_menu->SetAnimCallback([this]() {
-        OnAnimationToggle();
-    });
     m_menu->SetFileOpenCallback([this]() {
         ShowOpenSceneDialog();
     });
     m_menu->SetCameraFitToSceneCallback([this]() {
         if (m_camera)
         {
-            if (m_isExternalScene)
-            {
-                // Recompute from loaded scene bounds
-                BoundingBox bounds;
-                m_sceneGraph->Traverse([&bounds](SceneNode* node, const XMMATRIX& world) {
-                    if (node->GetMesh())
-                    {
-                        for (const auto& v : node->GetMesh()->vertices)
-                        {
-                            XMVECTOR pos = XMLoadFloat3(&v.position);
-                            pos = XMVector3Transform(pos, world);
-                            XMFLOAT3 wp;
-                            XMStoreFloat3(&wp, pos);
-                            bounds.Expand(wp);
-                        }
-                    }
-                });
-                if (bounds.IsValid())
+            BoundingBox bounds;
+            m_sceneGraph->Traverse([&bounds](SceneNode* node, const XMMATRIX& world) {
+                if (node->GetMesh())
                 {
-                    m_sceneDiagonal = bounds.GetDiagonalLength();
-                    m_camera->FitToScene(bounds.GetCenter(), m_sceneDiagonal);
-                    m_camera->SetMoveSpeedScale(m_sceneDiagonal / 10.0f);
+                    for (const auto& v : node->GetMesh()->vertices)
+                    {
+                        XMVECTOR pos = XMLoadFloat3(&v.position);
+                        pos = XMVector3Transform(pos, world);
+                        XMFLOAT3 wp;
+                        XMStoreFloat3(&wp, pos);
+                        bounds.Expand(wp);
+                    }
                 }
-            }
-            else
+            });
+            if (bounds.IsValid())
             {
-                m_camera->Reset();
+                m_sceneDiagonal = bounds.GetDiagonalLength();
+                m_camera->FitToScene(bounds.GetCenter(), m_sceneDiagonal);
+                m_camera->SetMoveSpeedScale(m_sceneDiagonal / 10.0f);
             }
         }
     });
     m_window->SetMenu(m_menu.get());
 
-    // Set key callback for Space key animation toggle
-    m_window->SetKeyCallback([this](WPARAM key) {
-        if (key == VK_SPACE)
-            OnAnimationToggle();
-    });
 
     // Mouse callbacks
     m_window->SetRightDragCallback([this](int dx, int dy) {
@@ -185,45 +143,8 @@ bool Engine::Initialize(const EngineInitParams& params)
         LoadScene(filePath);
     });
 
-    // Create light manager with default 3-point lighting
+    // Create light manager (lights are set up when a scene is loaded)
     m_lightManager = std::make_unique<LightManager>();
-    {
-        // Key Light: warm, bright, upper-right-front
-        Light keyLight;
-        keyLight.type = LightType::Point;
-        keyLight.position = { 2.0f, 2.5f, -2.0f };
-        keyLight.color = { 1.0f, 0.95f, 0.9f };
-        keyLight.intensity = 8.0f;
-        keyLight.Kc = 1.0f; keyLight.Kl = 0.027f; keyLight.Kq = 0.005f;
-        m_lightManager->AddLight(keyLight);
-
-        // Fill Light: cool, softer, left-side
-        Light fillLight;
-        fillLight.type = LightType::Point;
-        fillLight.position = { -2.5f, 1.5f, 1.5f };
-        fillLight.color = { 0.8f, 0.85f, 1.0f };
-        fillLight.intensity = 3.0f;
-        fillLight.Kc = 1.0f; fillLight.Kl = 0.027f; fillLight.Kq = 0.005f;
-        m_lightManager->AddLight(fillLight);
-
-        // Back Light: neutral rim light
-        Light backLight;
-        backLight.type = LightType::Point;
-        backLight.position = { 0.0f, 3.0f, 2.5f };
-        backLight.color = { 1.0f, 1.0f, 1.0f };
-        backLight.intensity = 4.0f;
-        backLight.Kc = 1.0f; backLight.Kl = 0.027f; backLight.Kq = 0.005f;
-        m_lightManager->AddLight(backLight);
-
-        // Orbiting light: orbits around camera view axis for PBR visualization
-        Light orbitLight;
-        orbitLight.type = LightType::Point;
-        orbitLight.position = { 1.0f, 1.0f, -1.0f };
-        orbitLight.color = { 1.0f, 1.0f, 1.0f };
-        orbitLight.intensity = 6.0f;
-        orbitLight.Kc = 1.0f; orbitLight.Kl = 0.027f; orbitLight.Kq = 0.005f;
-        m_orbitLightIndex = m_lightManager->AddLight(orbitLight);
-    }
 
     // Set light menu callbacks
     m_menu->SetLightColorCallback([this](float r, float g, float b) {
@@ -311,15 +232,7 @@ void Engine::Shutdown()
     m_renderer.reset();
     m_loadedMeshes.clear();
     m_loadedMaterials.clear();
-    m_parentNode = nullptr;
-    m_orbitPivotNode = nullptr;
-    m_childNode = nullptr;
     m_sceneGraph.reset();
-    m_currentMesh = nullptr;
-    m_sphereMesh.reset();
-    m_tetrahedronMesh.reset();
-    m_cubeMesh.reset();
-    m_cylinderMesh.reset();
     m_lightManager.reset();
     m_camera.reset();
     m_menu.reset();
@@ -330,21 +243,7 @@ void Engine::Shutdown()
 
 void Engine::Update(float deltaTime)
 {
-    // Animate: parent self-rotation, orbit pivot, child self-rotation (all independent speeds)
-    if (m_isAnimating)
-    {
-        m_rotationAngle += 1.0f * deltaTime;         // parent self-rotation
-        m_orbitAngle += 0.6f * deltaTime;             // child orbit (slower than parent spin)
-        m_childRotationAngle -= 1.5f * deltaTime;     // child self-rotation (opposite, faster)
-    }
-    if (m_parentNode)
-        m_parentNode->GetTransform().SetRotation({ 0.0f, m_rotationAngle, 0.0f });
-    if (m_orbitPivotNode)
-        m_orbitPivotNode->GetTransform().SetRotation({ 0.0f, m_orbitAngle, 0.0f });
-    if (m_childNode)
-        m_childNode->GetTransform().SetRotation({ 0.0f, m_childRotationAngle, 0.0f });
-
-    // Update orbiting light position (always active, independent of animation toggle)
+    // Update orbiting light position (always active)
     if (m_camera && m_lightManager && m_orbitLightIndex < m_lightManager->GetActiveLightCount())
     {
         m_orbitLightAngle += 0.8f * deltaTime;
@@ -399,6 +298,15 @@ void Engine::Update(float deltaTime)
         stats.aspectRatio = static_cast<float>(stats.width) / static_cast<float>(stats.height);
         stats.totalPolygons = m_sceneGraph ? m_sceneGraph->GetTotalPolygonCount() : 0;
         stats.polygonsPerSec = stats.totalPolygons * (1.0f / deltaTime);
+
+        // Count SceneNodes and mesh nodes
+        if (m_sceneGraph)
+        {
+            m_sceneGraph->Traverse([&stats](SceneNode* node, const DirectX::XMMATRIX&) {
+                stats.totalNodes++;
+                if (node->GetMesh()) stats.totalMeshNodes++;
+            });
+        }
         stats.showLightInfo = m_showLightInfo;
         if (m_lightManager && m_lightManager->GetActiveLightCount() > 0)
         {
@@ -488,31 +396,6 @@ void Engine::OnViewModeChanged(uint32 width, uint32 height, bool fullscreen)
     }
 
     OnResize(m_window->GetWidth(), m_window->GetHeight());
-}
-
-void Engine::OnMeshTypeChanged(MeshType type)
-{
-    switch (type)
-    {
-    case MeshType::Sphere:      m_currentMesh = m_sphereMesh.get(); break;
-    case MeshType::Tetrahedron: m_currentMesh = m_tetrahedronMesh.get(); break;
-    case MeshType::Cube:        m_currentMesh = m_cubeMesh.get(); break;
-    case MeshType::Cylinder:    m_currentMesh = m_cylinderMesh.get(); break;
-    }
-
-    // Update both parent and child scene nodes
-    if (m_parentNode) m_parentNode->SetMesh(m_currentMesh);
-    if (m_childNode)  m_childNode->SetMesh(m_currentMesh);
-
-    // Clear Renderer mesh cache so new mesh gets uploaded on next frame
-    if (m_renderer) m_renderer->ClearMeshCache();
-}
-
-void Engine::OnAnimationToggle()
-{
-    m_isAnimating = !m_isAnimating;
-    if (m_menu)
-        m_menu->UpdateAnimCheckMark(m_isAnimating);
 }
 
 void Engine::ShowOpenSceneDialog()
@@ -611,9 +494,6 @@ void Engine::LoadScene(const std::string& filePath)
     }
 
     // Replace scene graph root
-    m_parentNode = nullptr;
-    m_orbitPivotNode = nullptr;
-    m_childNode = nullptr;
     m_sceneGraph->SetRoot(std::move(data.rootNode));
 
     // Camera placement
@@ -680,9 +560,6 @@ void Engine::LoadScene(const std::string& filePath)
         m_orbitLightIndex = m_lightManager->AddLight(orbitLight);
     }
 
-    m_isExternalScene = true;
-    m_isAnimating = false;
-    if (m_menu) m_menu->UpdateAnimCheckMark(false);
 }
 
 } // namespace RRE

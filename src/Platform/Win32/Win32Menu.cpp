@@ -28,28 +28,6 @@ bool Win32Menu::Initialize(HWND hwnd)
     CheckMenuRadioItem(m_viewMenu, ID_VIEW_800x450, ID_VIEW_960x540,
         ID_VIEW_960x540, MF_BYCOMMAND);
 
-    // Object menu
-    m_objectMenu = CreatePopupMenu();
-    AppendMenuW(m_objectMenu, MF_STRING, ID_OBJECT_SPHERE, L"Sphere");
-    AppendMenuW(m_objectMenu, MF_STRING, ID_OBJECT_TETRAHEDRON, L"Tetrahedron");
-    AppendMenuW(m_objectMenu, MF_STRING, ID_OBJECT_CUBE, L"Cube");
-    AppendMenuW(m_objectMenu, MF_STRING, ID_OBJECT_CYLINDER, L"Cylinder");
-    AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_objectMenu), L"Object");
-
-    // Default check: Cube
-    CheckMenuRadioItem(m_objectMenu, ID_OBJECT_SPHERE, ID_OBJECT_CYLINDER,
-        ID_OBJECT_CUBE, MF_BYCOMMAND);
-
-    // Animation menu
-    m_animMenu = CreatePopupMenu();
-    AppendMenuW(m_animMenu, MF_STRING, ID_ANIM_PLAY, L"Play");
-    AppendMenuW(m_animMenu, MF_STRING, ID_ANIM_PAUSE, L"Pause");
-    AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_animMenu), L"Animation");
-
-    // Default check: Play
-    CheckMenuRadioItem(m_animMenu, ID_ANIM_PLAY, ID_ANIM_PAUSE,
-        ID_ANIM_PLAY, MF_BYCOMMAND);
-
     // Light menu
     m_lightMenu = CreatePopupMenu();
     AppendMenuW(m_lightMenu, MF_STRING | MF_CHECKED, ID_LIGHT_SHOW_INFO, L"Show Info");
@@ -128,44 +106,6 @@ bool Win32Menu::HandleCommand(WPARAM wParam)
 
     case ID_VIEW_FULLSCREEN:
         if (m_viewCallback) m_viewCallback(0, 0, true);
-        return true;
-
-    // Object commands
-    case ID_OBJECT_SPHERE:
-        CheckMenuRadioItem(m_objectMenu, ID_OBJECT_SPHERE, ID_OBJECT_CYLINDER,
-            ID_OBJECT_SPHERE, MF_BYCOMMAND);
-        if (m_meshCallback) m_meshCallback(MeshType::Sphere);
-        return true;
-
-    case ID_OBJECT_TETRAHEDRON:
-        CheckMenuRadioItem(m_objectMenu, ID_OBJECT_SPHERE, ID_OBJECT_CYLINDER,
-            ID_OBJECT_TETRAHEDRON, MF_BYCOMMAND);
-        if (m_meshCallback) m_meshCallback(MeshType::Tetrahedron);
-        return true;
-
-    case ID_OBJECT_CUBE:
-        CheckMenuRadioItem(m_objectMenu, ID_OBJECT_SPHERE, ID_OBJECT_CYLINDER,
-            ID_OBJECT_CUBE, MF_BYCOMMAND);
-        if (m_meshCallback) m_meshCallback(MeshType::Cube);
-        return true;
-
-    case ID_OBJECT_CYLINDER:
-        CheckMenuRadioItem(m_objectMenu, ID_OBJECT_SPHERE, ID_OBJECT_CYLINDER,
-            ID_OBJECT_CYLINDER, MF_BYCOMMAND);
-        if (m_meshCallback) m_meshCallback(MeshType::Cylinder);
-        return true;
-
-    // Animation commands
-    case ID_ANIM_PLAY:
-        CheckMenuRadioItem(m_animMenu, ID_ANIM_PLAY, ID_ANIM_PAUSE,
-            ID_ANIM_PLAY, MF_BYCOMMAND);
-        if (m_animCallback) m_animCallback();
-        return true;
-
-    case ID_ANIM_PAUSE:
-        CheckMenuRadioItem(m_animMenu, ID_ANIM_PLAY, ID_ANIM_PAUSE,
-            ID_ANIM_PAUSE, MF_BYCOMMAND);
-        if (m_animCallback) m_animCallback();
         return true;
 
     // Light commands
@@ -261,12 +201,6 @@ bool Win32Menu::HandleCommand(WPARAM wParam)
     default:
         return false;
     }
-}
-
-void Win32Menu::UpdateAnimCheckMark(bool isPlaying)
-{
-    CheckMenuRadioItem(m_animMenu, ID_ANIM_PLAY, ID_ANIM_PAUSE,
-        isPlaying ? ID_ANIM_PLAY : ID_ANIM_PAUSE, MF_BYCOMMAND);
 }
 
 } // namespace RRE
