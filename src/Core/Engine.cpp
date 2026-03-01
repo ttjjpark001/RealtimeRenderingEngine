@@ -355,7 +355,7 @@ void Engine::Update(float deltaTime)
         XMVECTOR vCamDir = XMLoadFloat3(&camDir);
 
         XMVECTOR orbitCenter = XMVectorAdd(vCamPos, XMVectorScale(vCamDir, m_sceneDiagonal * 0.3f));
-        float orbitRadius = m_sceneDiagonal * 0.25f;
+        float orbitRadius = m_sceneDiagonal * 0.45f;
 
         XMVECTOR worldUp = XMVectorSet(0, 1, 0, 0);
         XMVECTOR right = XMVector3Normalize(XMVector3Cross(worldUp, vCamDir));
