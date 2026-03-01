@@ -1306,44 +1306,79 @@ Phase 02 마이그레이션 과정에서 남은 레거시 코드를 제거하고
 
 ---
 
-## Prompt 22: 프리미티브 → SceneNode 분리 + Per-Mesh AABB
+## Prompt 22: 초기 씬 제거 + Object/Animation 메뉴 삭제 + 프리미티브 SceneNode 분리 + Per-Mesh AABB
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 22를 구현하라.
 
-1. Mesh에 AABB를 추가한다 (src/Renderer/Mesh.h).
+=== A. 초기 씬 제거 + Object/Animation 메뉴 삭제 ===
+
+1. 앱 시작 시 빈 씬이 되도록 Engine::Initialize()를 수정한다 (src/Core/Engine.cpp).
+   - MeshFactory로 4종 Mesh를 생성하는 코드 제거
+     (m_sphereMesh, m_tetrahedronMesh, m_cubeMesh, m_cylinderMesh)
+   - 초기 SceneNode 트리 구성 제거
+     (m_parentNode, m_orbitPivotNode, m_childNode 및 해당 SceneNode 생성/AddChild 코드)
+   - Initialize()에서 3-포인트 광원 자동 배치 코드 제거 (씬 로드 시에만 배치)
+   - Engine::Shutdown()에서 위 멤버들 초기화 코드 제거
+
+2. Engine.h에서 관련 멤버 변수와 메서드를 제거한다.
+   - 멤버 변수: m_parentNode, m_orbitPivotNode, m_childNode
+   - 멤버 변수: m_sphereMesh, m_tetrahedronMesh, m_cubeMesh, m_cylinderMesh, m_currentMesh
+   - 멤버 변수: m_isAnimating, m_rotationAngle, m_orbitAngle, m_childRotationAngle
+   - 메서드 선언: OnMeshTypeChanged(), OnAnimationToggle()
+
+3. Engine::Update()에서 애니메이션 갱신 코드를 제거한다 (src/Core/Engine.cpp).
+   - m_isAnimating 조건 블록(m_rotationAngle, m_orbitAngle, m_childRotationAngle 갱신) 제거
+   - m_parentNode, m_orbitPivotNode, m_childNode Transform 적용 코드 제거
+   - OnMeshTypeChanged(), OnAnimationToggle() 메서드 정의 제거
+
+4. Object 메뉴를 Win32Menu에서 삭제한다 (src/Platform/Win32/Win32Menu.h/.cpp).
+   - Win32Menu.h: MeshType enum, MeshCallback typedef, ID_OBJECT_* 상수 제거
+     SetMeshCallback(), m_meshCallback, m_objectMenu 멤버 제거
+   - Win32Menu.cpp: "Object" 팝업 메뉴 생성 코드 제거
+     HandleCommand()의 ID_OBJECT_SPHERE/TETRAHEDRON/CUBE/CYLINDER case 제거
+   - Engine.cpp: SetMeshCallback 등록 코드 제거
+
+5. Animation 메뉴를 Win32Menu에서 삭제한다 (src/Platform/Win32/Win32Menu.h/.cpp).
+   - Win32Menu.h: AnimCallback typedef, ID_ANIM_PLAY/PAUSE 상수 제거
+     SetAnimCallback(), UpdateAnimCheckMark(), m_animCallback, m_animMenu 멤버 제거
+   - Win32Menu.cpp: "Animation" 팝업 메뉴 생성 코드 제거
+     HandleCommand()의 ID_ANIM_PLAY/PAUSE case 제거
+     UpdateAnimCheckMark() 메서드 정의 제거
+   - Engine.cpp: SetAnimCallback 등록 코드, Space 키 애니메이션 토글 코드 제거
+   - Engine::LoadScene()에서 m_isAnimating 관련 코드 제거
+
+=== B. 프리미티브 → SceneNode 분리 + Per-Mesh AABB ===
+
+6. Mesh에 AABB를 추가한다 (src/Renderer/Mesh.h).
    - DirectX::BoundingBox aabb 멤버 추가
    - #include <DirectXCollision.h>
 
-2. SceneLoader에서 Per-Mesh AABB를 계산한다 (src/Asset/SceneLoader.cpp).
+7. SceneLoader에서 Per-Mesh AABB를 계산한다 (src/Asset/SceneLoader.cpp).
    - ConvertMesh() 끝에서 BoundingBox::CreateFromPoints()로 로컬 AABB 생성
-   - 모든 vertex의 position으로 AABB 계산
 
-3. SceneNode에 월드 AABB 캐싱을 추가한다 (src/Scene/SceneNode.h/.cpp).
+8. SceneNode에 월드 AABB 캐싱을 추가한다 (src/Scene/SceneNode.h/.cpp).
    - BoundingBox m_worldAABB, bool m_aabbDirty = true 멤버 추가
-   - GetWorldAABB(): dirty면 Mesh의 로컬 AABB를 WorldMatrix로 변환 후 캐시
-   - Transform 변경 시 dirty 설정 (자식 노드도 재귀적으로 dirty)
+   - GetWorldAABB(): dirty면 Mesh 로컬 AABB를 WorldMatrix로 변환 후 캐시
+   - Transform 변경 시 dirty 설정
 
-4. ProcessNode의 프리미티브 분리를 확인/강화한다 (src/Asset/SceneLoader.cpp).
+9. ProcessNode의 프리미티브 분리를 확인/강화한다 (src/Asset/SceneLoader.cpp).
    - aiNode가 여러 aiMesh를 참조할 때 각각 별도 SceneNode 자식으로 생성
-   - Sponza 같은 씬: 단일 aiNode에 N개 aiMesh → N개 SceneNode로 분리
-   - 각 SceneNode에 해당 Mesh와 Material을 올바르게 연결
+   - Sponza: 단일 aiNode에 N개 aiMesh → N개 SceneNode로 분리
 
-5. MeshFactory 오브젝트에도 AABB를 추가한다 (src/Renderer/MeshFactory.cpp).
-   - CreateCube/Sphere/Cylinder/Tetrahedron에서 생성된 Mesh에 AABB 계산
+10. DebugHUD에 노드/메시 통계를 추가한다 (src/Renderer/DebugHUD.cpp).
+    - 총 SceneNode 수, 총 Mesh 수를 HUD에 표시
 
-6. DebugHUD에 노드/메시 통계를 추가한다 (src/Renderer/DebugHUD.cpp).
-   - 총 SceneNode 수, 총 Mesh 수를 HUD에 표시
+11. 유닛 테스트를 작성한다.
+    - AABB 계산 정확성 테스트
+    - 월드 AABB: Transform 적용 후 올바른 값 반환
+    - 프리미티브 분리: 여러 aiMesh를 가진 노드가 올바르게 분리되는지
 
-7. 유닛 테스트를 작성한다.
-   - AABB 계산 정확성 테스트 (Cube의 AABB = (-0.5,-0.5,-0.5) ~ (0.5,0.5,0.5))
-   - 월드 AABB: Transform 적용 후 올바른 월드 AABB 반환
-   - 프리미티브 분리: 여러 aiMesh를 가진 노드가 올바르게 분리되는지
-
-빌드하여 Sponza 로딩 시 103개+ SceneNode로 분리되고,
-각 노드에 유효한 AABB가 설정되며,
-기존 씬(DamagedHelmet 등)이 정상 동작하는지 확인하라.
-DebugHUD에서 노드 수와 메시 수를 확인하라.
+빌드하여 앱 시작 시 빈 화면이 표시되고,
+Object/Animation 메뉴가 없으며,
+glTF 씬 로드 시 정상 렌더링되고,
+Sponza 로딩 시 103개+ SceneNode가 분리되는지 확인하라.
+모든 기존 테스트가 통과하는지 확인하라.
 ```
 
 ---

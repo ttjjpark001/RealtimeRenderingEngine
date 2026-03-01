@@ -117,20 +117,9 @@ tests/
 - Win32Window에서 SetWindowed(w, h) / SetFullscreen() 메서드로 구현
 - 모드 전환 시 RHI OnResize → SwapChain ResizeBuffers → RTV 재생성
 
-### 오브젝트 선택 메뉴
-- Win32 메뉴바 "Object" 메뉴에서 표시할 3D 오브젝트를 런타임 전환
-- 선택 가능: Sphere(구), Tetrahedron(정사면체), Cube(정육면체, 기본), Cylinder(실린더)
-- MeshFactory로 4종 Mesh를 미리 생성, 메뉴 선택 시 Scene Graph의 Mesh 포인터만 교체
-- CheckMenuRadioItem으로 현재 선택 항목 체크 표시
-
-### 애니메이션 제어
-- "Animation" 메뉴에서 Play/Pause 토글, 또는 Space 키로 토글
-- 멈춤 상태: 회전 각도 유지, 렌더링은 계속 (정지 프레임)
-- 기본 상태: Play (회전 애니메이션 재생)
-
 ### 광원 시스템 (Lighting)
 - **Phase 20**: LightManager 기반 3-포인트 라이팅 자동 배치 (PointLight 레거시 제거)
-- 기본 씬 및 씬 로드 시 Key/Fill/Back 3개 포인트 광원이 자동 배치됨
+- 씬 로드 시 Key/Fill/Back 3개 포인트 광원이 자동 배치됨 (초기 씬 없음, 씬 로드 시에만 배치)
   - Key Light: warm(1.0, 0.95, 0.9), intensity=12 — 우측 상단 전면
   - Fill Light: cool(0.8, 0.85, 1.0), intensity=6 — 좌측
   - Back Light: neutral(1, 1, 1), intensity=8 — 후면 상단 (rim)
@@ -149,8 +138,7 @@ tests/
 - GetViewMatrix(): XMMatrixLookAtLH로 뷰 행렬 생성
 - GetProjectionMatrix(aspectRatio): 투영 모드에 따라 Perspective/Orthographic 행렬 생성
 - **키보드 이동**: WASD+QE 키로 카메라 위치 이동, +/- 키로 FOV 조절
-  - Phase 01: 기본 씬에서 카메라 이동
-  - Phase 02: 로드된 씬에서도 동일하게 키보드 네비게이션 동작 (마우스와 함께 사용)
+  - 로드된 씬에서 키보드 네비게이션 동작 (마우스와 함께 사용)
   - 이동 속도는 씬 바운딩 박스 크기에 비례하여 자동 조절 (마우스/키보드 공통)
 - **마우스 네비게이션 (Phase 02)**:
   - 우클릭 드래그: Yaw/Pitch 회전 (FPS 스타일 시선 제어)

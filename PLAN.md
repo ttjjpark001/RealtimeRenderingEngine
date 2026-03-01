@@ -600,25 +600,45 @@ tests/
 
 **완료 기준**: PointLight 레거시 코드 완전 제거, 모든 테스트가 현재 API로 빌드 및 통과, vcxproj.filters가 최신 파일 구조 반영
 
-### Phase 22: 프리미티브 → SceneNode 분리 + Per-Mesh AABB
+### Phase 22: 초기 씬 제거 + Object/Animation 메뉴 삭제 + 프리미티브 SceneNode 분리 + Per-Mesh AABB
 
-**목표**: glTF/GLB 씬 로딩 시 단일 Mesh의 서브 프리미티브를 개별 SceneNode로 분리하여 노드 단위 최적화(Culling, LOD, Instancing)의 대상으로 만듦. 각 Mesh에 AABB를 추가.
+**목표**: 앱 시작 시 빈 화면으로 대기하도록 변경 (초기 프로시저럴 씬 제거, Object/Animation 메뉴 삭제). glTF/GLB 씬 로딩 시 서브 프리미티브를 개별 SceneNode로 분리하고 각 Mesh에 AABB를 추가.
 
-1. **Mesh에 AABB 추가**: `Renderer/Mesh.h`에 `DirectX::BoundingBox aabb` 멤버 추가
-2. **SceneLoader 프리미티브 분리 확인/강화**:
-   - Assimp의 aiScene::mMeshes 배열은 이미 primitive 단위로 분리됨
-   - `ProcessNode()`에서 aiNode가 여러 aiMesh를 참조할 때 각각 별도 SceneNode 자식으로 생성 (현재 index ≥ 1은 자식으로 생성 — 확인 및 강화)
-   - Sponza 같은 씬: 단일 aiNode에 103개 aiMesh 참조 → 103개 SceneNode로 분리
-3. **Per-Mesh AABB 계산**: `ConvertMesh()` 끝에서 `BoundingBox::CreateFromPoints()`로 로컬 AABB 생성
-4. **SceneNode 월드 AABB 캐싱**:
+#### A. 초기 씬 제거 + Object/Animation 메뉴 삭제
+
+1. **앱 시작 시 빈 씬**: `Engine::Initialize()`에서 초기 큐브/물체 씬 구성 코드 제거
+   - MeshFactory 4종 Mesh 생성 제거 (m_sphereMesh, m_tetrahedronMesh, m_cubeMesh, m_cylinderMesh)
+   - 초기 SceneNode 트리 구성 제거 (m_parentNode, m_orbitPivotNode, m_childNode)
+   - 관련 멤버 변수 제거 (Engine.h)
+2. **Object 메뉴 삭제**:
+   - `Win32Menu`에서 "Object" 팝업 메뉴 생성/처리 코드 제거
+   - `MeshType` enum, `MeshCallback` typedef, `SetMeshCallback()`, `m_meshCallback`, `m_objectMenu` 제거
+   - `ID_OBJECT_SPHERE/TETRAHEDRON/CUBE/CYLINDER` 메뉴 ID 제거
+   - `Engine::OnMeshTypeChanged()` 메서드 제거
+3. **Animation 메뉴 삭제**:
+   - `Win32Menu`에서 "Animation" 팝업 메뉴 생성/처리 코드 제거
+   - `AnimCallback` typedef, `SetAnimCallback()`, `UpdateAnimCheckMark()`, `m_animCallback`, `m_animMenu` 제거
+   - `ID_ANIM_PLAY/PAUSE` 메뉴 ID 제거
+   - `Engine::OnAnimationToggle()` 메서드 제거
+   - Space 키 애니메이션 토글 제거
+   - `m_isAnimating`, `m_rotationAngle`, `m_orbitAngle`, `m_childRotationAngle` 멤버 제거
+   - `Engine::Update()`에서 애니메이션 회전 갱신 코드 제거
+4. **광원 설정 업데이트**: 초기 씬이 없으므로 `Initialize()`에서 3-포인트 광원 자동 배치 제거 (씬 로드 시에만 배치)
+
+#### B. 프리미티브 → SceneNode 분리 + Per-Mesh AABB
+
+5. **Mesh에 AABB 추가**: `Renderer/Mesh.h`에 `DirectX::BoundingBox aabb` 멤버 추가
+6. **SceneLoader 프리미티브 분리 확인/강화**:
+   - `ProcessNode()`에서 aiNode가 여러 aiMesh를 참조할 때 각각 별도 SceneNode 자식으로 생성
+   - Sponza: 단일 aiNode에 103개 aiMesh → 103개 SceneNode로 분리
+7. **Per-Mesh AABB 계산**: `ConvertMesh()` 끝에서 `BoundingBox::CreateFromPoints()`로 로컬 AABB 생성
+8. **SceneNode 월드 AABB 캐싱**:
    - `SceneNode`에 `BoundingBox m_worldAABB`, `bool m_aabbDirty = true` 추가
-   - `GetWorldAABB()`: dirty면 Mesh의 로컬 AABB를 WorldMatrix로 변환 후 캐시
-   - Transform 변경 시 dirty 설정
-5. **MeshFactory AABB**: Phase 01 오브젝트(Cube, Sphere 등)에도 AABB 계산 적용
-6. **DebugHUD 확장**: 총 SceneNode 수, 총 Mesh 수를 HUD에 표시
-7. **유닛 테스트**: AABB 계산 정확성, 프리미티브 분리 후 노드 수 검증
+   - `GetWorldAABB()`: dirty면 Mesh 로컬 AABB를 WorldMatrix로 변환 후 캐시
+9. **DebugHUD 확장**: 총 SceneNode 수, 총 Mesh 수를 HUD에 표시
+10. **유닛 테스트**: AABB 계산 정확성, 프리미티브 분리 후 노드 수 검증
 
-**완료 기준**: Sponza 로딩 시 103개+ SceneNode로 분리, 각 노드에 유효한 AABB, 기존 씬(DamagedHelmet 등) 정상 동작
+**완료 기준**: 앱 시작 시 빈 화면, Object/Animation 메뉴 없음, glTF 씬 로드 후 정상 렌더링, Sponza 로딩 시 103개+ SceneNode 분리, 각 노드에 유효한 AABB
 
 ### Phase 23: 렌더링 최적화 — Culling + LOD + Light Culling
 **목표**: Frustum/Occlusion Culling, LOD 시스템 (자동 LOD 생성 포함), 광원 컬링
