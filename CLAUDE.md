@@ -234,6 +234,9 @@ assimp-vc143-mt.lib — [Phase 02] Assimp (glTF/GLB 로딩)
 |------|------|------|------|
 | **Bistro** (FBX 원본) | [NVIDIA ORCA](https://developer.nvidia.com/orca/amazon-lumberyard-bistro) | FBX | NVIDIA 계정 필요, ~1.8GB |
 | **Bistro** (glTF 변환) | [rendering-demo-scenes](https://github.com/aclysma/rendering-demo-scenes) | glTF | Blender 스크립트로 FBX→glTF 변환 필요 |
+| **Bistro** (glTF 변환) | [niagara_bistro](https://github.com/zeux/niagara_bistro) | glTF | 최적화된 glTF 변환본 |
+| **Bistro** (glTF 변환) | [NRD-Sample](https://github.com/NVIDIA-RTX/NRD-Sample) | glTF | NVIDIA RTX 샘플에 포함 |
+| **Bistro** (glTF 변환) | [bevy_bistro_scene](https://github.com/DGriffin91/bevy_bistro_scene) | glTF | 인스턴싱 최적화 버전 (Discord에서 배포) |
 
 ### 모델 공통 사항
 
