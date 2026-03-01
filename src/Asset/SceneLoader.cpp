@@ -255,19 +255,15 @@ std::unique_ptr<Material> SceneLoader::ConvertMaterial(const void* aiMaterialPtr
         }
     }
 
-    // Metallic factor
+    // Metallic factor (default 1.0 per glTF spec, always assign)
     float metallic = 1.0f;
-    if (mat->Get(AI_MATKEY_METALLIC_FACTOR, metallic) == AI_SUCCESS)
-    {
-        result->metallicFactor = metallic;
-    }
+    mat->Get(AI_MATKEY_METALLIC_FACTOR, metallic);
+    result->metallicFactor = metallic;
 
-    // Roughness factor
+    // Roughness factor (default 1.0 per glTF spec, always assign)
     float roughness = 1.0f;
-    if (mat->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness) == AI_SUCCESS)
-    {
-        result->roughnessFactor = roughness;
-    }
+    mat->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness);
+    result->roughnessFactor = roughness;
 
     // Emissive factor
     aiColor3D emissive;
@@ -374,9 +370,24 @@ std::unique_ptr<Material> SceneLoader::ConvertMaterial(const void* aiMaterialPtr
         result->baseColorTexturePath = extractTexturePath(aiTextureType_DIFFUSE);
 
     result->normalTexturePath = extractTexturePath(aiTextureType_NORMALS);
+    if (result->normalTexturePath.empty())
+        result->normalTexturePath = extractTexturePath(aiTextureType_HEIGHT);
+    if (result->normalTexturePath.empty())
+        result->normalTexturePath = extractTexturePath(aiTextureType_NORMAL_CAMERA);
+
+    // glTF metallic-roughness: Assimp maps to UNKNOWN (older) or DIFFUSE_ROUGHNESS/METALNESS (newer)
     result->metallicRoughnessTexturePath = extractTexturePath(aiTextureType_UNKNOWN);
+    if (result->metallicRoughnessTexturePath.empty())
+        result->metallicRoughnessTexturePath = extractTexturePath(aiTextureType_DIFFUSE_ROUGHNESS);
+    if (result->metallicRoughnessTexturePath.empty())
+        result->metallicRoughnessTexturePath = extractTexturePath(aiTextureType_METALNESS);
+
     result->emissiveTexturePath = extractTexturePath(aiTextureType_EMISSIVE);
-    result->occlusionTexturePath = extractTexturePath(aiTextureType_LIGHTMAP);
+
+    // Occlusion: glTF standard maps to AMBIENT_OCCLUSION, some exporters use LIGHTMAP
+    result->occlusionTexturePath = extractTexturePath(aiTextureType_AMBIENT_OCCLUSION);
+    if (result->occlusionTexturePath.empty())
+        result->occlusionTexturePath = extractTexturePath(aiTextureType_LIGHTMAP);
 
     return result;
 }

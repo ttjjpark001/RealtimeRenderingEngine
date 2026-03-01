@@ -556,7 +556,20 @@ tests/
     - TextureCache에 `GetOrLoadFromMemory()` 추가 — `stbi_load_from_memory()`로 디코딩
     - Engine::LoadScene()에서 `*N` 경로 감지 시 임베딩 데이터 → `GetOrLoadFromMemory()` 호출
 
-**완료 기준**: glTF/GLB 씬 로드 시 텍스처가 정상 렌더링됨, GLB 임베딩 텍스처 정상 로드, 좌표계 변환으로 모델 방향/텍스처 매핑 정상, Alpha Mask/Blend 오브젝트 정상 표시, 메뉴에서 5단계 렌더링 모드를 즉시 전환 가능, 씬 로드 시 3-포인트 라이팅 자동 배치, PointLight 레거시 코드 완전 제거
+**Part F: PBR 머티리얼 추출 파이프라인 강화**
+
+25. Metallic/Roughness factor 항상 할당
+    - `mat->Get()` 성공 여부와 무관하게 `result->metallicFactor`/`result->roughnessFactor`에 값 할당
+    - Assimp 조회 실패 시에도 glTF 스펙 기본값(1.0)이 적용됨
+26. Normal map 텍스처 폴백 타입 추가
+    - 기존: `aiTextureType_NORMALS`만 조회
+    - 추가: `aiTextureType_HEIGHT` → `aiTextureType_NORMAL_CAMERA` 순 폴백
+    - 익스포터별 다른 타입 매핑에 대응
+27. Occlusion 텍스처 조회 순서 수정
+    - 변경 전: `LIGHTMAP` → `AMBIENT_OCCLUSION`
+    - 변경 후: `AMBIENT_OCCLUSION` → `LIGHTMAP` (glTF 표준 타입 우선)
+
+**완료 기준**: glTF/GLB 씬 로드 시 텍스처가 정상 렌더링됨, GLB 임베딩 텍스처 정상 로드, 좌표계 변환으로 모델 방향/텍스처 매핑 정상, Alpha Mask/Blend 오브젝트 정상 표시, 메뉴에서 5단계 렌더링 모드를 즉시 전환 가능, 씬 로드 시 3-포인트 라이팅 자동 배치, PointLight 레거시 코드 완전 제거, PBR 머티리얼 파라미터/텍스처가 다양한 glTF 익스포터에서 올바르게 추출됨
 
 ### Phase 21: 렌더링 최적화 — Culling + LOD + Light Culling
 **목표**: Frustum/Occlusion Culling, LOD 시스템 (자동 LOD 생성 포함), 광원 컬링

@@ -1185,6 +1185,39 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 20를 구현
 - 기본 씬과 glTF 씬 로드 시 3-포인트 라이팅이 자동 배치됨
 - PointLight 관련 레거시 기능(인디케이터 구, 방향키 이동, Reset Position)이 삭제됨
 - Light 메뉴의 색상 변경 시 모든 광원에 일괄 적용됨
+- MetalRoughSpheres.glb 등에서 metallic/roughness 텍스처가 정상 적용됨
+- 다양한 익스포터의 normal/occlusion 텍스처가 올바르게 로드됨
+```
+
+### Part F: PBR 머티리얼 추출 파이프라인 강화
+
+```
+=== 목표 ===
+Assimp이 glTF 머티리얼을 aiTextureType으로 매핑할 때 익스포터/버전별 차이에 대응하여,
+metallic-roughness, normal, occlusion 텍스처와 factor 값이 누락 없이 추출되도록 한다.
+
+=== 작업 ===
+
+20. Metallic/Roughness factor를 항상 할당하도록 수정한다.
+    - 기존: mat->Get() 성공 시에만 result에 할당 → 실패 시 Material.h 기본값에 의존
+    - 변경: mat->Get() 호출 후 결과와 무관하게 항상 result->metallicFactor/roughnessFactor에 할당
+    - glTF 스펙 기본값(1.0)이 Assimp 조회 실패 시에도 올바르게 적용됨
+
+21. Normal map 텍스처에 폴백 타입을 추가한다.
+    - 기존: aiTextureType_NORMALS만 조회
+    - 변경: NORMALS → HEIGHT → NORMAL_CAMERA 순으로 폴백 조회
+    - 일부 익스포터는 HEIGHT나 NORMAL_CAMERA로 노말맵을 저장함
+
+22. Occlusion 텍스처 조회 순서를 수정한다.
+    - 기존: LIGHTMAP → AMBIENT_OCCLUSION 순
+    - 변경: AMBIENT_OCCLUSION → LIGHTMAP 순 (glTF 표준 타입 우선)
+
+=== 검증 ===
+
+빌드하여 다음을 확인하라:
+- MetalRoughSpheres.glb에서 metallic/roughness 값이 구체별로 다르게 적용됨
+- DamagedHelmet.glb의 occlusion/normal 텍스처가 정상 로드됨
+- 다양한 익스포터로 생성된 glTF 파일에서 PBR 텍스처가 누락 없이 로드됨
 ```
 
 ---
