@@ -582,7 +582,25 @@ tests/
 
 **완료 기준**: glTF/GLB 씬 로드 시 텍스처가 정상 렌더링됨, GLB 임베딩 텍스처 정상 로드, 좌표계 변환으로 모델 방향/텍스처 매핑 정상, Alpha Mask/Blend 오브젝트 정상 표시, 메뉴에서 5단계 렌더링 모드를 즉시 전환 가능, 씬 로드 시 4-광원 라이팅 자동 배치 (3-포인트 + 궤도), PointLight 레거시 코드 완전 제거, PBR 머티리얼 파라미터/텍스처가 다양한 glTF 익스포터에서 올바르게 추출됨
 
-### Phase 21: 렌더링 최적화 — Culling + LOD + Light Culling
+### Phase 21: 레거시 코드 정리 + 테스트 재정비
+**목표**: Phase 02 마이그레이션 과정에서 남은 레거시 코드를 제거하고, 테스트를 현재 API에 맞게 업데이트하여 전체 테스트 통과
+
+1. `src/Lighting/PointLight.h` 삭제 — Phase 01의 단일 포인트 라이트 클래스, Light + LightManager로 완전 대체됨
+2. `tests/smoke/test_EngineInit.cpp` 수정
+   - `#include "Lighting/PointLight.h"` → `#include "Lighting/LightManager.h"` + `#include "Lighting/Light.h"`
+   - `RRE::PointLight light;` → `RRE::LightManager lightManager;` + 기본 광원 추가
+   - `renderer.RenderScene(sceneGraph, camera, &light, aspectRatio)` → `renderer.RenderScene(sceneGraph, camera, aspectRatio, &lightManager)`
+3. `src/RREngine.vcxproj.filters` 재생성 — Phase 02에서 추가된 파일들 반영
+   - Asset/ (SceneLoader, Material, Texture, TextureCache)
+   - Lighting/ (Light.h, LightManager)
+   - 새 셰이더 (PBR.hlsl, ShadowDepth.hlsl, Wireframe.hlsl)
+   - RHI/D3D12 추가 파일 (CBPool, DescriptorHeap 등)
+4. `src/RREngine.vcxproj`에서 PointLight.h 참조 제거 (있을 경우)
+5. 전체 테스트 빌드 및 실행 — 모든 유닛/스모크 테스트 통과 확인
+
+**완료 기준**: PointLight 레거시 코드 완전 제거, 모든 테스트가 현재 API로 빌드 및 통과, vcxproj.filters가 최신 파일 구조 반영
+
+### Phase 22: 렌더링 최적화 — Culling + LOD + Light Culling
 **목표**: Frustum/Occlusion Culling, LOD 시스템 (자동 LOD 생성 포함), 광원 컬링
 
 1. `src/Renderer/FrustumCuller.h/.cpp` — AABB vs 6-plane 교차 검사
@@ -601,7 +619,7 @@ tests/
 
 **완료 기준**: Frustum 밖 오브젝트 culled, Occluded 오브젝트 스킵, 거리별 LOD 전환 (자동 생성 포함), 원거리/저기여 광원 컬링
 
-### Phase 22: Texture Streaming + Mip-Mapping
+### Phase 23: Texture Streaming + Mip-Mapping
 **목표**: 필요 Mip만 GPU 로드, 가시성/거리 기반 우선순위
 
 1. `src/Asset/TextureStreamer.h/.cpp` — Mip 레벨 기반 스트리밍
@@ -613,7 +631,7 @@ tests/
 
 **완료 기준**: 카메라 거리에 따라 Mip 레벨 동적 로딩/해제, Anisotropic 필터링 적용
 
-### Phase 23: Instanced Rendering + 멀티스레드 로딩
+### Phase 24: Instanced Rendering + 멀티스레드 로딩
 **목표**: 동일 Mesh+Material 인스턴싱, 병렬 리소스 로딩
 
 1. `src/Renderer/InstanceBatcher.h/.cpp` — 동일 Mesh+Material 그룹핑
@@ -625,7 +643,7 @@ tests/
 
 **완료 기준**: 동일 메시 인스턴싱으로 드로우콜 감소, 멀티스레드 텍스처 디코딩
 
-### Phase 24: GPU 메모리 최적화
+### Phase 25: GPU 메모리 최적화
 **목표**: CB 풀링, VRAM 적응, Shared Material CB, Dirty Flag, Front-to-Back
 
 1. CBPool: Upload Heap 풀링, 256바이트 정렬, 링 버퍼
@@ -638,7 +656,7 @@ tests/
 
 **완료 기준**: CB 풀에서 슬롯 할당, VRAM 예산 초과 시 적응적 동작, Dirty Flag 갱신 스킵
 
-### Phase 25: Phase 02 통합 & 최종 검증
+### Phase 26: Phase 02 통합 & 최종 검증
 **목표**: 전체 Phase 02 기능 통합, 대형 씬 벤치마크
 
 1. 전체 렌더 파이프라인 통합 (12단계):
@@ -652,7 +670,7 @@ tests/
 
 **완료 기준**: Sponza급 씬을 PBR+Shadow+최적화로 60fps 이상 렌더링, 모든 테스트 통과
 
-### Phase 26: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
+### Phase 27: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
 **목표**: 전체 코드 품질 점검, 성능 최적화, 버그 수정, ARCHITECTURE.md 작성
 
 1. **전체 코드 리뷰**:
@@ -709,14 +727,15 @@ Phase 11 (Phase 01 완료)
     │                                        │                               │
     │                                        └── Phase 20 (렌더 모드) ───────┤
     │                                                                        │
-    ├── Phase 21 (Culling+LOD) ──────────────────────────────────────────────┤
-    ├── Phase 22 (Texture Streaming) ────────────────────────────────────────┤
-    ├── Phase 23 (Instancing+멀티스레드) ────────────────────────────────────┤
-    ├── Phase 24 (GPU 메모리 최적화) ────────────────────────────────────────┤
+    ├── Phase 21 (레거시 정리+테스트) ────────────────────────────────────────┤
+    ├── Phase 22 (Culling+LOD) ──────────────────────────────────────────────┤
+    ├── Phase 23 (Texture Streaming) ────────────────────────────────────────┤
+    ├── Phase 24 (Instancing+멀티스레드) ────────────────────────────────────┤
+    ├── Phase 25 (GPU 메모리 최적화) ────────────────────────────────────────┤
     │                                                                        │
-    └────────────────────────────────────────────────────── Phase 25 (통합) ─┘
+    └────────────────────────────────────────────────────── Phase 26 (통합) ─┘
                                                                              │
-                                                            Phase 26 (코드 리뷰 + ARCHITECTURE.md) ─┘
+                                                            Phase 27 (코드 리뷰 + ARCHITECTURE.md) ─┘
 ```
 
 ## Phase 02 리스크 & 대응

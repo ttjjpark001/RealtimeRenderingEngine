@@ -1260,10 +1260,56 @@ PBR 효과(노멀맵, 금속성, 거칠기, AO 등)를 실시간으로 시각 �
 
 ---
 
-## Prompt 21: 렌더링 최적화 — Culling + LOD
+## Prompt 21: 레거시 코드 정리 + 테스트 재정비
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 21를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 21을 구현하라.
+
+=== 목표 ===
+Phase 02 마이그레이션 과정에서 남은 레거시 코드를 제거하고,
+테스트를 현재 API에 맞게 업데이트하여 전체 테스트 통과를 확인한다.
+
+=== 작업 ===
+
+1. src/Lighting/PointLight.h를 삭제한다.
+   - Phase 01의 단일 포인트 라이트 클래스
+   - Light struct + LightManager로 완전 대체됨
+   - src/RREngine.vcxproj에서 참조가 있으면 제거
+
+2. tests/smoke/test_EngineInit.cpp를 현재 API에 맞게 수정한다.
+   - `#include "Lighting/PointLight.h"` → `#include "Lighting/LightManager.h"` + `#include "Lighting/Light.h"`
+   - `RRE::PointLight light;` → `RRE::LightManager lightManager;` + 기본 광원 추가
+   - `renderer.RenderScene(sceneGraph, camera, &light, aspectRatio)`
+     → `renderer.RenderScene(sceneGraph, camera, aspectRatio, &lightManager)`
+
+3. src/RREngine.vcxproj.filters를 재생성한다.
+   - Phase 02에서 추가된 모든 파일을 적절한 필터에 배치:
+     · Asset/ (SceneLoader, Material, Texture, TextureCache)
+     · Lighting/ (Light.h, LightManager)
+     · 새 셰이더 (PBR.hlsl, ShadowDepth.hlsl, Wireframe.hlsl)
+     · RHI/D3D12 추가 파일
+
+4. 전체 테스트를 빌드하고 실행한다.
+   - RREngineTests 프로젝트 빌드
+   - 모든 유닛 테스트 + 스모크 테스트 통과 확인
+   - 실패하는 테스트가 있으면 현재 API에 맞게 수정
+
+=== 검증 ===
+
+빌드하여 다음을 확인하라:
+- PointLight.h 파일이 삭제되고 어디에서도 참조되지 않음
+- RREngineTests 프로젝트가 빌드 성공
+- 모든 유닛 테스트 (MathUtil, SceneGraph, FaceColoring, Camera, Transform, Material) 통과
+- 모든 스모크 테스트 (RHIBackend, EngineInit, SceneLoader, Texture, CBPool) 통과
+- VS 솔루션 탐색기에서 파일이 올바른 필터에 표시됨
+```
+
+---
+
+## Prompt 22: 렌더링 최적화 — Culling + LOD
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 22를 구현하라.
 
 1. src/Renderer/FrustumCuller.h/.cpp를 만든다.
    - DirectX::BoundingFrustum을 View-Projection 행렬에서 생성
@@ -1327,10 +1373,10 @@ DebugHUD에 culled 오브젝트 수와 culled 광원 수를 표시하라.
 
 ---
 
-## Prompt 22: Texture Streaming + Mip-Mapping
+## Prompt 23: Texture Streaming + Mip-Mapping
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 22를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 23를 구현하라.
 
 1. src/Asset/TextureStreamer.h/.cpp를 만든다.
    - 텍스처별 요구 Mip 레벨 관리
@@ -1365,10 +1411,10 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 22를 구현
 
 ---
 
-## Prompt 23: Instanced Rendering + 멀티스레드 로딩
+## Prompt 24: Instanced Rendering + 멀티스레드 로딩
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 23를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 24를 구현하라.
 
 1. src/Renderer/InstanceBatcher.h/.cpp를 만든다.
    - Scene Graph에서 동일 Mesh+Material 조합을 그룹핑
@@ -1401,10 +1447,10 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 23를 구현
 
 ---
 
-## Prompt 24: GPU 메모리 최적화
+## Prompt 25: GPU 메모리 최적화
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 24를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 25를 구현하라.
 
 1. CBPool을 Renderer에 통합한다.
    - 매 프레임 ResetFrame(frameIndex) 호출
@@ -1446,10 +1492,10 @@ VRAM 사용량이 HUD에 표시되는지 확인하라.
 
 ---
 
-## Prompt 25: Phase 02 통합 & 최종 검증
+## Prompt 26: Phase 02 통합 & 최종 검증
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 25를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 26를 구현하라.
 
 1. 전체 렌더 파이프라인을 11단계로 통합한다.
    ① Scene Graph 순회 → AABB + 월드 행렬 수집
@@ -1492,10 +1538,10 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 25를 구현
 
 ---
 
-## Prompt 26: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
+## Prompt 27: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 26를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 27를 구현하라.
 이 단계는 Phase 02의 마지막 단계로, 전체 코드 품질을 점검하고 ARCHITECTURE.md를 작성한다.
 
 1. 전체 코드 리뷰를 수행한다.
