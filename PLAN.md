@@ -638,7 +638,23 @@ tests/
 9. **DebugHUD 확장**: 총 SceneNode 수, 총 Mesh 수를 HUD에 표시
 10. **유닛 테스트**: AABB 계산 정확성, 프리미티브 분리 후 노드 수 검증
 
-**완료 기준**: 앱 시작 시 빈 화면, Object/Animation 메뉴 없음, glTF 씬 로드 후 정상 렌더링, Sponza 로딩 시 103개+ SceneNode 분리, 각 노드에 유효한 AABB
+#### C. 미사용 코드 완전 제거 (A 작업 완료 후 파생)
+
+11. **파일 삭제**:
+    - `src/Renderer/MeshFactory.h/.cpp` — MeshFactory 전체 삭제 (더 이상 호출 없음)
+    - `src/Renderer/FaceColorPalette.h` — MeshFactory에서만 사용, 함께 삭제
+    - `tests/unit/test_FaceColoring.cpp` — MeshFactory/FaceColorPalette에 전적으로 의존, 삭제
+12. **테스트 파일 정리** (`tests/smoke/test_EngineInit.cpp`):
+    - `#include "Renderer/MeshFactory.h"` 제거
+    - `MeshTypeChangeUpdatesSceneNodes()` 테스트 삭제 (메시 타입 전환 기능 제거됨)
+    - `SceneGraphWithRendererOneCycle()` 등 MeshFactory를 사용하는 테스트: 간단한 수동 Mesh 생성으로 교체
+13. **프로젝트 파일 업데이트**:
+    - `src/RREngine.vcxproj`: MeshFactory.cpp, FaceColorPalette.h, MeshFactory.h 항목 제거
+    - `src/RREngine.vcxproj.filters`: 동일 항목 제거
+    - `tests/RREngineTests.vcxproj`: MeshFactory.cpp 항목 제거
+    - `tests/RREngineTests.vcxproj.filters`: test_FaceColoring.cpp 항목 제거
+
+**완료 기준**: 앱 시작 시 빈 화면, Object/Animation 메뉴 없음, glTF 씬 로드 후 정상 렌더링, Sponza 로딩 시 103개+ SceneNode 분리, 각 노드에 유효한 AABB, MeshFactory/FaceColorPalette 파일 삭제, 잔여 테스트 전체 통과
 
 ### Phase 23: 렌더링 최적화 — Culling + LOD + Light Culling
 **목표**: Frustum/Occlusion Culling, LOD 시스템 (자동 LOD 생성 포함), 광원 컬링

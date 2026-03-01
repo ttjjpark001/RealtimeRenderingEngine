@@ -1374,11 +1374,35 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 22를 구현
     - 월드 AABB: Transform 적용 후 올바른 값 반환
     - 프리미티브 분리: 여러 aiMesh를 가진 노드가 올바르게 분리되는지
 
+=== C. 미사용 코드 완전 제거 ===
+
+12. 사용되지 않는 파일을 삭제한다.
+    - src/Renderer/MeshFactory.h 삭제
+    - src/Renderer/MeshFactory.cpp 삭제
+    - src/Renderer/FaceColorPalette.h 삭제
+      (FaceColorPalette는 MeshFactory에서만 사용됨)
+    - tests/unit/test_FaceColoring.cpp 삭제
+      (MeshFactory/FaceColorPalette에 전적으로 의존하는 테스트)
+
+13. 테스트 파일을 정리한다 (tests/smoke/test_EngineInit.cpp).
+    - #include "Renderer/MeshFactory.h" 제거
+    - MeshTypeChangeUpdatesSceneNodes() 테스트 삭제
+      (메시 타입 전환 기능 자체가 제거됨)
+    - MeshFactory를 사용하는 테스트(SceneGraphWithRendererOneCycle 등)는
+      수동으로 간단한 Mesh를 생성하는 코드로 교체
+
+14. 프로젝트 파일을 업데이트한다.
+    - src/RREngine.vcxproj: MeshFactory.cpp, FaceColorPalette.h, MeshFactory.h 항목 제거
+    - src/RREngine.vcxproj.filters: 동일 항목 제거
+    - tests/RREngineTests.vcxproj: MeshFactory.cpp 항목 제거
+    - tests/RREngineTests.vcxproj.filters: test_FaceColoring.cpp 항목 제거
+
 빌드하여 앱 시작 시 빈 화면이 표시되고,
 Object/Animation 메뉴가 없으며,
+MeshFactory/FaceColorPalette 파일이 삭제되어 있고,
 glTF 씬 로드 시 정상 렌더링되고,
 Sponza 로딩 시 103개+ SceneNode가 분리되는지 확인하라.
-모든 기존 테스트가 통과하는지 확인하라.
+잔여 테스트(MeshFactory 제외 전체)가 통과하는지 확인하라.
 ```
 
 ---
