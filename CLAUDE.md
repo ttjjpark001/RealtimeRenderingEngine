@@ -234,6 +234,10 @@ assimp-vc143-mt.lib — [Phase 02] Assimp (glTF/GLB 로딩)
 | **Bistro** (glTF 변환) | [NRD-Sample](https://github.com/NVIDIA-RTX/NRD-Sample) | glTF | NVIDIA RTX 샘플에 포함 |
 | **Bistro** (glTF 변환) | [bevy_bistro_scene](https://github.com/DGriffin91/bevy_bistro_scene) | glTF | 인스턴싱 최적화 버전 (Discord에서 배포) |
 
+> **Bistro FBX 원본 로딩 이슈**: DDS 텍스처, 절대 경로, 단위 스케일(cm), Phong→PBR 변환,
+> Exterior+Interior 분리 파일 등 여러 이슈 존재. 상세 내용은 [`BistroFBX.md`](BistroFBX.md) 참고.
+> **권장**: glTF 변환본(`niagara_bistro` 또는 `bevy_bistro_scene`) 사용.
+
 ### 모델 공통 사항
 
 - GLB: 텍스처가 바이너리에 임베딩됨 (embedded texture 로딩)
