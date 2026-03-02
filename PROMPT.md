@@ -1414,30 +1414,27 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 23를 구현
 
 1. src/Renderer/FrustumCuller.h/.cpp를 만든다.
    - DirectX::BoundingFrustum을 View-Projection 행렬에서 생성
-   - IsVisible(const BoundingBox& aabb) → bool
+     BoundingFrustum::CreateFromMatrix(proj) → frustumVS.Transform(m_frustum, invView)로 월드 공간 변환
+   - IsVisible(const BoundingBox& aabb) → bool (m_frustum.Intersects(aabb))
    - BoundingBox vs Frustum 6-plane 교차 검사 (BoundingBox::Intersects)
    - Scene Graph 순회 시 culled 노드는 DrawPrimitives 스킵
    - Shadow Depth Pass에도 적용 (광원 시점 frustum, P1)
 
 2. src/Renderer/OcclusionCuller.h/.cpp를 만든다.
-   - P0 (간이 방식): 이전 프레임의 depth buffer를 CPU readback
-     → AABB를 screen-space로 투영 → 해당 영역 depth 비교
-   - IsOccluded(const BoundingBox& aabb) → bool
+   - P0 스텁: IsOccluded() 항상 false 반환 (보수적 판정, popping 방지)
    - Occluded 판정: CB 갱신 + Draw 모두 스킵
-   - 보수적 판정: 경계 케이스는 visible로 처리 (popping 방지)
 
 3. src/Renderer/LODSelector.h/.cpp를 만든다.
-   - struct LODMesh { Mesh* meshLODs[MAX_LOD]; float switchDistances[MAX_LOD]; uint32 lodCount; }
-   - SelectLOD(float cameraDistance) → Mesh* (적절한 LOD 반환)
-   - glTF/FBX LOD 매핑: MSFT_lod 확장이 있으면 자동, 없으면 자동 LOD 생성
-   - 자동 LOD 생성 (Auto-LOD):
-     씬 파일에 LOD 메시가 없는 경우, 원본 메시에서 간략화된 LOD 메시를 자동 생성한다.
-     - Edge Collapse 기반 메시 심플리피케이션 알고리즘 구현
-     - LOD 1: 원본 삼각형 수의 ~50% 축소
-     - LOD 2: 원본 삼각형 수의 ~25% 축소
-     - 버텍스 위치, 법선, UV를 보존하며 품질 메트릭(QEM: Quadric Error Metrics) 기반 축소
-     - 씬 로딩 시 백그라운드 스레드에서 LOD 생성 (메인 렌더링 블로킹 방지)
+   - struct LODMesh { Mesh* meshLODs[3]; float switchDistances[3]; uint32 lodCount; }
+   - SelectLOD(Mesh* original, float distance) → Mesh* (적절한 LOD 반환)
+   - 자동 LOD 생성 (Auto-LOD): 그리드 기반 버텍스 클러스터링
+     - LOD 1: 원본 삼각형 수의 ~50% 축소 (switchDistances[1] = sceneDiagonal * 0.5)
+     - LOD 2: 원본 삼각형 수의 ~25% 축소 (switchDistances[2] = sceneDiagonal * 2.0)
+     - std::async(std::launch::async)로 백그라운드 스레드에서 비동기 생성
+     - std::atomic<bool> lodsReady (release/acquire 메모리 순서)로 스레드 안전 접근
      - LOD 생성 완료 전까지 원본 메시(LOD 0)로 렌더링
+   - 주의: Windows SDK min/max 매크로 충돌 방지를 위해
+     LODSelector.cpp 최상단에 #define NOMINMAX 필수
 
 4. src/Renderer/LightCuller.h/.cpp를 만든다.
    - 광원 컬링: 너무 멀거나 가려진 광원을 라이팅 계산에서 제외
@@ -1449,27 +1446,56 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 23를 구현
      광원~카메라 거리 및 광원 강도로 화면 기여도 추정
      → 기여도가 임계값(예: 0.01) 이하인 광원은 제외
    - Directional Light는 항상 포함 (무한 거리이므로 컬링 대상 아님)
-   - CullLights(frustum, cameraPos, lights) → 활성 광원 인덱스 목록 반환
-   - DebugHUD에 컬링된 광원 수 표시
+   - CullLights(frustum, cameraPos, lightManager) → 활성 광원 인덱스 목록(vector<uint32_t>) 반환
 
-5. tests/unit/test_FrustumCuller.cpp를 만든다.
+5. LightManager에 BuildFilteredLightConstants(activeIndices) 메서드를 추가한다.
+   - 컬링 후 활성 인덱스 목록만 받아 LightConstants(GPU CB) 빌드
+
+6. Renderer.h에 CullStats 구조체를 추가한다.
+   struct CullStats {
+       uint32 visibleNodes, frustumCulledNodes, occlusionCulledNodes;
+       uint32 activeLights, culledLights;
+       uint32 renderedPolygons;  // Culling + LOD 후 실제 제출된 삼각형 수
+   };
+   - RenderScene() 내 Pass 1(Opaque) + Pass 2(Alpha Blend) 모두에서 accumulate
+   - GetLastCullStats() const → CullStats
+
+7. DebugHUD (RenderStats)에 다음 항목을 추가/수정한다.
+   - totalPolygons: 씬 전체 폴리곤 수 (Culling/LOD 미적용)
+   - renderedPolygons: Culling + LOD 후 실제 렌더링된 폴리곤 수
+   - polygonsPerSec: rendered 기준 초당 폴리곤 (renderPolygons / deltaTime)
+   - visibleNodes, frustumCulledNodes, activeLights, culledLights
+   HUD 출력 형식:
+     Polys (scene):    N
+     Polys (rendered): M
+     Poly/sec: X.XM
+     Visible: N  Culled: M
+     Lights: N active  M culled
+
+8. tests/unit/test_FrustumCuller.cpp를 만든다 (8개 테스트).
+   - 미빌드/빌드 후 IsBuilt 상태
    - Frustum 안의 AABB → visible
    - Frustum 밖의 AABB → not visible
    - Frustum 경계의 AABB → visible (보수적)
+   - 뒤쪽/측면 AABB, 카메라를 완전히 감싸는 큰 AABB, rebuild 후 동작
 
-6. tests/unit/test_LightCuller.cpp를 만든다.
-   - Frustum 안의 Point Light → 활성
-   - Frustum 밖의 Point Light (유효 범위 초과) → 컬링
+9. tests/unit/test_LightCuller.cpp를 만든다 (7개 테스트).
+   - 빈 LightManager → 활성 광원 0
    - Directional Light → 항상 활성
+   - Frustum 안의 Point Light → 활성
+   - Frustum 밖의 Point Light → 컬링
    - 기여도 임계값 이하의 약한 광원 → 컬링
+   - Directional + Point 혼합, 호출 간 상태 독립성
 
-7. Renderer 파이프라인에 Culling + LOD + Light Culling을 통합한다.
-   - Scene Graph 순회 → Frustum Culling → Occlusion Culling → LOD 선택 → Draw
-   - 라이팅 패스 전 Light Culling → 활성 광원만 GPU에 전달
+10. Renderer 파이프라인에 Culling + LOD + Light Culling을 통합한다.
+    - Scene Graph 순회 → Frustum Culling → Occlusion Culling → LOD 선택 → Draw
+    - 라이팅 패스 전 Light Culling → 활성 광원만 GPU에 전달
+    - ClearMeshCache()에서 LOD 등록도 함께 클리어 (m_lodSelector.Clear())
+    - RegisterMeshesForLOD()는 씬 sceneDiagonal 확정 후 LoadScene 마지막에 호출
 
-빌드하여 Frustum 밖 오브젝트가 culled되고,
-거리별 LOD가 전환되며, 원거리 광원이 컬링되는지 확인하라.
-DebugHUD에 culled 오브젝트 수와 culled 광원 수를 표시하라.
+빌드하여 Frustum 밖 오브젝트가 culled되고, 거리별 LOD가 전환되며,
+원거리 광원이 컬링되는지 확인하라.
+DebugHUD에 씬 전체/실제 렌더링 폴리곤 수, culled 오브젝트 수, culled 광원 수를 표시하라.
 ```
 
 ---

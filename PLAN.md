@@ -660,20 +660,36 @@ tests/
 **목표**: Frustum/Occlusion Culling, LOD 시스템 (자동 LOD 생성 포함), 광원 컬링
 
 1. `src/Renderer/FrustumCuller.h/.cpp` — AABB vs 6-plane 교차 검사
+   - `BoundingFrustum::CreateFromMatrix(proj)` + `Transform(invView)` 로 월드 공간 Frustum 생성
+   - `IsVisible(const BoundingBox&)` → `m_frustum.Intersects(aabb)` 활용
 2. `DirectX::BoundingFrustum` + `BoundingBox::Intersects()` 활용
-3. `src/Renderer/OcclusionCuller.h/.cpp` — 이전 프레임 depth buffer 기반 (P0: 간이 방식)
+3. `src/Renderer/OcclusionCuller.h/.cpp` — P0 스텁: 항상 false 반환 (보수적 판정)
 4. Occluded 오브젝트: CB 갱신 + Draw 모두 스킵
 5. `src/Renderer/LODSelector.h/.cpp` — 거리 기반 LOD 선택
+   - `struct LODMesh { Mesh* meshLODs[3]; float switchDistances[3]; uint32 lodCount; }`
+   - `std::async`로 비동기 LOD 생성; `std::atomic<bool> lodsReady` 로 스레드 안전 접근
+   - `#define NOMINMAX` 필수: Windows SDK min/max 매크로와 `std::min/max` 충돌 방지
 6. LODMesh 구조체: Mesh 배열 + 전환 거리
 7. glTF/FBX LOD 매핑 (MSFT_lod 확장)
-8. 자동 LOD 생성: 씬 파일에 LOD 데이터가 없으면 Edge Collapse(QEM) 기반 메시 심플리피케이션으로 LOD 1(~50%), LOD 2(~25%) 자동 생성. 백그라운드 스레드에서 비동기 수행
+8. 자동 LOD 생성: 씬 파일에 LOD 데이터가 없으면 그리드 기반 버텍스 클러스터링으로 LOD 1(~50%), LOD 2(~25%) 자동 생성. 백그라운드 스레드에서 비동기 수행. 완료 전까지 원본(LOD 0)으로 렌더링
 9. `src/Renderer/LightCuller.h/.cpp` — 광원 컬링
    - 거리 기반: Point/Spot 광원의 유효 범위(BoundingSphere) vs Frustum 교차 검사
    - 기여도 기반: 광원~카메라 거리 및 강도로 화면 기여도 추정, 임계값 이하 제외
    - Directional Light는 항상 포함
-10. 유닛 테스트: FrustumCuller 테스트, LightCuller 테스트
+10. `LightManager::BuildFilteredLightConstants(activeIndices)` — 컬링된 활성 광원만 GPU LightCB로 빌드
+11. `CullStats` 구조체 (Renderer.h):
+    - `visibleNodes`, `frustumCulledNodes`, `occlusionCulledNodes`
+    - `activeLights`, `culledLights`
+    - `renderedPolygons` — Culling + LOD 적용 후 실제 제출된 삼각형 수 (Pass 1 + Pass 2 합산)
+12. DebugHUD 확장:
+    - `Polys (scene):    N` — 씬 전체 폴리곤 수 (Culling/LOD 미적용)
+    - `Polys (rendered): M` — Culling + LOD 후 실제 렌더링된 폴리곤 수
+    - `Poly/sec: X.XM` — 초당 렌더링 폴리곤 (rendered 기준)
+    - `Visible: N  Culled: M` — 노드 컬링 통계
+    - `Lights: N active  M culled` — 광원 컬링 통계
+13. 유닛 테스트: `test_FrustumCuller.cpp` (8개), `test_LightCuller.cpp` (7개)
 
-**완료 기준**: Frustum 밖 오브젝트 culled, Occluded 오브젝트 스킵, 거리별 LOD 전환 (자동 생성 포함), 원거리/저기여 광원 컬링
+**완료 기준**: Frustum 밖 오브젝트 culled, Occluded 오브젝트 스킵, 거리별 LOD 전환 (자동 생성 포함), 원거리/저기여 광원 컬링, DebugHUD에 씬 전체 폴리곤 수와 렌더링된 폴리곤 수 각각 표시, 91/91 테스트 통과
 
 ### Phase 24: Texture Streaming + Mip-Mapping
 **목표**: 필요 Mip만 GPU 로드, 가시성/거리 기반 우선순위

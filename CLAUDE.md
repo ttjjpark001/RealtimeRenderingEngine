@@ -91,13 +91,24 @@ tests/
 ### Renderer
 - `Renderer` 클래스가 SceneGraph를 Traverse하며 각 노드의 Mesh를 DrawPrimitives로 렌더링
 - Mesh→VB/IB 캐시: `std::unordered_map<Mesh*, MeshBuffers>` — 처음 만나는 Mesh는 자동 업로드
-- `RenderScene()`: ViewProjection 설정 → LightData 설정 → SceneGraph 순회 → 각 노드 DrawPrimitives
-- `RenderLightIndicator()`: 광원 위치에 Unlit 모드로 작은 구를 렌더링
-- Engine은 Renderer를 통해 렌더링하며, 직접 VB/IB를 관리하지 않음 (광원 구 제외)
+- `RenderScene()`: Frustum 빌드 → Light Culling → Shadow Depth Pass → Opaque Pass → Alpha Blend Pass
+- `ClearMeshCache()`: GPU 메시 캐시 + LOD 등록 모두 클리어 (씬 교체 전 호출)
+- `RegisterMeshesForLOD()`: 씬 로딩 후 sceneDiagonal 확정 시점에 호출
+- `GetLastCullStats()`: 직전 RenderScene() 호출의 컬링/LOD 통계 반환
+- `struct CullStats`: `visibleNodes`, `frustumCulledNodes`, `occlusionCulledNodes`, `activeLights`, `culledLights`, `renderedPolygons` (Culling+LOD 후 실제 제출 삼각형 수)
+- Engine은 Renderer를 통해 렌더링하며, 직접 VB/IB를 관리하지 않음
 
 ### 상태 표시 HUD (DebugHUD)
 - 화면 왼쪽 상단에 렌더링 통계를 텍스트 오버레이로 표시
-- 기본 표시: FPS, 해상도(WxH), 종횡비, 전체 폴리곤 수, 초당 폴리곤 처리 속도
+- 기본 표시:
+  - FPS, 해상도(WxH), 종횡비
+  - `Polys (scene): N` — 씬 전체 폴리곤 수 (Culling/LOD 미적용)
+  - `Polys (rendered): M` — Culling + LOD 후 실제 렌더링된 폴리곤 수 (CullStats::renderedPolygons)
+  - `Poly/sec: X.XM` — rendered 폴리곤 기준 초당 처리량
+  - 렌더링 모드명
+  - 총 노드 수 + 총 메시 노드 수
+  - `Visible: N  Culled: M` — Frustum Culling 통계 (Phase 23)
+  - `Lights: N active  M culled` — 광원 컬링 통계 (Phase 23)
 - 광원 정보 (토글): 광원 색상명, 광원 위치
 - 카메라 정보 (토글): 투영 모드, 카메라 위치/방향, FOV
 - D3D11On12 + D2D1 + DirectWrite interop으로 텍스트 렌더링
