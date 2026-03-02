@@ -821,8 +821,8 @@ void D3D12Context::CreateShadowMaps()
         D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = m_shadowDsvHeap.Allocate();
         m_device->CreateDepthStencilView(m_shadowMaps[i].Get(), &dsvDesc, dsvHandle);
 
-        // Create SRV in persistent region of cbvSrvHeap
-        m_shadowSrvCpu[i] = m_cbvSrvHeap.Allocate();
+        // Create SRV in persistent region of cbvSrvHeap (must NOT use transient: it resets each frame)
+        m_shadowSrvCpu[i] = m_cbvSrvHeap.AllocatePersistent();
         m_shadowSrvGpu[i] = m_cbvSrvHeap.GetGPUHandleForCPU(m_shadowSrvCpu[i]);
 
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
