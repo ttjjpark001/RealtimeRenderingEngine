@@ -260,27 +260,19 @@ void Engine::Update(float deltaTime)
     {
         m_orbitLightAngle += 0.8f * deltaTime;
 
-        XMFLOAT3 camPos = m_camera->GetPosition();
-        XMFLOAT3 camDir = m_camera->GetDirection();
-        XMVECTOR vCamPos = XMLoadFloat3(&camPos);
-        XMVECTOR vCamDir = XMLoadFloat3(&camDir);
-
-        float orbitRadius = m_sceneDiagonal * 0.45f;
-
-        XMVECTOR worldUp = XMVectorSet(0, 1, 0, 0);
-        XMVECTOR right = XMVector3Normalize(XMVector3Cross(worldUp, vCamDir));
-        XMVECTOR up = XMVector3Cross(vCamDir, right);
-
-        float cosA = cosf(m_orbitLightAngle);
-        float sinA = sinf(m_orbitLightAngle);
-        XMVECTOR offset = XMVectorAdd(
-            XMVectorScale(right, orbitRadius * cosA),
-            XMVectorScale(up, orbitRadius * sinA)
-        );
-
-        // Direction points from orbit position toward scene center (negative offset)
-        XMFLOAT3 lightDir;
-        XMStoreFloat3(&lightDir, XMVector3Normalize(XMVectorNegate(offset)));
+        // Orbit around World Y-axis (camera-independent).
+        // Light source position on a sphere at 45° elevation:
+        //   pos = R * { cosElev*cos(a),  sinElev,  cosElev*sin(a) }
+        // Direction = normalize(origin - pos) = { -cosElev*cos(a), -sinElev, -cosElev*sin(a) }
+        // Length = sqrt(cosElev^2 + sinElev^2) = 1  (already unit vector)
+        constexpr float kElevRad = XM_PI / 4.0f;   // 45° below horizontal
+        const float cosElev = cosf(kElevRad);       // ~0.7071
+        const float sinElev = sinf(kElevRad);       // ~0.7071
+        XMFLOAT3 lightDir = {
+            -cosElev * cosf(m_orbitLightAngle),
+            -sinElev,
+            -cosElev * sinf(m_orbitLightAngle)
+        };
         m_lightManager->GetLightMutable(m_orbitLightIndex).direction = lightDir;
     }
 
