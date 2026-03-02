@@ -109,15 +109,15 @@ void Camera::FitToScene(const XMFLOAT3& sceneCenter, float sceneDiagonal)
 {
     m_lookAt = sceneCenter;
 
-    // Elevated front-side view: camera above and in front at ~45 degrees.
-    // Works for both exterior objects and open-top interior scenes (e.g. Sponza atrium).
+    // Level front view: camera at the same height as the scene center, directly in front.
     float half = sceneDiagonal * 0.5f;
     if (half < 0.5f) half = 0.5f;
 
+    float distToFront = half * 1.4142f;  // same distance as before, now fully horizontal
     m_position = {
         sceneCenter.x,
-        sceneCenter.y + half,   // elevated above center
-        sceneCenter.z - half    // in front of center (-Z)
+        sceneCenter.y,          // level with scene center
+        sceneCenter.z - distToFront
     };
 
     m_up = { 0.0f, 1.0f, 0.0f };
