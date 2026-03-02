@@ -113,6 +113,10 @@
     <ClCompile Include="RHI\D3D12\D3D12CBPool.cpp" />
     <ClCompile Include="Renderer\Renderer.cpp" />
     <ClCompile Include="Renderer\DebugHUD.cpp" />
+    <ClCompile Include="Renderer\FrustumCuller.cpp" />
+    <ClCompile Include="Renderer\OcclusionCuller.cpp" />
+    <ClCompile Include="Renderer\LODSelector.cpp" />
+    <ClCompile Include="Renderer\LightCuller.cpp" />
     <ClCompile Include="Scene\Transform.cpp" />
     <ClCompile Include="Scene\SceneNode.cpp" />
     <ClCompile Include="Scene\SceneGraph.cpp" />
@@ -141,6 +145,10 @@
     <ClInclude Include="Renderer\Mesh.h" />
     <ClInclude Include="Renderer\Renderer.h" />
     <ClInclude Include="Renderer\DebugHUD.h" />
+    <ClInclude Include="Renderer\FrustumCuller.h" />
+    <ClInclude Include="Renderer\OcclusionCuller.h" />
+    <ClInclude Include="Renderer\LODSelector.h" />
+    <ClInclude Include="Renderer\LightCuller.h" />
     <ClInclude Include="Scene\Transform.h" />
     <ClInclude Include="Scene\SceneNode.h" />
     <ClInclude Include="Scene\SceneGraph.h" />

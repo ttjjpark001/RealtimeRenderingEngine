@@ -341,6 +341,13 @@ void Engine::Update(float deltaTime)
             int modeIdx = static_cast<int>(m_renderer->GetRenderMode());
             if (modeIdx >= 0 && modeIdx <= 4)
                 stats.renderModeName = modeNames[modeIdx];
+
+            // Culling / LOD statistics (Phase 23)
+            CullStats cs = m_renderer->GetLastCullStats();
+            stats.visibleNodes       = cs.visibleNodes;
+            stats.frustumCulledNodes = cs.frustumCulledNodes;
+            stats.activeLights       = cs.activeLights;
+            stats.culledLights       = cs.culledLights;
         }
 
         m_debugHUD->Update(deltaTime, stats);
@@ -578,6 +585,11 @@ void Engine::LoadScene(const std::string& filePath)
         orbitLight.Kc = 1.0f; orbitLight.Kl = Kl; orbitLight.Kq = Kq;
         m_orbitLightIndex = m_lightManager->AddLight(orbitLight);
     }
+
+    // Register loaded meshes for async auto-LOD generation.
+    // Done after m_sceneDiagonal is finalized so switch distances scale correctly.
+    if (m_renderer && !m_loadedMeshes.empty())
+        m_renderer->RegisterMeshesForLOD(m_loadedMeshes, m_sceneDiagonal);
 
 }
 

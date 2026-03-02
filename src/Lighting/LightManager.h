@@ -28,7 +28,12 @@ public:
     // Also assigns shadowMapIndex for castShadow lights
     LightConstants BuildLightConstants() const;
 
-    // Get count of shadow-casting lights (after BuildLightConstants)
+    // Build LightConstants using only the lights at the given indices
+    // (e.g. as returned by LightCuller::CullLights). Also updates shadowCasterCount.
+    LightConstants BuildFilteredLightConstants(
+        const std::vector<uint32_t>& activeIndices) const;
+
+    // Get count of shadow-casting lights (after the most recent Build*Constants call)
     uint32 GetShadowCasterCount() const { return m_shadowCasterCount; }
 
     void Clear() { m_lights.clear(); m_shadowCasterCount = 0; }

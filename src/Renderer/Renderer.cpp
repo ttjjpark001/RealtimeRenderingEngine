@@ -12,8 +12,8 @@
 #include "Asset/TextureCache.h"
 #include <DirectXMath.h>
 #include <d3d12.h>
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 
 using namespace DirectX;
 
@@ -22,7 +22,7 @@ namespace RRE
 
 void Renderer::SetContext(D3D12Context* context, ID3D12Device* device)
 {
-    m_context = context;
+    m_context   = context;
     m_d3dDevice = device;
 }
 
@@ -44,13 +44,27 @@ void Renderer::UploadMesh(Mesh* mesh)
     buffers.ib = std::move(ib);
 
     buffers.indexCount = static_cast<uint32>(mesh->indices.size());
-
     m_meshCache[mesh] = std::move(buffers);
 }
 
 void Renderer::ClearMeshCache()
 {
-    m_meshCache.clear();
+    m_meshCache.clear();      // frees GPU buffers
+    m_lodSelector.Clear();    // frees generated LOD meshes (after GPU cache cleared)
+}
+
+void Renderer::RegisterMeshesForLOD(
+    const std::vector<std::unique_ptr<Mesh>>& meshes,
+    float sceneDiagonal)
+{
+    for (const auto& mesh : meshes)
+    {
+        if (!mesh) continue;
+        // LOD switch distances scale with the scene so transitions feel natural.
+        float dist1 = sceneDiagonal * 0.5f;
+        float dist2 = sceneDiagonal * 2.0f;
+        m_lodSelector.RegisterMesh(mesh.get(), dist1, dist2);
+    }
 }
 
 void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
@@ -59,19 +73,38 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
     if (!m_context)
         return;
 
-    // Set view-projection from camera
-    XMMATRIX view = camera.GetViewMatrix();
+    // -----------------------------------------------------------------------
+    // Build world-space frustum for this frame
+    // -----------------------------------------------------------------------
+    XMMATRIX view       = camera.GetViewMatrix();
     XMMATRIX projection = camera.GetProjectionMatrix(aspectRatio);
-    XMMATRIX viewProj = XMMatrixTranspose(view * projection);
-    XMFLOAT4X4 viewProjFloat;
-    XMStoreFloat4x4(&viewProjFloat, viewProj);
-    m_context->SetViewProjection(viewProjFloat);
+    m_frustumCuller.Build(view, projection);
 
-    // Set lighting data (BasicColor path — use first light from LightManager)
+    XMMATRIX viewProj = view * projection;
+
     XMFLOAT3 camPos = camera.GetPosition();
+
+    // -----------------------------------------------------------------------
+    // Light culling — discard lights that cannot contribute to visible pixels
+    // -----------------------------------------------------------------------
+    std::vector<uint32_t> activeLightIndices;
     if (lightManager && lightManager->GetActiveLightCount() > 0)
     {
-        const Light& firstLight = lightManager->GetLight(0);
+        activeLightIndices = m_lightCuller.CullLights(
+            m_frustumCuller.GetFrustum(), camPos, *lightManager);
+    }
+
+    // -----------------------------------------------------------------------
+    // Set GPU rendering state
+    // -----------------------------------------------------------------------
+    XMFLOAT4X4 viewProjFloat;
+    XMStoreFloat4x4(&viewProjFloat, XMMatrixTranspose(viewProj));
+    m_context->SetViewProjection(viewProjFloat);
+
+    // Legacy single-light path (BasicColor shader)
+    if (!activeLightIndices.empty())
+    {
+        const Light& firstLight = lightManager->GetLight(activeLightIndices[0]);
         XMFLOAT3 ambient = { 0.15f, 0.15f, 0.15f };
         m_context->SetLightData(
             firstLight.position, firstLight.color,
@@ -79,18 +112,19 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
             firstLight.Kc, firstLight.Kl, firstLight.Kq);
     }
 
-    // Set PBR light data from LightManager
+    // PBR multi-light path (filtered by light culling)
     LightConstants builtLights = {};
-    if (lightManager && lightManager->GetActiveLightCount() > 0)
+    if (lightManager && !activeLightIndices.empty())
     {
-        builtLights = lightManager->BuildLightConstants();
+        builtLights = lightManager->BuildFilteredLightConstants(activeLightIndices);
         m_context->SetPBRLightData(builtLights);
     }
 
-    // Pass render mode to D3D12Context for texture flag overrides
     m_context->SetRenderModeInt(static_cast<int>(m_renderMode));
 
-    // --- Shadow Depth Pass (only in FullPBRShadows mode) ---
+    // -----------------------------------------------------------------------
+    // Shadow depth pass (FullPBRShadows mode only)
+    // -----------------------------------------------------------------------
     ShadowConstants shadowConst = {};
     uint32 shadowCasterCount = lightManager ? lightManager->GetShadowCasterCount() : 0;
 
@@ -98,7 +132,6 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
     {
         m_context->CreateShadowMaps();
 
-        // Build light-view-projection matrices and render shadow depth
         uint32 shadowIdx = 0;
         for (uint32 li = 0; li < builtLights.numActiveLights && shadowIdx < MAX_SHADOW_MAPS; li++)
         {
@@ -108,164 +141,193 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
             const GPULightData& gpuLight = builtLights.lights[li];
             XMMATRIX lvp;
 
-            if (gpuLight.type == 0)
+            if (gpuLight.type == 0)  // Directional
             {
-                // Directional: orthographic projection
                 XMVECTOR dir = XMLoadFloat3(&gpuLight.direction);
                 XMVECTOR pos = XMLoadFloat3(&gpuLight.position);
-                XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-                // Avoid degenerate up vector if light points straight down/up
+                XMVECTOR up  = XMVectorSet(0, 1, 0, 0);
                 if (XMVector3NearEqual(XMVector3Normalize(dir), XMVectorSet(0,-1,0,0), XMVectorReplicate(0.01f)) ||
-                    XMVector3NearEqual(XMVector3Normalize(dir), XMVectorSet(0,1,0,0), XMVectorReplicate(0.01f)))
-                    up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
-                XMMATRIX lightView = XMMatrixLookAtLH(pos, XMVectorAdd(pos, dir), up);
-                XMMATRIX lightProj = XMMatrixOrthographicLH(20.0f, 20.0f, 0.1f, 100.0f);
-                lvp = lightView * lightProj;
+                    XMVector3NearEqual(XMVector3Normalize(dir), XMVectorSet(0, 1,0,0), XMVectorReplicate(0.01f)))
+                    up = XMVectorSet(0, 0, 1, 0);
+                lvp = XMMatrixLookAtLH(pos, XMVectorAdd(pos, dir), up)
+                    * XMMatrixOrthographicLH(20.0f, 20.0f, 0.1f, 100.0f);
             }
-            else if (gpuLight.type == 2)
+            else if (gpuLight.type == 2)  // Spot
             {
-                // Spot: perspective projection
                 XMVECTOR dir = XMLoadFloat3(&gpuLight.direction);
                 XMVECTOR pos = XMLoadFloat3(&gpuLight.position);
-                XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+                XMVECTOR up  = XMVectorSet(0, 1, 0, 0);
                 if (XMVector3NearEqual(XMVector3Normalize(dir), XMVectorSet(0,-1,0,0), XMVectorReplicate(0.01f)) ||
-                    XMVector3NearEqual(XMVector3Normalize(dir), XMVectorSet(0,1,0,0), XMVectorReplicate(0.01f)))
-                    up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
-                XMMATRIX lightView = XMMatrixLookAtLH(pos, XMVectorAdd(pos, dir), up);
+                    XMVector3NearEqual(XMVector3Normalize(dir), XMVectorSet(0, 1,0,0), XMVectorReplicate(0.01f)))
+                    up = XMVectorSet(0, 0, 1, 0);
                 float fov = acosf(gpuLight.outerConeAngle) * 2.0f;
                 if (fov < 0.1f) fov = 0.1f;
-                XMMATRIX lightProj = XMMatrixPerspectiveFovLH(fov, 1.0f, 0.1f, 100.0f);
-                lvp = lightView * lightProj;
+                lvp = XMMatrixLookAtLH(pos, XMVectorAdd(pos, dir), up)
+                    * XMMatrixPerspectiveFovLH(fov, 1.0f, 0.1f, 100.0f);
             }
-            else
+            else  // Point light (cube shadow not yet implemented)
             {
-                // Point light: skip shadow for now (would need cube map)
                 shadowIdx++;
                 continue;
             }
 
-            // Store transposed LVP for GPU (column-major)
             XMStoreFloat4x4(&shadowConst.lightViewProj[shadowIdx], XMMatrixTranspose(lvp));
 
-            // Render shadow depth pass
-            m_context->BeginShadowPass(shadowIdx);
-
-            // Traverse scene and draw all meshes for shadow depth
-            // Use non-transposed lvp for the shadow pass CB (DrawShadowDepth transposes internally)
             XMFLOAT4X4 lvpFloat;
             XMStoreFloat4x4(&lvpFloat, XMMatrixTranspose(lvp));
 
-            graph.Traverse([this, &lvpFloat](SceneNode* node, const XMMATRIX& worldMatrix) {
+            m_context->BeginShadowPass(shadowIdx);
+            graph.Traverse([this, &lvpFloat](SceneNode* node, const XMMATRIX& worldMatrix)
+            {
                 Mesh* mesh = node->GetMesh();
-                if (!mesh)
-                    return;
-
+                if (!mesh) return;
                 UploadMesh(mesh);
                 auto it = m_meshCache.find(mesh);
-                if (it == m_meshCache.end())
-                    return;
+                if (it == m_meshCache.end()) return;
 
                 XMFLOAT4X4 worldFloat;
                 XMStoreFloat4x4(&worldFloat, XMMatrixTranspose(worldMatrix));
-
-                m_context->DrawShadowDepth(it->second.vb.get(), it->second.ib.get(),
-                    worldFloat, lvpFloat);
+                m_context->DrawShadowDepth(
+                    it->second.vb.get(), it->second.ib.get(), worldFloat, lvpFloat);
             });
-
             m_context->EndShadowPass(shadowIdx);
             shadowIdx++;
         }
-
         shadowConst.shadowMapCount = shadowIdx;
     }
-
     m_context->SetShadowData(shadowConst);
 
-    // --- Pass 1: Opaque + Alpha Mask (or Wireframe) ---
-    graph.Traverse([this, &camPos](SceneNode* node, const XMMATRIX& worldMatrix) {
+    // -----------------------------------------------------------------------
+    // Reset per-frame stats
+    // -----------------------------------------------------------------------
+    m_lastCullStats = {};
+    m_lastCullStats.activeLights = static_cast<uint32>(activeLightIndices.size());
+    if (lightManager)
+    {
+        uint32 totalLights = static_cast<uint32>(lightManager->GetActiveLightCount());
+        m_lastCullStats.culledLights = totalLights > m_lastCullStats.activeLights
+            ? totalLights - m_lastCullStats.activeLights : 0u;
+    }
+
+    // -----------------------------------------------------------------------
+    // Pass 1: Opaque + Alpha Mask (or Wireframe)
+    // -----------------------------------------------------------------------
+    graph.Traverse([this, &camPos, &viewProj](
+        SceneNode* node, const XMMATRIX& worldMatrix)
+    {
         Mesh* mesh = node->GetMesh();
-        if (!mesh)
+        if (!mesh) return;
+
+        // --- Frustum culling ---
+        DirectX::BoundingBox worldAABB = node->GetWorldAABB();
+        if (!m_frustumCuller.IsVisible(worldAABB))
+        {
+            m_lastCullStats.frustumCulledNodes++;
             return;
+        }
+
+        // --- Occlusion culling (P0 stub: never culls) ---
+        if (m_occlusionCuller.IsOccluded(worldAABB, viewProj))
+        {
+            m_lastCullStats.occlusionCulledNodes++;
+            return;
+        }
+
+        // --- LOD selection ---
+        XMVECTOR objCenter = XMLoadFloat3(&worldAABB.Center);
+        XMVECTOR camV      = XMLoadFloat3(&camPos);
+        float dist = XMVectorGetX(XMVector3Length(XMVectorSubtract(objCenter, camV)));
+        Mesh* drawMesh = m_lodSelector.SelectLOD(mesh, dist);
 
         Material* material = node->GetMaterial();
-        // Skip blend materials — they go in pass 2
-        if (material && material->alphaMode == AlphaMode::Blend && m_renderMode != RenderMode::Wireframe)
+
+        // Alpha-blend objects go in pass 2
+        if (material && material->alphaMode == AlphaMode::Blend
+            && m_renderMode != RenderMode::Wireframe)
             return;
 
-        UploadMesh(mesh);
-        auto it = m_meshCache.find(mesh);
-        if (it == m_meshCache.end())
-            return;
+        UploadMesh(drawMesh);
+        auto it = m_meshCache.find(drawMesh);
+        if (it == m_meshCache.end()) return;
 
-        XMMATRIX transposed = XMMatrixTranspose(worldMatrix);
         XMFLOAT4X4 worldFloat;
-        XMStoreFloat4x4(&worldFloat, transposed);
+        XMStoreFloat4x4(&worldFloat, XMMatrixTranspose(worldMatrix));
 
         if (m_renderMode == RenderMode::Wireframe)
         {
-            m_context->DrawPrimitivesWireframe(it->second.vb.get(), it->second.ib.get(), worldFloat);
+            m_context->DrawPrimitivesWireframe(
+                it->second.vb.get(), it->second.ib.get(), worldFloat);
         }
         else if (material && m_textureCache)
         {
-            m_context->DrawPrimitivesPBR(it->second.vb.get(), it->second.ib.get(),
+            m_context->DrawPrimitivesPBR(
+                it->second.vb.get(), it->second.ib.get(),
                 worldFloat, material, m_textureCache);
         }
         else
         {
-            m_context->DrawPrimitives(it->second.vb.get(), it->second.ib.get(), worldFloat);
+            m_context->DrawPrimitives(
+                it->second.vb.get(), it->second.ib.get(), worldFloat);
         }
+
+        m_lastCullStats.visibleNodes++;
     });
 
-    // --- Pass 2: Alpha Blend (back-to-front sorted) — skip in Wireframe mode ---
+    // -----------------------------------------------------------------------
+    // Pass 2: Alpha Blend, back-to-front sorted (skip in Wireframe)
+    // -----------------------------------------------------------------------
     if (m_renderMode != RenderMode::Wireframe)
     {
-        struct BlendDrawCall
+        struct BlendDC
         {
             SceneNode* node;
+            Mesh*      drawMesh;
             XMFLOAT4X4 worldFloat;
-            float distSq;
+            float      distSq;
         };
-        std::vector<BlendDrawCall> blendList;
+        std::vector<BlendDC> blendList;
 
-        graph.Traverse([this, &camPos, &blendList](SceneNode* node, const XMMATRIX& worldMatrix) {
+        graph.Traverse([this, &camPos, &viewProj, &blendList](
+            SceneNode* node, const XMMATRIX& worldMatrix)
+        {
             Mesh* mesh = node->GetMesh();
-            if (!mesh)
-                return;
+            if (!mesh) return;
 
             Material* material = node->GetMaterial();
-            if (!material || material->alphaMode != AlphaMode::Blend)
-                return;
+            if (!material || material->alphaMode != AlphaMode::Blend) return;
 
-            UploadMesh(mesh);
-            if (m_meshCache.find(mesh) == m_meshCache.end())
-                return;
+            DirectX::BoundingBox worldAABB = node->GetWorldAABB();
+            if (!m_frustumCuller.IsVisible(worldAABB)) return;
+            if (m_occlusionCuller.IsOccluded(worldAABB, viewProj)) return;
+
+            XMVECTOR objCenter = XMLoadFloat3(&worldAABB.Center);
+            XMVECTOR camV      = XMLoadFloat3(&camPos);
+            XMVECTOR diff      = XMVectorSubtract(objCenter, camV);
+            float distSq = XMVectorGetX(XMVector3Dot(diff, diff));
+            float dist   = sqrtf(distSq);
+
+            Mesh* drawMesh = m_lodSelector.SelectLOD(mesh, dist);
+            UploadMesh(drawMesh);
+            if (m_meshCache.find(drawMesh) == m_meshCache.end()) return;
 
             XMFLOAT4X4 worldFloat;
             XMStoreFloat4x4(&worldFloat, XMMatrixTranspose(worldMatrix));
-
-            XMFLOAT3 objPos;
-            XMStoreFloat3(&objPos, worldMatrix.r[3]);
-            float dx = objPos.x - camPos.x;
-            float dy = objPos.y - camPos.y;
-            float dz = objPos.z - camPos.z;
-            float distSq = dx * dx + dy * dy + dz * dz;
-
-            blendList.push_back({ node, worldFloat, distSq });
+            blendList.push_back({ node, drawMesh, worldFloat, distSq });
         });
 
-        // Sort back-to-front (farthest first)
         std::sort(blendList.begin(), blendList.end(),
-            [](const BlendDrawCall& a, const BlendDrawCall& b) { return a.distSq > b.distSq; });
+            [](const BlendDC& a, const BlendDC& b) { return a.distSq > b.distSq; });
 
         for (auto& dc : blendList)
         {
-            Mesh* mesh = dc.node->GetMesh();
-            auto it = m_meshCache.find(mesh);
-            if (it == m_meshCache.end())
-                continue;
+            auto it = m_meshCache.find(dc.drawMesh);
+            if (it == m_meshCache.end()) continue;
 
-            m_context->DrawPrimitivesPBR(it->second.vb.get(), it->second.ib.get(),
+            m_context->DrawPrimitivesPBR(
+                it->second.vb.get(), it->second.ib.get(),
                 dc.worldFloat, dc.node->GetMaterial(), m_textureCache);
+
+            m_lastCullStats.visibleNodes++;
         }
     }
 }

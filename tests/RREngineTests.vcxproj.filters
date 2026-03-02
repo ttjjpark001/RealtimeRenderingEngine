@@ -17,6 +17,12 @@
     <ClCompile Include="unit\test_AABBSceneNode.cpp">
       <Filter>unit</Filter>
     </ClCompile>
+    <ClCompile Include="unit\test_FrustumCuller.cpp">
+      <Filter>unit</Filter>
+    </ClCompile>
+    <ClCompile Include="unit\test_LightCuller.cpp">
+      <Filter>unit</Filter>
+    </ClCompile>
     <ClCompile Include="smoke\test_RHIBackend.cpp">
       <Filter>smoke</Filter>
     </ClCompile>

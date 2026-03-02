@@ -66,6 +66,17 @@ void DebugHUD::Render(IRHIContext& context)
     context.DrawText(x, y, buf, green);
     y += lineHeight;
 
+    // Culling / LOD stats (Phase 23)
+    snprintf(buf, sizeof(buf), "Visible: %u  Culled: %u",
+        m_lastStats.visibleNodes, m_lastStats.frustumCulledNodes);
+    context.DrawText(x, y, buf, green);
+    y += lineHeight;
+
+    snprintf(buf, sizeof(buf), "Lights: %u active  %u culled",
+        m_lastStats.activeLights, m_lastStats.culledLights);
+    context.DrawText(x, y, buf, green);
+    y += lineHeight;
+
     // Light info (conditional)
     if (m_lastStats.showLightInfo)
     {

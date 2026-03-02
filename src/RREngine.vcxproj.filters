@@ -83,6 +83,18 @@
     <ClCompile Include="Renderer\DebugHUD.cpp">
       <Filter>Renderer</Filter>
     </ClCompile>
+    <ClCompile Include="Renderer\FrustumCuller.cpp">
+      <Filter>Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\OcclusionCuller.cpp">
+      <Filter>Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\LODSelector.cpp">
+      <Filter>Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="Renderer\LightCuller.cpp">
+      <Filter>Renderer</Filter>
+    </ClCompile>
     <ClCompile Include="Scene\Transform.cpp">
       <Filter>Scene</Filter>
     </ClCompile>
@@ -168,6 +180,18 @@
       <Filter>Renderer</Filter>
     </ClInclude>
     <ClInclude Include="Renderer\DebugHUD.h">
+      <Filter>Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\FrustumCuller.h">
+      <Filter>Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\OcclusionCuller.h">
+      <Filter>Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\LODSelector.h">
+      <Filter>Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Renderer\LightCuller.h">
       <Filter>Renderer</Filter>
     </ClInclude>
     <ClInclude Include="Scene\Transform.h">
