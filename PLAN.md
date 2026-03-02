@@ -726,8 +726,14 @@ tests/
    - `Renderer::SetSceneDiagonal(m_sceneDiagonal)` 호출
    - 씬 크기 기반 해상도 선택: ≤ 10m → 1024, ≤ 100m → 2048, > 100m → 4096
    - `D3D12Context::SetShadowMapSize()` + `RecreateShadowMaps()` 호출
+6. **Orbit Light → Directional + castShadow**
+   - Orbit Light 타입 변경: `LightType::Point` → `LightType::Directional`, `castShadow = true`
+   - `Engine::Update()`: `position` 갱신 → `direction` 갱신으로 변경
+     - `offset = right*cos(θ) + up*sin(θ)` (궤도 위치 벡터)
+     - `direction = normalize(-offset)` (궤도 위치에서 씬 중심을 향하는 방향)
+   - Directional 광원이므로 매 프레임 Shadow Depth Pass 1회 실행 → 회전하는 그림자 효과
 
-**완료 기준**: Shadow Map 해상도가 씬 크기에 맞게 자동 선택됨, Shadow Ortho/Perspective 범위가 sceneDiagonal 기반으로 스케일링, ShadowTexelSize가 GPU로 동적 전달, 빌드 오류 0건 (경고 1건 잔존 — FXC 컴파일러 한계)
+**완료 기준**: Shadow Map 해상도가 씬 크기에 맞게 자동 선택됨, Shadow Ortho/Perspective 범위가 sceneDiagonal 기반으로 스케일링, ShadowTexelSize가 GPU로 동적 전달, Orbit Directional Light 회전 그림자 정상 렌더링, 빌드 오류 0건 (경고 1건 잔존 — FXC 컴파일러 한계)
 
 ### Phase 25: Texture Streaming + Mip-Mapping
 **목표**: 필요 Mip만 GPU 로드, 가시성/거리 기반 우선순위

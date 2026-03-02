@@ -130,10 +130,11 @@ tests/
 
 ### 광원 시스템 (Lighting)
 - **Phase 20**: LightManager 기반 3-포인트 라이팅 자동 배치 (PointLight 레거시 제거)
-- 씬 로드 시 Key/Fill/Back 3개 포인트 광원이 자동 배치됨 (초기 씬 없음, 씬 로드 시에만 배치)
-  - Key Light: warm(1.0, 0.95, 0.9), intensity=12 — 우측 상단 전면
-  - Fill Light: cool(0.8, 0.85, 1.0), intensity=6 — 좌측
-  - Back Light: neutral(1, 1, 1), intensity=8 — 후면 상단 (rim)
+- 씬 로드 시 Key/Fill/Back 3개 포인트 광원 + Orbit Directional 광원이 자동 배치됨
+  - Key Light: warm(1.0, 0.95, 0.9), intensity=12 — 우측 상단 전면 (Point)
+  - Fill Light: cool(0.8, 0.85, 1.0), intensity=6 — 좌측 (Point)
+  - Back Light: neutral(1, 1, 1), intensity=8 — 후면 상단 rim (Point)
+  - **Orbit Light**: white(1, 1, 1), intensity=6, `castShadow=true` — **Directional**, 카메라 시선축 주변 궤도 회전 (Phase 24)
 - 씬 로드 시: 바운딩 박스 center + diagonal*0.5 반경 기준 배치, 감쇠 자동 스케일링
 - 거리 기반 감쇠 수식: `attenuation = 1 / (Kc + Kl·d + Kq·d²)` (기본값: Kc=1.0, Kl=0.027, Kq=0.005)
 - 라이팅은 Pixel Shader에서 픽셀 단위(Per-Pixel Lighting)로 계산
@@ -141,6 +142,7 @@ tests/
 - 화면에 광원 정보(색상명, 위치) 표시 가능, "Light" 메뉴에서 on/off 토글
 - 메뉴에서 광원 색상 선택 시 모든 광원에 일괄 적용 (White/Red/Green/Blue/Yellow/Cyan/Magenta)
 - ~~방향키 광원 이동~~, ~~광원 인디케이터 구~~, ~~Reset Position~~ — Phase 20에서 삭제됨
+- **Orbit Light 동작** (Phase 24): 매 프레임 `Engine::Update()`에서 각도 갱신(0.8 rad/s) → `offset = right*cos(θ) + up*sin(θ)` → `direction = normalize(-offset)` (궤도 위치에서 씬 중심을 향하는 방향). Directional이므로 position 불필요, `castShadow=true`로 Shadow Depth Pass 1회 실행
 
 ### 카메라 (Camera)
 - Scene/Camera.h/.cpp에 위치

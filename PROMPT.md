@@ -1541,8 +1541,17 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 24 섹션을 참조하여 Phase 24를 구현
    - 해상도 선택: diagonal > 100m → 4096, > 10m → 2048, else → 1024
    - context->SetShadowMapSize(shadowSize); context->RecreateShadowMaps();
 
+6. Orbit Light를 Directional Light로 전환하고 castShadow=true를 설정한다.
+   - Engine::LoadScene()의 orbit light 생성 코드에서 type = LightType::Directional로 변경
+   - position, Kc/Kl/Kq 제거; direction = {0,-1,0} (초기값, 매 프레임 갱신됨) 설정
+   - castShadow = true 설정 (씬 로드 시 DirectX Depth Pass 1회/프레임 활성화)
+   - Engine::Update()에서 position 대신 direction을 갱신:
+     direction = normalize(-offset)  (offset = 카메라 뷰축 기준 궤도 위치 벡터)
+     → 광원이 항상 씬 중심(원점 방향)을 가리키도록 유지
+
 빌드하여 X4000 경고가 최소화되고, Sponza 로드 시 Shadow Map 해상도 및 투영 범위가
-씬 크기에 맞게 자동 설정되는지 확인하라.
+씬 크기에 맞게 자동 설정되는지 확인하라. Orbit Directional Light가 매 프레임 회전하며
+그림자를 생성하는지 확인하라.
 ```
 
 ---

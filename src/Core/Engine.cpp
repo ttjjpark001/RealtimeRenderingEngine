@@ -255,7 +255,7 @@ void Engine::Shutdown()
 
 void Engine::Update(float deltaTime)
 {
-    // Update orbiting light position (always active)
+    // Update orbiting Directional light direction (always active)
     if (m_camera && m_lightManager && m_orbitLightIndex < m_lightManager->GetActiveLightCount())
     {
         m_orbitLightAngle += 0.8f * deltaTime;
@@ -265,7 +265,6 @@ void Engine::Update(float deltaTime)
         XMVECTOR vCamPos = XMLoadFloat3(&camPos);
         XMVECTOR vCamDir = XMLoadFloat3(&camDir);
 
-        XMVECTOR orbitCenter = XMVectorAdd(vCamPos, XMVectorScale(vCamDir, m_sceneDiagonal * 0.3f));
         float orbitRadius = m_sceneDiagonal * 0.45f;
 
         XMVECTOR worldUp = XMVectorSet(0, 1, 0, 0);
@@ -279,9 +278,10 @@ void Engine::Update(float deltaTime)
             XMVectorScale(up, orbitRadius * sinA)
         );
 
-        XMFLOAT3 lightPos;
-        XMStoreFloat3(&lightPos, XMVectorAdd(orbitCenter, offset));
-        m_lightManager->GetLightMutable(m_orbitLightIndex).position = lightPos;
+        // Direction points from orbit position toward scene center (negative offset)
+        XMFLOAT3 lightDir;
+        XMStoreFloat3(&lightDir, XMVector3Normalize(XMVectorNegate(offset)));
+        m_lightManager->GetLightMutable(m_orbitLightIndex).direction = lightDir;
     }
 
     // Move camera with WASD+QE, adjust FOV with +/-
@@ -594,13 +594,13 @@ void Engine::LoadScene(const std::string& filePath)
         backLight.Kc = 1.0f; backLight.Kl = Kl; backLight.Kq = Kq;
         m_lightManager->AddLight(backLight);
 
-        // Orbiting light: orbits around camera view axis for PBR visualization
+        // Orbiting Directional light: casts shadows, direction orbits around camera view axis
         Light orbitLight;
-        orbitLight.type = LightType::Point;
-        orbitLight.position = center;
-        orbitLight.color = { 1.0f, 1.0f, 1.0f };
-        orbitLight.intensity = 6.0f;
-        orbitLight.Kc = 1.0f; orbitLight.Kl = Kl; orbitLight.Kq = Kq;
+        orbitLight.type       = LightType::Directional;
+        orbitLight.direction  = { 0.0f, -1.0f, 0.0f };  // initial; updated every frame in Update()
+        orbitLight.color      = { 1.0f, 1.0f, 1.0f };
+        orbitLight.intensity  = 6.0f;
+        orbitLight.castShadow = true;
         m_orbitLightIndex = m_lightManager->AddLight(orbitLight);
     }
 

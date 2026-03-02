@@ -22,6 +22,7 @@
 | Shadow Ortho/Perspective 범위 자동 계산 | ✅ 완료 |
 | shadowTexelSize GPU 동적 전달 | ✅ 완료 |
 | PBR.hlsl HLSL X4000 경고 최소화 시도 | ⚠️ 부분 완료 (CalcShadow 경고 1건 잔존) |
+| Orbit Light → Directional + castShadow=true | ✅ 완료 |
 
 ---
 
