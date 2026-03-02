@@ -155,16 +155,21 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
 
             if (gpuLight.type == 0)  // Directional
             {
-                XMVECTOR dir = XMLoadFloat3(&gpuLight.direction);
-                XMVECTOR pos = XMLoadFloat3(&gpuLight.position);
-                XMVECTOR up  = XMVectorSet(0, 1, 0, 0);
+                XMVECTOR dir    = XMLoadFloat3(&gpuLight.direction);
+                XMVECTOR center = XMLoadFloat3(&m_sceneCenter);
+                XMVECTOR up     = XMVectorSet(0, 1, 0, 0);
                 if (XMVector3NearEqual(XMVector3Normalize(dir), XMVectorSet(0,-1,0,0), XMVectorReplicate(0.01f)) ||
                     XMVector3NearEqual(XMVector3Normalize(dir), XMVectorSet(0, 1,0,0), XMVectorReplicate(0.01f)))
                     up = XMVectorSet(0, 0, 1, 0);
                 float orthoSize = m_sceneDiagonal * 1.5f;
                 float farPlane  = m_sceneDiagonal * 3.0f;
-                lvp = XMMatrixLookAtLH(pos, XMVectorAdd(pos, dir), up)
-                    * XMMatrixOrthographicLH(orthoSize, orthoSize, 0.1f, farPlane);
+                // Place shadow camera behind the scene so the entire depth range [near, far]
+                // covers the scene.  Camera at sceneCenter - dir*(farPlane/2),
+                // looking toward sceneCenter + dir*(farPlane/2).
+                XMVECTOR shadowCamPos = XMVectorSubtract(center,
+                    XMVectorScale(dir, farPlane * 0.5f));
+                lvp = XMMatrixLookAtLH(shadowCamPos, XMVectorAdd(shadowCamPos, dir), up)
+                    * XMMatrixOrthographicLH(orthoSize, orthoSize, 1.0f, farPlane);
             }
             else if (gpuLight.type == 2)  // Spot
             {

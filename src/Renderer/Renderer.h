@@ -61,6 +61,10 @@ public:
     // Call after loading a scene whenever sceneDiagonal is known.
     void SetSceneDiagonal(float d)              { m_sceneDiagonal = (d > 0.f ? d : 1.f); }
 
+    // Scene world-space center — used to position the directional shadow camera so
+    // the entire scene falls within the shadow map depth range.
+    void SetSceneCenter(const DirectX::XMFLOAT3& center) { m_sceneCenter = center; }
+
     void SetFrustumCullingEnabled(bool enabled) { m_frustumCullingEnabled = enabled; }
     bool IsFrustumCullingEnabled() const        { return m_frustumCullingEnabled; }
 
@@ -101,6 +105,7 @@ private:
     bool          m_frustumCullingEnabled  = true;
     bool          m_lightCullingEnabled    = true;
     float         m_sceneDiagonal          = 10.0f;
+    DirectX::XMFLOAT3 m_sceneCenter        = { 0.f, 0.f, 0.f };
 
     std::unordered_map<Mesh*, MeshBuffers> m_meshCache;
 

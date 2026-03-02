@@ -609,9 +609,13 @@ void Engine::LoadScene(const std::string& filePath)
     if (m_renderer && !m_loadedMeshes.empty())
         m_renderer->RegisterMeshesForLOD(m_loadedMeshes, m_sceneDiagonal);
 
-    // Notify renderer of scene diagonal (scales shadow ortho/perspective projection).
+    // Notify renderer of scene diagonal and center (shadow ortho projection).
     if (m_renderer)
+    {
         m_renderer->SetSceneDiagonal(m_sceneDiagonal);
+        if (worldBounds.IsValid())
+            m_renderer->SetSceneCenter(worldBounds.GetCenter());
+    }
 
     // Select shadow map resolution based on scene size and recreate shadow maps.
     // Small scenes (<= 10 m diagonal): 1024,  medium (<= 100 m): 2048,  large: 4096.
