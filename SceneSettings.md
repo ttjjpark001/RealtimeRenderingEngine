@@ -16,6 +16,7 @@
 | Scene diagonal | ~37m |
 | 중심 | 원점 근처 (0, 0, 0) |
 | 삼각형 수 | ~262K |
+| glTF root node scale | 0.008 (원본 좌표계 cm → m 변환) |
 
 ### 카메라 추천 세팅
 ```
@@ -51,13 +52,29 @@ intensity:  1.5 ~ 2.0
 castShadow: false
 ```
 
-#### 현재 엔진 4-광원 체계에 맞춘 배치 (Point Light 근사)
-| 역할 | position | color | intensity |
-|------|----------|-------|-----------|
-| Key (태양 근사) | (8, 18, -6) | (1.0, 0.95, 0.8) warm | 10 |
-| Fill (하늘빛) | (-8, 12, 6) | (0.8, 0.85, 1.0) cool | 3 |
-| Back (rim) | (0, 20, 8) | (1.0, 1.0, 1.0) neutral | 4 |
-| Orbit | 현재 구현 그대로 | — | 6 |
+#### 횃불 Point Light (Torch Sconces)
+
+glTF 파일 분석 결과, Sponza에는 중정 4개 코너에 벽면 횃불(sconce)이 **총 4개** 존재한다.
+각 횃불은 bracket(mat 20) + torch body(mat 21) 2개 프리미티브로 구성.
+
+불꽃 위치는 torch body 바운딩박스 상단 + 10cm 오프셋으로 계산.
+좌표는 **Assimp 로딩 후 월드 공간** 기준 (scale 0.008 × aiProcess_ConvertToLeftHanded 적용).
+
+```
+type:       Point
+color:      (1.0, 0.45, 0.08)   // 불꽃 오렌지
+intensity:  3.0
+Kc = 1.0,  Kl = 0.7,  Kq = 1.8  // 유효 반경 ~3-4m
+castShadow: false
+
+positions:
+  { +3.901f, 1.836f, +1.765f }   // 우측-전방
+  { -4.954f, 1.836f, +1.765f }   // 좌측-전방
+  { -4.954f, 1.836f, -1.154f }   // 좌측-후방
+  { +3.901f, 1.836f, -1.154f }   // 우측-후방
+```
+
+> **광원 수 합계**: Key + Fill + 횃불 4개 = 6개 → MAX_PBR_LIGHTS(16) 여유 충분
 
 ### Shadow Map 추천 세팅
 
@@ -91,15 +108,6 @@ castShadow: false
    // 변경 후 (Sponza 권장)
    XMMatrixOrthographicLH(50.0f, 50.0f, 0.1f, 100.0f)
    ```
-
----
-
-## FlightHelmet (glTF)
-
-경로: `assets/test-models/FlightHelmet.gltf`
-
-> 소형 오브젝트 — 기본 Fit to Scene 카메라 배치로 충분.
-> 추천 세팅 미작성 (추후 추가 예정).
 
 ---
 
