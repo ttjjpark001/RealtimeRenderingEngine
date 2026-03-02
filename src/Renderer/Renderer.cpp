@@ -163,13 +163,18 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
                     up = XMVectorSet(0, 0, 1, 0);
                 float orthoSize = m_sceneDiagonal * 1.5f;
                 float farPlane  = m_sceneDiagonal * 3.0f;
+                // nearPlane scales with scene so small models (e.g. FlightHelmet, diagonal~0.66)
+                // don't get their casters clipped.  Shadow cam is diagonal*1.5 from center;
+                // scene geometry starts at diagonal*1.0 from cam, so diagonal*0.5 gives 50%
+                // clearance and keeps near/far ratio at 6:1 (good D32_FLOAT precision).
+                float nearPlane = m_sceneDiagonal * 0.5f;
                 // Place shadow camera behind the scene so the entire depth range [near, far]
                 // covers the scene.  Camera at sceneCenter - dir*(farPlane/2),
                 // looking toward sceneCenter + dir*(farPlane/2).
                 XMVECTOR shadowCamPos = XMVectorSubtract(center,
                     XMVectorScale(dir, farPlane * 0.5f));
                 lvp = XMMatrixLookAtLH(shadowCamPos, XMVectorAdd(shadowCamPos, dir), up)
-                    * XMMatrixOrthographicLH(orthoSize, orthoSize, 1.0f, farPlane);
+                    * XMMatrixOrthographicLH(orthoSize, orthoSize, nearPlane, farPlane);
             }
             else if (gpuLight.type == 2)  // Spot
             {
@@ -181,9 +186,10 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
                     up = XMVectorSet(0, 0, 1, 0);
                 float fov = acosf(gpuLight.outerConeAngle) * 2.0f;
                 if (fov < 0.1f) fov = 0.1f;
-                float spotFar = m_sceneDiagonal * 3.0f;
+                float spotFar  = m_sceneDiagonal * 3.0f;
+                float spotNear = m_sceneDiagonal * 0.05f;  // scale with scene; was hardcoded 0.1f
                 lvp = XMMatrixLookAtLH(pos, XMVectorAdd(pos, dir), up)
-                    * XMMatrixPerspectiveFovLH(fov, 1.0f, 0.1f, spotFar);
+                    * XMMatrixPerspectiveFovLH(fov, 1.0f, spotNear, spotFar);
             }
             else  // Point light (cube shadow not yet implemented)
             {
