@@ -749,7 +749,7 @@ tests/
 3. DrawIndexedInstanced 호출
 4. `src/Core/ThreadPool.h/.cpp` — CPU 코어 수 기반 워커 스레드
 5. 텍스처 디코딩 병렬화: 스레드 풀에 태스크 제출
-6. Copy Queue (P1): Graphics Queue와 병렬 업로드
+6. Copy Queue: Graphics Queue와 병렬 업로드
 
 **완료 기준**: 동일 메시 인스턴싱으로 드로우콜 감소, 멀티스레드 텍스처 디코딩
 
@@ -849,7 +849,7 @@ tests/
    - 판정 결과를 GPU Buffer → CPU readback (1프레임 레이턴시)
 
 4. **OcclusionCuller 교체**:
-   - CPU readback(P0) 방식 제거 또는 플래그로 선택적 전환
+   - CPU readback(Phase 23.5) 방식 제거 또는 플래그로 선택적 전환
    - Hi-Z 결과를 `OcclusionCuller::IsOccluded()` 경로에 통합
    - `occlusionCulledNodes` 통계 유지, DebugHUD 표시
 

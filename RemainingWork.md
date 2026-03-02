@@ -44,7 +44,7 @@ Phase 28 통합 단계에 넣기에는 신규 D3D12 리소스 작업이 포함�
 | `occlusionCulledNodes` 통계 | CullStats 반영, DebugHUD 표시 |
 | Optimization 메뉴 항목 추가 | `ID_OPTIM_OCCLUSION_CULL = 8004` |
 
-**P1 (Hi-Z GPU 방식) → Phase 30에서 구현**
+**Hi-Z GPU 방식 → Phase 30에서 구현**
 
 | 작업 | 설명 |
 |------|------|
@@ -52,7 +52,7 @@ Phase 28 통합 단계에 넣기에는 신규 D3D12 리소스 작업이 포함�
 | Depth Mip chain (UAV) 생성 | 이전 프레임 Depth Buffer를 반씩 축소하는 Compute 패스 |
 | GPU-side AABB depth 비교 | Compute Shader에서 AABB 투영 + Mip 레벨 depth 샘플링 |
 
-> P1은 Phase 30에서 구현한다. Compute Shader 인프라 구축이 선행 조건이다.
+> Hi-Z GPU 방식은 Phase 30에서 구현한다. Compute Shader 인프라 구축이 선행 조건이다.
 
 ---
 
@@ -89,7 +89,7 @@ Phase 28 통합 단계에 넣기에는 신규 D3D12 리소스 작업이 포함�
 |------|-----------|------|
 | `ThreadPool.h/.cpp` | 미존재 | CPU 코어 수 기반 워커 스레드 |
 | 텍스처 디코딩 병렬화 | 순차 실행 | 씬 로드 중 메인 스레드 프리즈 원인 |
-| Copy Queue (P1) | 없음 | Graphics Queue와 병렬 GPU 업로드 |
+| Copy Queue | 없음 | Graphics Queue와 병렬 GPU 업로드 (Phase 26) |
 
 ---
 
@@ -156,7 +156,7 @@ CPU Readback 방식(Phase 23.5)을 대체하는 GPU Hi-Z Occlusion Culling. Comp
 | Compute Shader 인프라 | `D3D12ComputePipeline.h/.cpp` 신규, `D3D12Context::Dispatch()` 추가, UAV descriptor 관리 |
 | Hi-Z Buffer 생성 | 이전 프레임 Depth → `R32_FLOAT` SRV 복사 후 Compute로 Mip chain(UAV) 생성 |
 | GPU-side AABB 비교 | AABB 8코너 → NDC → screen-space min/max, 최적 Mip 레벨 샘플링, 근거리 Z 비교 |
-| CPU readback 제거/전환 | P0 방식 제거 또는 플래그로 선택 전환 |
+| CPU readback 제거/전환 | Phase 23.5 방식 제거 또는 플래그로 선택 전환 |
 | `occlusionCulledNodes` 통계 | CullStats 유지, DebugHUD 표시 |
 
 ---
@@ -207,5 +207,5 @@ Phase 31    Point Light Cube Map Shadowing
 ## 기타 메모
 
 - **PBR.hlsl CalcShadow X4000 경고**: FXC 컴파일러 한계 — 비교 샘플러(`SamplerComparisonState`)와 동적 cbuffer 인덱스 조합에서 발생하는 고유 quirk. `SampleShadowMap`을 `if/else-if` 체인 + 명시적 초기화로 변경하여 SampleShadowMap 경고는 제거했지만 CalcShadow 경고 1건 잔존. Phase 29에서 `Texture2DArray` 방식으로 리팩터링 검토.
-- **Occlusion Culling Optimization 메뉴 항목**: P0 구현 완료 후 `ID_OPTIM_OCCLUSION_CULL = 8004` 추가
+- **Occlusion Culling Optimization 메뉴 항목**: Phase 23.5 구현 완료 후 `ID_OPTIM_OCCLUSION_CULL = 8004` 추가
 - **Shadow Map SRV 누수**: `RecreateShadowMaps()` 호출 시 persistent descriptor heap에 이전 SRV 8개가 남음 (최대 1024개 중). 개발 엔진 용량 내 허용 범위이나 Phase 29에서 정리 권장.

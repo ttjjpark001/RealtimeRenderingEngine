@@ -998,7 +998,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 19를 구현
    - 대각선 길이 기반 적절한 카메라 거리 산출
    - "Camera" 메뉴에 "Fit to Scene" 항목으로 수동 호출 가능
 
-4. 드래그 앤 드롭을 구현한다 (P1).
+4. 드래그 앤 드롭을 구현한다. (→ Phase 29에서 구현 예정)
    - DragAcceptFiles(hwnd, TRUE) 호출
    - WM_DROPFILES → DragQueryFile로 파일 경로 추출 → 위 2와 동일 흐름
 
@@ -1007,9 +1007,9 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 19를 구현
      마우스 이동량 → Yaw/Pitch 회전 (FPS 스타일)
    - 마우스 휠 (WM_MOUSEWHEEL):
      전진/후진 (돌리 줌)
-   - 중클릭 드래그 (WM_MBUTTONDOWN + WM_MOUSEMOVE, P1):
+   - 중클릭 드래그 (WM_MBUTTONDOWN + WM_MOUSEMOVE): (→ Phase 29에서 구현 예정)
      상하좌우 패닝
-   - 이동 속도 자동 조절: 씬 바운딩 박스 크기에 비례 (P1)
+   - 이동 속도 자동 조절: 씬 바운딩 박스 크기에 비례
 
 6. 카메라 키보드 네비게이션을 구현한다.
    - WASD: 카메라 시선 방향 기준 전진/후퇴/좌/우 이동
@@ -1100,7 +1100,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 20를 구현
      FullPBR: PBR PSO, 모든 텍스처 활성, Shadow Pass 스킵
      FullPBRShadows: Shadow Depth Pass + PBR PSO + Shadow Map 바인딩
 
-8. DebugHUD에 현재 렌더링 모드 이름을 표시한다 (P1).
+8. DebugHUD에 현재 렌더링 모드 이름을 표시한다. (→ Phase 28에서 구현 예정)
    - "Render: Full PBR + Shadows" 등
 
 === Part C: PBR 라이팅 버그 수정 ===
@@ -1418,7 +1418,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 23를 구현
    - IsVisible(const BoundingBox& aabb) → bool (m_frustum.Intersects(aabb))
    - BoundingBox vs Frustum 6-plane 교차 검사 (BoundingBox::Intersects)
    - Scene Graph 순회 시 culled 노드는 DrawPrimitives 스킵
-   - Shadow Depth Pass에도 적용 (광원 시점 frustum, P1)
+   - Shadow Depth Pass에도 적용 (광원 시점 frustum) — Phase 28에서 구현 예정
 
 2. src/Renderer/OcclusionCuller.h/.cpp를 만든다.
    - P0 스텁: IsOccluded() 항상 false 반환 (보수적 판정, popping 방지)
@@ -1566,7 +1566,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 25를 구현
 3. Mip chain 생성을 구현한다.
    - 전체 Mip 수: floor(log2(max(width, height))) + 1
    - D3D12 텍스처: MipLevels 파라미터 설정
-   - Mip 데이터: CPU box filter (또는 GPU compute shader, P1)
+   - Mip 데이터: CPU box filter (또는 GPU compute shader)
 
 4. Sampler를 업그레이드한다.
    - s0: D3D12_FILTER_ANISOTROPIC, MaxAnisotropy = 16
@@ -1610,7 +1610,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 26를 구현
    - Submit(task) → std::future<T> 반환
    - 텍스처 이미지 디코딩을 워커 스레드에 분배
 
-6. Copy Queue를 구현한다 (P1).
+6. Copy Queue를 구현한다.
    - D3D12 Copy Queue 전용 Command Allocator + Command List
    - Graphics Queue와 병렬로 리소스 업로드
    - Fence로 Copy 완료 동기화

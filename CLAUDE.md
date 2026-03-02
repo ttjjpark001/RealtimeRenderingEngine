@@ -451,7 +451,7 @@ struct Light {
 **Shadow Map 생성 (Depth Pass):**
 - Directional Light: Orthographic 투영으로 Shadow Map 렌더링
 - Spot Light: Perspective 투영 (FOV = outerConeAngle × 2)으로 Shadow Map 렌더링
-- Point Light: 6면 Cube Map (Omnidirectional Shadow Map), P1 우선순위
+- Point Light: 6면 Cube Map (Omnidirectional Shadow Map) — Phase 31에서 구현 예정
 - Shadow Map 해상도: 씬 크기(diagonal) 기반 자동 선택 — ≤10m: 1024, ≤100m: 2048, >100m: 4096
   - `D3D12Context::SetShadowMapSize()` + `RecreateShadowMaps()`으로 런타임 재생성 가능
 - Shadow Ortho/Perspective 범위: `Renderer::m_sceneDiagonal` 기반 자동 스케일
@@ -629,8 +629,8 @@ struct Light {
 #### Occlusion Culling
 
 - **목적**: Frustum 안에 있지만 다른 오브젝트에 완전히 가려진 오브젝트의 CB 갱신 + 드로우콜을 모두 스킵
-- **Hi-Z 기반 (P1)**: 이전 프레임의 depth buffer를 축소 Mip chain으로 생성 → 오브젝트 AABB를 해당 Mip에서 depth 비교
-- **간이 방식 (P0)**: 이전 프레임의 depth buffer를 CPU로 readback하여 AABB의 screen-space 영역 depth 비교
+- **Hi-Z 기반 (Phase 30)**: 이전 프레임의 depth buffer를 축소 Mip chain으로 생성 → 오브젝트 AABB를 해당 Mip에서 depth 비교
+- **간이 방식 (Phase 23.5)**: 이전 프레임의 depth buffer를 CPU로 readback하여 AABB의 screen-space 영역 depth 비교
 - **Occluded 판정 시**: Constant Buffer 갱신, 텍스처 바인딩, DrawCall 모두 스킵
 - **보수적 판정**: 경계 케이스에서는 visible로 판정 (과도한 popping 방지)
 - 구현 위치: `src/Renderer/OcclusionCuller.h/.cpp`
@@ -715,7 +715,7 @@ struct Light {
   - 파싱 완료 후 Mesh VB/IB 생성, 텍스처 디코딩을 워커 스레드에 분배
   - 각 텍스처 이미지를 별도 태스크로 스레드 풀에 제출 → 병렬 디코딩
 - **GPU 업로드**: 디코딩 완료 데이터는 메인 스레드에서 Upload Buffer → Default Heap 복사
-- **Copy Queue (P1)**: D3D12 Copy Queue를 Graphics Queue와 별도로 운용하여 업로드와 렌더링을 병렬화
+- **Copy Queue (Phase 26)**: D3D12 Copy Queue를 Graphics Queue와 별도로 운용하여 업로드와 렌더링을 병렬화
   - Copy Queue 전용 Command Allocator + Command List
   - Fence로 Copy 완료 동기화 후 Graphics Queue에서 사용
 - **로딩 중 렌더링**: 폴백 리소스(1×1 텍스처, 기본 Material)로 즉시 렌더링 가능
