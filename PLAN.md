@@ -820,6 +820,68 @@ tests/
 
 **완료 기준**: 전체 코드 리뷰 완료, 모든 테스트 통과, D3D12 Debug Layer 경고 0건, PBR.hlsl X4000 잔존 경고 제거, ARCHITECTURE.md 작성 완료
 
+---
+
+### Phase 30: Occlusion Culling P1 — Hi-Z GPU
+**목표**: CPU Readback 방식(Phase 23.5)을 대체하는 GPU Hi-Z Occlusion Culling 구현.
+현재 엔진에 Compute Shader 인프라가 없으므로, 먼저 인프라를 구축한 뒤 Hi-Z를 구현한다.
+
+1. **Compute Shader 인프라 구축**:
+   - `D3D12ComputePipeline.h/.cpp`: CS 전용 Root Signature + ID3D12PipelineState(CS)
+   - `D3D12Context::Dispatch(x, y, z)` 지원 추가
+   - UAV descriptor 관리 (CBV_SRV_UAV heap 확장)
+
+2. **Hi-Z (Hierarchical-Z) Buffer 생성**:
+   - 이전 프레임 Depth Buffer(`DXGI_FORMAT_D32_FLOAT`)를 `DXGI_FORMAT_R32_FLOAT` SRV로 복사
+   - Compute Shader로 반씩 축소하는 Mip chain 생성 (UAV write, SRV read 교차)
+   - 최대 `floor(log2(max(w,h)))` 단계 Mip 생성
+
+3. **GPU-side AABB depth 비교**:
+   - Compute Shader: SceneNode AABB 8개 코너 → ViewProj → NDC → screen-space min/max
+   - 최적 Mip 레벨 계산: `floor(log2(maxExtent_pixels))`
+   - Hi-Z Mip 샘플링 후 AABB 근거리 Z와 비교 → occluded 여부 판정
+   - 판정 결과를 GPU Buffer → CPU readback (1프레임 레이턴시)
+
+4. **OcclusionCuller 교체**:
+   - CPU readback(P0) 방식 제거 또는 플래그로 선택적 전환
+   - Hi-Z 결과를 `OcclusionCuller::IsOccluded()` 경로에 통합
+   - `occlusionCulledNodes` 통계 유지, DebugHUD 표시
+
+**완료 기준**: Sponza에서 Hi-Z Occlusion Culling 활성화 시 CPU readback 방식 대비 GPU stall 감소, 드로우콜 절감 수치 DebugHUD 확인
+
+---
+
+### Phase 31: Point Light Cube Map Shadowing
+**목표**: `castShadow = true`인 Point Light에 대해 6면 Cube Map 기반 Omnidirectional Shadow Map 구현.
+
+1. **TextureCube D3D12 리소스 생성**:
+   - `TEXTURE2D_ARRAY` (ArraySize=6, `DXGI_FORMAT_D32_FLOAT`) 리소스 생성
+   - 각 면에 대해 DSV 6개 (depth write) + SRV 1개 (TextureCube sampling) 생성
+   - 최대 `MAX_POINT_SHADOW_LIGHTS = 4`개 Point Light shadow 지원
+
+2. **6-pass Shadow Depth 렌더링**:
+   - 광원 1개당 ±X/±Y/±Z 방향으로 6회 Shadow Depth Pass
+   - View 행렬: 각 면 방향의 `XMMatrixLookAtLH`, Projection: `XMMatrixPerspectiveFovLH(π/2, 1.0f, 0.01f, farPlane)`
+   - 기존 `BeginShadowPass / DrawShadowDepth / EndShadowPass` 패턴 재사용
+
+3. **HLSL 확장 (PBR.hlsl)**:
+   - `TextureCube PointShadowMap[MAX_POINT_SHADOW_LIGHTS]` 바인딩 (register 확장)
+   - Point light shadow factor: `lightToPixel` 방향 벡터로 cube map lookup → depth 비교 (+ bias)
+   - `SamplerComparisonState` 또는 수동 depth 비교 (`ShadowCubeMap.Sample` + manual compare)
+
+4. **LightConstants 확장**:
+   - `shadowMapIndex`: Point light는 Cube map 슬롯 인덱스로 재사용
+   - Directional/Spot(Texture2D) vs Point(TextureCube) 타입 구분 플래그 추가
+
+5. **성능 관리**:
+   - 최대 4개 Point light shadow 허용 (6pass × 4 = 24 depth pass/frame)
+   - LightCuller와 연동: shadow casting Point light도 거리 기반 culling 적용
+   - DebugHUD에 Cube Shadow Pass 수 표시
+
+**완료 기준**: Point light `castShadow = true` 설정 시 구면 그림자 정상 렌더링, PCF 적용으로 경계 부드러움, Sponza 횃불 위치에 그림자 확인 가능
+
+---
+
 ## Phase 02 의존성 그래프
 
 ```
@@ -848,6 +910,10 @@ Phase 11 (Phase 01 완료)
     └────────────────────────────────────────────────────── Phase 28 (통합) ─┘
                                                                              │
                                                             Phase 29 (코드 리뷰 + ARCHITECTURE.md) ─┘
+                                                                             │
+                                                            Phase 30 (Occlusion Culling P1: Hi-Z GPU)
+                                                                             │
+                                                            Phase 31 (Point Light Cube Map Shadowing)
 ```
 
 ## Phase 02 리스크 & 대응

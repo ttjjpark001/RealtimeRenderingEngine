@@ -44,7 +44,7 @@ Phase 28 통합 단계에 넣기에는 신규 D3D12 리소스 작업이 포함�
 | `occlusionCulledNodes` 통계 | CullStats 반영, DebugHUD 표시 |
 | Optimization 메뉴 항목 추가 | `ID_OPTIM_OCCLUSION_CULL = 8004` |
 
-**P1 (Hi-Z GPU 방식) — 별도 확장으로 이연**
+**P1 (Hi-Z GPU 방식) → Phase 30에서 구현**
 
 | 작업 | 설명 |
 |------|------|
@@ -52,7 +52,7 @@ Phase 28 통합 단계에 넣기에는 신규 D3D12 리소스 작업이 포함�
 | Depth Mip chain (UAV) 생성 | 이전 프레임 Depth Buffer를 반씩 축소하는 Compute 패스 |
 | GPU-side AABB depth 비교 | Compute Shader에서 AABB 투영 + Mip 레벨 depth 샘플링 |
 
-> P1은 Phase 29 이후 별도 확장으로 구현하는 것이 현실적이다.
+> P1은 Phase 30에서 구현한다. Compute Shader 인프라 구축이 선행 조건이다.
 
 ---
 
@@ -147,13 +147,41 @@ Phase 25~27 완료 후 전체 파이프라인 연결 및 검증.
 
 ---
 
+### Phase 30 — Occlusion Culling P1 (Hi-Z GPU)
+
+CPU Readback 방식(Phase 23.5)을 대체하는 GPU Hi-Z Occlusion Culling. Compute Shader 파이프라인 인프라 구축이 선행 조건.
+
+| 작업 | 설명 |
+|------|------|
+| Compute Shader 인프라 | `D3D12ComputePipeline.h/.cpp` 신규, `D3D12Context::Dispatch()` 추가, UAV descriptor 관리 |
+| Hi-Z Buffer 생성 | 이전 프레임 Depth → `R32_FLOAT` SRV 복사 후 Compute로 Mip chain(UAV) 생성 |
+| GPU-side AABB 비교 | AABB 8코너 → NDC → screen-space min/max, 최적 Mip 레벨 샘플링, 근거리 Z 비교 |
+| CPU readback 제거/전환 | P0 방식 제거 또는 플래그로 선택 전환 |
+| `occlusionCulledNodes` 통계 | CullStats 유지, DebugHUD 표시 |
+
+---
+
+### Phase 31 — Point Light Cube Map Shadowing
+
+`castShadow = true`인 Point Light에 대해 6면 TextureCube 기반 Omnidirectional Shadow Map 구현.
+
+| 작업 | 설명 |
+|------|------|
+| TextureCube 리소스 생성 | `TEXTURE2D_ARRAY` (ArraySize=6, D32_FLOAT), 6개 DSV + 1개 SRV, 최대 4광원 |
+| 6-pass Shadow Depth | 광원 1개당 ±X/±Y/±Z 방향 6회 depth pass, FOV=90°, aspect=1.0 |
+| HLSL TextureCube 샘플링 | `TextureCube PointShadowMap[]` 바인딩, `lightToPixel` 방향 벡터로 depth lookup |
+| LightConstants 타입 구분 | Directional/Spot(Texture2D) vs Point(TextureCube) 구분 플래그 추가 |
+| LightCuller 연동 | shadow casting Point light도 거리 기반 culling 적용 |
+| DebugHUD | Cube Shadow Pass 수 표시 |
+
+---
+
 ## 권장 구현 순서
 
 ```
 Phase 24   완료 ✅  (HLSL 경고 + Shadow Map 자동 크기 조정)
     │
 Phase 23.5  Occlusion Culling P0 (CPU Readback)
-    │           → P1(Hi-Z)은 Phase 29 이후 별도 확장
     │
 Phase 25    Texture Streaming + Mip-Mapping
     │           + Anisotropic Sampler 교체
@@ -167,8 +195,11 @@ Phase 28    통합 & 벤치마크 (Sponza 60fps 목표)
     │
 Phase 29    코드 리뷰 + CalcShadow X4000 재검토 + ARCHITECTURE.md
     │
-(미래)      Occlusion Culling P1 (Hi-Z GPU)
-            Compute Shader 파이프라인 구축 후 구현
+Phase 30    Occlusion Culling P1 (Hi-Z GPU)
+    │           Compute Shader 파이프라인 구축 후 구현
+    │
+Phase 31    Point Light Cube Map Shadowing
+            Omnidirectional Shadow Map (TextureCube, 6-pass depth)
 ```
 
 ---

@@ -1742,3 +1742,111 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 28를 구현
 빌드하여 모든 테스트가 통과하고, D3D12 Debug Layer 경고가 0건이며,
 ARCHITECTURE.md가 프로젝트 루트에 생성되었는지 확인하라.
 ```
+
+---
+
+## Prompt 29: Occlusion Culling P1 — Hi-Z GPU
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 30 섹션을 참조하여 Phase 30을 구현하라.
+이 단계는 CPU Readback 방식(Phase 23.5)을 GPU Hi-Z Occlusion Culling으로 대체한다.
+현재 엔진에 Compute Shader 인프라가 없으므로, 먼저 인프라를 구축한다.
+
+1. Compute Shader 인프라를 구축한다.
+   - src/RHI/D3D12/D3D12ComputePipeline.h/.cpp를 신규 생성한다.
+     · CS 전용 Root Signature 생성 (UAV, SRV, CBV 슬롯 정의)
+     · ID3D12PipelineState (ComputePipelineStateDesc) 생성/관리
+   - D3D12Context에 Dispatch(x, y, z) 메서드를 추가한다.
+   - CBV_SRV_UAV DescriptorHeap을 UAV 슬롯이 포함되도록 확장한다.
+
+2. Hi-Z (Hierarchical-Z) Buffer를 생성한다.
+   - 이전 프레임 Depth Buffer(DXGI_FORMAT_D32_FLOAT)를 DXGI_FORMAT_R32_FLOAT로 복사한다.
+     · CopyTextureRegion 또는 Compute Shader를 사용하여 복사한다.
+   - 복사된 텍스처를 시작으로 반씩 축소하는 Mip chain을 Compute Shader로 생성한다.
+     · 각 Mip 단계: UAV(write) 바인딩, SRV(read) 바인딩 교차
+     · 축소 필터: max(depth) — 보수적 occlusion 판정을 위해 최대값 사용
+     · 최대 floor(log2(max(width, height))) 단계 생성
+   - Hi-Z HLSL 파일: src/Shaders/HiZDownsample.hlsl
+
+3. GPU-side AABB depth 비교 Compute Shader를 구현한다.
+   - src/Shaders/OcclusionTest.hlsl을 신규 생성한다.
+   - 입력: SceneNode AABB(center + extents) 배열 StructuredBuffer, ViewProj 행렬 CBV
+   - 처리:
+     a. AABB 8개 코너를 NDC로 변환
+     b. screen-space min/max (UV 공간) 계산
+     c. 최적 Mip 레벨 계산: floor(log2(maxExtent_pixels))
+     d. Hi-Z Mip 텍스처에서 해당 영역 depth 샘플링
+     e. AABB 근거리 Z와 비교 → RWByteAddressBuffer에 결과(0/1) 기록
+   - 출력 결과를 Readback Buffer로 복사, 1프레임 레이턴시로 CPU에서 읽는다.
+
+4. OcclusionCuller를 Hi-Z 방식으로 교체한다.
+   - src/Renderer/OcclusionCuller.h/.cpp를 수정한다.
+   - 기존 CPU readback 방식을 Hi-Z GPU 방식으로 대체하거나,
+     bool m_useHiZ 플래그로 두 방식 선택적 전환이 가능하도록 한다.
+   - IsOccluded()가 GPU 결과 버퍼의 값을 반환하도록 구현한다.
+   - occlusionCulledNodes 통계를 CullStats에 반영하고 DebugHUD에 표시한다.
+
+5. 성능을 검증한다.
+   - Sponza 씬에서 Hi-Z Occlusion Culling 활성화 시 드로우콜 수 감소 확인
+   - DebugHUD에서 occlusionCulledNodes 수치 및 FPS 개선 확인
+   - CPU readback 방식 대비 GPU stall 감소 확인
+
+빌드하여 모든 테스트가 통과하고, Hi-Z Occlusion Culling이 Sponza에서 정상 동작하는지 확인하라.
+```
+
+---
+
+## Prompt 30: Point Light Cube Map Shadowing
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 31 섹션을 참조하여 Phase 31을 구현하라.
+이 단계는 castShadow = true인 Point Light에 대해 Omnidirectional Shadow Map(TextureCube)을 구현한다.
+
+1. TextureCube D3D12 리소스를 생성한다.
+   - D3D12Context에 Point light 전용 Cube Shadow Map 리소스를 추가한다.
+     · ID3D12Resource: TEXTURE2D_ARRAY (ArraySize=6, DXGI_FORMAT_D32_FLOAT)
+     · 각 면에 대해 DSV 6개 (depth write용) 생성
+     · SRV 1개 (TextureCube로 전체 6면 샘플링) 생성
+     · 최대 MAX_POINT_SHADOW_LIGHTS = 4개 Point light shadow 지원
+   - CreateCubeShadowMaps(), RecreateCubeShadowMaps() 메서드 추가
+
+2. 6-pass Shadow Depth 렌더링을 구현한다.
+   - Renderer::RenderScene()의 Shadow Depth Pass 루프를 확장한다.
+   - Point light 분기에서 기존 'continue' 스킵을 제거하고 6-pass를 실행한다.
+     · 6면 방향: +X(-Z up), -X(-Z up), +Y(-X up), -Y(+X up), +Z(-Z up), -Z(-Z up)
+       (D3D12 TextureCube 면 순서: +X, -X, +Y, -Y, +Z, -Z)
+     · 각 면 View 행렬: XMMatrixLookAtLH(lightPos, lightPos+faceDir, faceUp)
+     · Projection: XMMatrixPerspectiveFovLH(XM_PIDIV2, 1.0f, nearPlane, farPlane)
+       (XM_PIDIV2 = 90°, aspect=1.0, farPlane = m_sceneDiagonal * 3.0f)
+   - D3D12Context::BeginShadowPass(shadowIdx, faceIndex)와
+     EndShadowPass(shadowIdx, faceIndex) 오버로드 또는 별도 BeginCubeShadowPass() 추가
+
+3. HLSL PBR.hlsl을 확장한다.
+   - TextureCube 바인딩 추가:
+     TextureCube PointShadowMap0 : register(t13);
+     TextureCube PointShadowMap1 : register(t14);
+     TextureCube PointShadowMap2 : register(t15);
+     TextureCube PointShadowMap3 : register(t16);
+   - SamplePointShadow(uint idx, float3 lightToPixel, float depth) 함수 구현:
+     · lightToPixel = normalize(pixelWorldPos - lightPos)
+     · TextureCube에서 SampleCmpLevelZero 또는 Sample + 수동 depth 비교
+     · depth = length(pixelWorldPos - lightPos) / farPlane (정규화)
+   - CalcShadow()를 Point light 타입에서 SamplePointShadow()를 호출하도록 분기
+
+4. LightConstants와 LightData를 확장한다.
+   - Light.h: shadowType 필드 추가 (0=Texture2D, 1=TextureCube)
+   - LightManager::BuildLightConstants(): Point light castShadow에 pointShadowIdx 할당
+   - HLSL LightData 구조체: shadowType 필드 추가 (uint)
+
+5. Root Signature를 확장한다.
+   - D3D12Context의 Root Signature에 t13~t16 SRV 슬롯 추가
+   - 라이팅 패스에서 Cube Shadow Map SRV 바인딩
+
+6. 성능을 관리한다.
+   - 최대 4개 Point light shadow 허용 (6pass × 4 = 24 depth pass/frame)
+   - LightCuller와 연동: shadow casting Point light도 거리 기반 culling 적용
+   - DebugHUD에 Cube Shadow Pass 수 표시
+
+빌드하여 모든 테스트가 통과하고, Sponza 씬에서 횃불 위치(castShadow=true Point light)의
+구면 그림자가 정상 렌더링되는지 확인하라.
+```

@@ -91,23 +91,10 @@ positions:
 > **주의**: Shadow Map 해상도를 4096으로 올리면 VRAM 사용량이 증가한다.
 > D32_FLOAT 기준 4096×4096 = 64MB/장 × 최대 8장 = 512MB.
 > 실용적으로는 **2048×2048** (16MB/장)로 시작하고, 품질 부족 시 4096으로 올린다.
-
-#### 수정 포인트 요약
-1. `src/RHI/D3D12/D3D12Context.h`
-   ```cpp
-   // 변경 전
-   static constexpr uint32 SHADOW_MAP_SIZE = 1024;
-   // 변경 후 (Sponza 권장)
-   static constexpr uint32 SHADOW_MAP_SIZE = 2048;  // 또는 4096
-   ```
-
-2. `src/Renderer/Renderer.cpp` — Directional Light LVP 생성부
-   ```cpp
-   // 변경 전
-   XMMatrixOrthographicLH(20.0f, 20.0f, 0.1f, 100.0f)
-   // 변경 후 (Sponza 권장)
-   XMMatrixOrthographicLH(50.0f, 50.0f, 0.1f, 100.0f)
-   ```
+>
+> **Phase 24 이후**: Shadow Map 해상도와 Ortho 범위는 씬 로드 시 `m_sceneDiagonal`을 기준으로
+> 자동 결정된다 (`Engine::LoadScene()` → `SetSceneDiagonal()` + `RecreateShadowMaps()`).
+> Sponza diagonal ≈ 37m → 해상도 **2048**, orthoSize **55.5m**, far **111m** 자동 적용.
 
 ---
 
