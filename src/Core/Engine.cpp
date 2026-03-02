@@ -296,17 +296,14 @@ void Engine::Update(float deltaTime)
         stats.width = m_window->GetWidth();
         stats.height = m_window->GetHeight();
         stats.aspectRatio = static_cast<float>(stats.width) / static_cast<float>(stats.height);
-        // Use actual rendered polygon count (after culling + LOD) from the renderer.
-        // Falls back to total scene polygon count before the first frame is rendered.
-        if (m_renderer && m_renderer->GetLastCullStats().renderedPolygons > 0)
-        {
-            stats.totalPolygons = m_renderer->GetLastCullStats().renderedPolygons;
-        }
-        else
-        {
-            stats.totalPolygons = m_sceneGraph ? m_sceneGraph->GetTotalPolygonCount() : 0;
-        }
-        stats.polygonsPerSec = stats.totalPolygons * (1.0f / deltaTime);
+        // Full scene polygon count (before any culling or LOD)
+        stats.totalPolygons = m_sceneGraph ? m_sceneGraph->GetTotalPolygonCount() : 0;
+
+        // Actual rendered polygon count (after frustum culling + LOD selection)
+        if (m_renderer)
+            stats.renderedPolygons = m_renderer->GetLastCullStats().renderedPolygons;
+
+        stats.polygonsPerSec = stats.renderedPolygons * (1.0f / deltaTime);
 
         // Count SceneNodes and mesh nodes
         if (m_sceneGraph)

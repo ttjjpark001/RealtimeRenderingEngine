@@ -14,8 +14,9 @@ struct RenderStats
     uint32 width;
     uint32 height;
     float aspectRatio;
-    uint32 totalPolygons;
-    float polygonsPerSec;
+    uint32 totalPolygons    = 0;  // full scene polygon count (no culling/LOD)
+    uint32 renderedPolygons = 0;  // actual polygons submitted after culling + LOD
+    float polygonsPerSec    = 0.0f;
 
     // Scene node / mesh counts (Phase 22)
     uint32 totalNodes = 0;
