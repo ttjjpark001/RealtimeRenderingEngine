@@ -441,10 +441,26 @@ void Engine::ShowOpenSceneDialog()
 
 void Engine::LoadSponzaScene()
 {
-    static const std::string kPath = "assets/test-models/Sponza/glTF/Sponza.gltf";
+    // Show file open dialog (same as Open Scene), then apply Sponza-specific settings
+    wchar_t filePath[MAX_PATH] = {};
+
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner   = m_window->GetHWND();
+    ofn.lpstrFilter = L"3D Scene Files (*.gltf;*.glb;*.fbx)\0*.gltf;*.glb;*.fbx\0All Files\0*.*\0";
+    ofn.lpstrFile   = filePath;
+    ofn.nMaxFile    = MAX_PATH;
+    ofn.Flags       = OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+
+    if (!GetOpenFileNameW(&ofn))
+        return;     // user cancelled
+
+    int len = WideCharToMultiByte(CP_UTF8, 0, filePath, -1, nullptr, 0, nullptr, nullptr);
+    std::string utf8Path(len - 1, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, filePath, -1, utf8Path.data(), len, nullptr, nullptr);
 
     // Standard load: scene graph, textures, bounds, shadow maps
-    LoadScene(kPath);
+    LoadScene(utf8Path);
 
     // --- Camera: Sponza Option A (SceneSettings.md) ---
     if (m_camera)
