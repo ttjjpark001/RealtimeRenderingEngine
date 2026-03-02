@@ -468,7 +468,7 @@ void Engine::LoadSponzaScene()
         m_camera->SetPosition({ 10.0f, 4.5f, 4.0f });
         m_camera->SetLookAt ({ 0.0f,  0.0f, 0.0f });
         m_camera->SetFov(XMConvertToRadians(60.0f));
-        m_camera->SetMoveSpeedScale(m_sceneDiagonal / 20.0f);  // half of default (diagonal/10)
+        m_camera->SetMoveSpeedScale(m_sceneDiagonal / 40.0f);  // quarter of default (diagonal/10)
     }
 
     // --- Lights: replace the generic 3-point setup with Sponza-specific layout ---
@@ -493,9 +493,9 @@ void Engine::LoadSponzaScene()
         {
             Light fill;
             fill.type      = LightType::Point;
-            fill.position  = { -8.0f, 12.0f, 6.0f };
+            fill.position  = { -6.0f, 10.0f, 0.0f };
             fill.color     = { 0.4f, 0.5f, 0.7f };
-            fill.intensity = 4.0f;
+            fill.intensity = 1.75f;
             fill.Kc = 1.0f; fill.Kl = 0.027f; fill.Kq = 0.005f;
             fill.castShadow = false;
             m_lightManager->AddLight(fill);
