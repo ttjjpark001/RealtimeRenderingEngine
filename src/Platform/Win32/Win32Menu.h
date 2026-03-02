@@ -30,6 +30,7 @@ constexpr UINT ID_CAMERA_RESET        = 5006;
 constexpr UINT ID_CAMERA_FIT_TO_SCENE = 5007;
 
 constexpr UINT ID_FILE_OPEN_SCENE     = 6001;
+constexpr UINT ID_FILE_OPEN_SPONZA    = 6002;
 
 constexpr UINT ID_RENDER_WIREFRAME       = 7001;
 constexpr UINT ID_RENDER_SOLID           = 7002;
@@ -51,7 +52,8 @@ public:
     using CameraToggleInfoCallback = std::function<void()>;
     using CameraFovCallback = std::function<void(float deltaDegrees)>;
     using CameraResetCallback = std::function<void()>;
-    using FileOpenCallback = std::function<void()>;
+    using FileOpenCallback   = std::function<void()>;
+    using FileSponzaCallback = std::function<void()>;
     using CameraFitToSceneCallback = std::function<void()>;
     using RenderModeCallback = std::function<void(uint32 mode)>;
     using LODToggleCallback          = std::function<void()>;
@@ -72,7 +74,8 @@ public:
     void SetCameraToggleInfoCallback(CameraToggleInfoCallback callback) { m_cameraToggleInfoCallback = std::move(callback); }
     void SetCameraFovCallback(CameraFovCallback callback) { m_cameraFovCallback = std::move(callback); }
     void SetCameraResetCallback(CameraResetCallback callback) { m_cameraResetCallback = std::move(callback); }
-    void SetFileOpenCallback(FileOpenCallback callback) { m_fileOpenCallback = std::move(callback); }
+    void SetFileOpenCallback(FileOpenCallback callback)     { m_fileOpenCallback   = std::move(callback); }
+    void SetFileSponzaCallback(FileSponzaCallback callback) { m_fileSponzaCallback = std::move(callback); }
     void SetCameraFitToSceneCallback(CameraFitToSceneCallback callback) { m_cameraFitToSceneCallback = std::move(callback); }
     void SetRenderModeCallback(RenderModeCallback callback) { m_renderModeCallback = std::move(callback); }
     void SetLODToggleCallback(LODToggleCallback callback)             { m_lodToggleCallback = std::move(callback); }
@@ -96,7 +99,8 @@ private:
     CameraToggleInfoCallback m_cameraToggleInfoCallback;
     CameraFovCallback m_cameraFovCallback;
     CameraResetCallback m_cameraResetCallback;
-    FileOpenCallback m_fileOpenCallback;
+    FileOpenCallback   m_fileOpenCallback;
+    FileSponzaCallback m_fileSponzaCallback;
     CameraFitToSceneCallback m_cameraFitToSceneCallback;
     RenderModeCallback m_renderModeCallback;
     LODToggleCallback         m_lodToggleCallback;

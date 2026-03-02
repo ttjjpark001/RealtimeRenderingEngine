@@ -88,6 +88,9 @@ bool Engine::Initialize(const EngineInitParams& params)
     m_menu->SetFileOpenCallback([this]() {
         ShowOpenSceneDialog();
     });
+    m_menu->SetFileSponzaCallback([this]() {
+        LoadSponzaScene();
+    });
     m_menu->SetCameraFitToSceneCallback([this]() {
         if (m_camera)
         {
@@ -433,6 +436,72 @@ void Engine::ShowOpenSceneDialog()
         std::string utf8Path(len - 1, '\0');
         WideCharToMultiByte(CP_UTF8, 0, filePath, -1, utf8Path.data(), len, nullptr, nullptr);
         LoadScene(utf8Path);
+    }
+}
+
+void Engine::LoadSponzaScene()
+{
+    static const std::string kPath = "assets/test-models/Sponza/glTF/Sponza.gltf";
+
+    // Standard load: scene graph, textures, bounds, shadow maps
+    LoadScene(kPath);
+
+    // --- Camera: Sponza Option A (SceneSettings.md) ---
+    if (m_camera)
+    {
+        m_camera->SetPosition({ 0.0f, 2.0f, -10.0f });
+        m_camera->SetLookAt ({ 0.0f, 2.0f,   0.0f });
+        m_camera->SetFov(XMConvertToRadians(60.0f));
+    }
+
+    // --- Lights: replace the generic 3-point setup with Sponza-specific layout ---
+    if (m_lightManager)
+    {
+        m_lightManager->Clear();
+        m_orbitLightIndex = SIZE_MAX;   // disable orbit light for this scene
+
+        // Key Light — Directional (sun): warm, casts shadows
+        {
+            Light key;
+            key.type = LightType::Directional;
+            XMStoreFloat3(&key.direction,
+                XMVector3Normalize(XMVectorSet(-0.3f, -1.0f, 0.5f, 0.0f)));
+            key.color      = { 1.0f, 0.95f, 0.8f };
+            key.intensity  = 7.0f;
+            key.castShadow = true;
+            m_lightManager->AddLight(key);
+        }
+
+        // Fill Light — Point (sky indirect)
+        {
+            Light fill;
+            fill.type      = LightType::Point;
+            fill.position  = { -8.0f, 12.0f, 6.0f };
+            fill.color     = { 0.4f, 0.5f, 0.7f };
+            fill.intensity = 1.75f;
+            fill.Kc = 1.0f; fill.Kl = 0.027f; fill.Kq = 0.005f;
+            fill.castShadow = false;
+            m_lightManager->AddLight(fill);
+        }
+
+        // Torch Point Lights x4 (orange flame, ~3-4 m radius)
+        static const XMFLOAT3 kTorchPositions[4] = {
+            { +3.901f, 1.836f, +1.765f },   // right-front
+            { -4.954f, 1.836f, +1.765f },   // left-front
+            { -4.954f, 1.836f, -1.154f },   // left-back
+            { +3.901f, 1.836f, -1.154f },   // right-back
+        };
+        for (const auto& pos : kTorchPositions)
+        {
+            Light torch;
+            torch.type      = LightType::Point;
+            torch.position  = pos;
+            torch.color     = { 1.0f, 0.45f, 0.08f };
+            torch.intensity = 3.0f;
+            torch.Kc = 1.0f; torch.Kl = 0.7f; torch.Kq = 1.8f;
+            torch.castShadow = false;
+            m_lightManager->AddLight(torch);
+        }
     }
 }
 

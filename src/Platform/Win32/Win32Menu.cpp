@@ -13,7 +13,9 @@ bool Win32Menu::Initialize(HWND hwnd)
 
     // File menu (first in menu bar)
     m_fileMenu = CreatePopupMenu();
-    AppendMenuW(m_fileMenu, MF_STRING, ID_FILE_OPEN_SCENE, L"Open Scene...\tCtrl+O");
+    AppendMenuW(m_fileMenu, MF_STRING, ID_FILE_OPEN_SCENE,  L"Open Scene...\tCtrl+O");
+    AppendMenuW(m_fileMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m_fileMenu, MF_STRING, ID_FILE_OPEN_SPONZA, L"Sponza!");
     AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_fileMenu), L"File");
 
     // View menu
@@ -96,6 +98,10 @@ bool Win32Menu::HandleCommand(WPARAM wParam)
     // File commands
     case ID_FILE_OPEN_SCENE:
         if (m_fileOpenCallback) m_fileOpenCallback();
+        return true;
+
+    case ID_FILE_OPEN_SPONZA:
+        if (m_fileSponzaCallback) m_fileSponzaCallback();
         return true;
 
     // View commands

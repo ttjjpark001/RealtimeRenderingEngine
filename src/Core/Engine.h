@@ -47,6 +47,7 @@ private:
     // Scene loading
     void LoadScene(const std::string& filePath);
     void ShowOpenSceneDialog();
+    void LoadSponzaScene();
 
     std::unique_ptr<Win32Window> m_window;
     std::unique_ptr<Win32Menu> m_menu;
