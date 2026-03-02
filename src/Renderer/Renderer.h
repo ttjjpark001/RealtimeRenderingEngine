@@ -57,6 +57,10 @@ public:
     void SetLODEnabled(bool enabled)            { m_lodEnabled = enabled; }
     bool IsLODEnabled() const                   { return m_lodEnabled; }
 
+    // Scene diagonal length — used to scale shadow ortho projection and far plane.
+    // Call after loading a scene whenever sceneDiagonal is known.
+    void SetSceneDiagonal(float d)              { m_sceneDiagonal = (d > 0.f ? d : 1.f); }
+
     void SetFrustumCullingEnabled(bool enabled) { m_frustumCullingEnabled = enabled; }
     bool IsFrustumCullingEnabled() const        { return m_frustumCullingEnabled; }
 
@@ -96,6 +100,7 @@ private:
     bool          m_lodEnabled             = true;
     bool          m_frustumCullingEnabled  = true;
     bool          m_lightCullingEnabled    = true;
+    float         m_sceneDiagonal          = 10.0f;
 
     std::unordered_map<Mesh*, MeshBuffers> m_meshCache;
 

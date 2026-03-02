@@ -161,8 +161,10 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
                 if (XMVector3NearEqual(XMVector3Normalize(dir), XMVectorSet(0,-1,0,0), XMVectorReplicate(0.01f)) ||
                     XMVector3NearEqual(XMVector3Normalize(dir), XMVectorSet(0, 1,0,0), XMVectorReplicate(0.01f)))
                     up = XMVectorSet(0, 0, 1, 0);
+                float orthoSize = m_sceneDiagonal * 1.5f;
+                float farPlane  = m_sceneDiagonal * 3.0f;
                 lvp = XMMatrixLookAtLH(pos, XMVectorAdd(pos, dir), up)
-                    * XMMatrixOrthographicLH(20.0f, 20.0f, 0.1f, 100.0f);
+                    * XMMatrixOrthographicLH(orthoSize, orthoSize, 0.1f, farPlane);
             }
             else if (gpuLight.type == 2)  // Spot
             {
@@ -174,8 +176,9 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
                     up = XMVectorSet(0, 0, 1, 0);
                 float fov = acosf(gpuLight.outerConeAngle) * 2.0f;
                 if (fov < 0.1f) fov = 0.1f;
+                float spotFar = m_sceneDiagonal * 3.0f;
                 lvp = XMMatrixLookAtLH(pos, XMVectorAdd(pos, dir), up)
-                    * XMMatrixPerspectiveFovLH(fov, 1.0f, 0.1f, 100.0f);
+                    * XMMatrixPerspectiveFovLH(fov, 1.0f, 0.1f, spotFar);
             }
             else  // Point light (cube shadow not yet implemented)
             {
@@ -207,6 +210,7 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
         }
         shadowConst.shadowMapCount = shadowIdx;
     }
+    shadowConst.shadowTexelSize = 1.0f / static_cast<float>(m_context->GetShadowMapSize());
     m_context->SetShadowData(shadowConst);
 
     // -----------------------------------------------------------------------

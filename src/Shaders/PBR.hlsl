@@ -59,7 +59,8 @@ cbuffer ShadowCB : register(b3)
 {
     float4x4 lightViewProj[MAX_SHADOW_MAPS];
     uint shadowMapCount;
-    float3 _padShadow;
+    float shadowTexelSize;   // 1.0 / shadowMapResolution, computed on CPU
+    float2 _padShadow;
 };
 
 // ---------------------------------------------------------------------------
@@ -175,31 +176,29 @@ float3 FresnelSchlick(float cosTheta, float3 F0)
 // ---------------------------------------------------------------------------
 float SampleShadowMap(uint idx, float2 uv, float depth)
 {
-    float result = 0.0f;
-    [branch] switch (idx)
-    {
-        case 0: result = ShadowMap0.SampleCmpLevelZero(ShadowSampler, uv, depth); break;
-        case 1: result = ShadowMap1.SampleCmpLevelZero(ShadowSampler, uv, depth); break;
-        case 2: result = ShadowMap2.SampleCmpLevelZero(ShadowSampler, uv, depth); break;
-        case 3: result = ShadowMap3.SampleCmpLevelZero(ShadowSampler, uv, depth); break;
-        case 4: result = ShadowMap4.SampleCmpLevelZero(ShadowSampler, uv, depth); break;
-        case 5: result = ShadowMap5.SampleCmpLevelZero(ShadowSampler, uv, depth); break;
-        case 6: result = ShadowMap6.SampleCmpLevelZero(ShadowSampler, uv, depth); break;
-        case 7: result = ShadowMap7.SampleCmpLevelZero(ShadowSampler, uv, depth); break;
-        default: result = 1.0f; break;
-    }
+    // result is pre-initialized to the "lit" default so FXC can prove it is
+    // always initialized before return (avoiding X4000 with SampleCmpLevelZero).
+    float result = 1.0f;
+    if      (idx == 0) result = ShadowMap0.SampleCmpLevelZero(ShadowSampler, uv, depth);
+    else if (idx == 1) result = ShadowMap1.SampleCmpLevelZero(ShadowSampler, uv, depth);
+    else if (idx == 2) result = ShadowMap2.SampleCmpLevelZero(ShadowSampler, uv, depth);
+    else if (idx == 3) result = ShadowMap3.SampleCmpLevelZero(ShadowSampler, uv, depth);
+    else if (idx == 4) result = ShadowMap4.SampleCmpLevelZero(ShadowSampler, uv, depth);
+    else if (idx == 5) result = ShadowMap5.SampleCmpLevelZero(ShadowSampler, uv, depth);
+    else if (idx == 6) result = ShadowMap6.SampleCmpLevelZero(ShadowSampler, uv, depth);
+    else if (idx == 7) result = ShadowMap7.SampleCmpLevelZero(ShadowSampler, uv, depth);
     return result;
 }
 
 float CalcShadow(uint shadowIdx, float3 worldPos)
 {
+    // Clamp index so FXC can prove lightViewProj access is in-bounds (suppresses X4000).
+    shadowIdx = min(shadowIdx, MAX_SHADOW_MAPS - 1);
     float4 lightSpacePos = mul(float4(worldPos, 1.0f), lightViewProj[shadowIdx]);
     float3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
 
     // NDC to UV: x[-1,1]→[0,1], y[-1,1]→[1,0] (D3D UV flip)
-    float2 uv;
-    uv.x = projCoords.x * 0.5f + 0.5f;
-    uv.y = -projCoords.y * 0.5f + 0.5f;
+    float2 uv = float2(projCoords.x * 0.5f + 0.5f, -projCoords.y * 0.5f + 0.5f);
     float depth = projCoords.z;
 
     // Out of shadow map range → no shadow
@@ -208,14 +207,14 @@ float CalcShadow(uint shadowIdx, float3 worldPos)
 
     // PCF 3x3
     float shadow = 0.0f;
-    float texelSize = 1.0f / 1024.0f;
+    float texelSize = shadowTexelSize;
     [unroll]
     for (int y = -1; y <= 1; y++)
     {
         [unroll]
         for (int x = -1; x <= 1; x++)
         {
-            shadow += SampleShadowMap(shadowIdx, uv + float2(x, y) * texelSize, depth);
+            shadow += saturate(SampleShadowMap(shadowIdx, uv + float2(x, y) * texelSize, depth));
         }
     }
     return shadow / 9.0f;

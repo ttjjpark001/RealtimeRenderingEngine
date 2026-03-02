@@ -95,14 +95,14 @@ static_assert(sizeof(PerMaterialConstants) <= 256, "PerMaterialConstants exceeds
 
 // Shadow mapping constants
 static constexpr uint32 MAX_SHADOW_MAPS = 8;
-static constexpr uint32 SHADOW_MAP_SIZE = 1024;
 
 // Shadow constant buffer (b3)
 struct ShadowConstants
 {
     DirectX::XMFLOAT4X4 lightViewProj[MAX_SHADOW_MAPS]; // 64 * 8 = 512
     uint32 shadowMapCount;                                // 4
-    float _pad[3];                                         // 12
+    float  shadowTexelSize;                               // 4  (= 1.0f / shadowMapSize)
+    float _pad[2];                                        // 8
 };  // Total: 528 bytes → 768 aligned (256 * 3)
 static_assert(sizeof(ShadowConstants) <= 768, "ShadowConstants exceeds 768-byte CB slot");
 
@@ -186,6 +186,11 @@ public:
 
     // Shadow mapping methods
     void CreateShadowMaps();
+    // Set desired shadow map resolution and recreate resources (call after WaitForGPU).
+    // Size is clamped to [512, 4096] and rounded to a power of two.
+    void SetShadowMapSize(uint32 size);
+    uint32 GetShadowMapSize() const { return m_shadowMapSize; }
+    void RecreateShadowMaps();
     void BeginShadowPass(uint32 shadowIndex);
     void EndShadowPass(uint32 shadowIndex);
     void DrawShadowDepth(IRHIBuffer* vb, IRHIBuffer* ib,
@@ -243,6 +248,7 @@ private:
     D3D12_CPU_DESCRIPTOR_HANDLE m_shadowSrvCpu[MAX_SHADOW_MAPS] = {};
     D3D12_GPU_DESCRIPTOR_HANDLE m_shadowSrvGpu[MAX_SHADOW_MAPS] = {};
     bool m_shadowMapsCreated = false;
+    uint32 m_shadowMapSize   = 1024;  // runtime-configurable resolution
 
     // Constant buffer pool (replaces fixed 16-slot CB)
     D3D12CBPool m_cbPool;

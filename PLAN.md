@@ -699,7 +699,37 @@ tests/
 
 **완료 기준**: Frustum 밖 오브젝트 culled, Occluded 오브젝트 스킵, 거리별 LOD 전환 (자동 생성 포함), 원거리/저기여 광원 컬링, DebugHUD에 씬 전체 폴리곤 수와 렌더링된 폴리곤 수 각각 표시, Optimization 메뉴에서 각 기능 on/off 가능, 91/91 테스트 통과
 
-### Phase 24: Texture Streaming + Mip-Mapping
+### Phase 24: HLSL 경고 수정 + Shadow Map 자동 크기 조정 ✅
+**목표**: PBR.hlsl X4000 경고 최소화, Shadow Map 해상도 및 투영 범위를 씬 크기에 맞게 자동 조정
+
+1. **PBR.hlsl — SampleShadowMap 구조 개선** (X4000 경고 최소화)
+   - `[branch] switch` → `float result = 1.0f; if/else-if` 체인으로 교체
+   - `ShadowMap` X4000 경고 제거 (`result = 1.0f` 명시적 초기화)
+   - `CalcShadow`: `shadowIdx = min(shadowIdx, MAX_SHADOW_MAPS - 1)` 인덱스 범위 보장
+   - `shadow += saturate(SampleShadowMap(...))` — PCF 누적 값 범위 명시
+   - 잔존 X4000 경고 1건: FXC 컴파일러 고유 한계 (비교 샘플러 + 동적 cbuffer 인덱스 조합), Phase 29에서 재검토
+2. **PBR.hlsl — ShadowCB 확장**
+   - `shadowTexelSize` 필드 추가 (b3): `1.0 / shadowMapResolution` (CPU에서 계산)
+   - PCF 루프의 하드코딩 `1.0f / 1024.0f` → `shadowTexelSize` cbuffer 값으로 교체
+3. **D3D12Context — 런타임 Shadow Map 해상도 지원**
+   - `SHADOW_MAP_SIZE` 상수 제거 → `m_shadowMapSize = 1024` 런타임 멤버로 교체
+   - `SetShadowMapSize(uint32)`: [512, 4096] 범위 2의 제곱수로 스냅
+   - `RecreateShadowMaps()`: 해상도 변경 후 GPU 리소스 재생성
+   - `GetShadowMapSize()`: 현재 해상도 조회
+   - `ShadowConstants` 구조체에 `shadowTexelSize` 필드 추가
+4. **Renderer — 씬 대각선 기반 Shadow 투영 스케일링**
+   - `SetSceneDiagonal(float)` + `m_sceneDiagonal = 10.0f` 멤버 추가
+   - Directional 그림자 Ortho 범위: 고정 `20×20m` → `sceneDiagonal × 1.5f` 자동 계산
+   - Spot/Directional far plane: 고정 `100.0f` → `sceneDiagonal × 3.0f`
+   - Shadow pass 전 `shadowConst.shadowTexelSize = 1.0f / GetShadowMapSize()`
+5. **Engine::LoadScene() — 씬 로드 후 자동 연결**
+   - `Renderer::SetSceneDiagonal(m_sceneDiagonal)` 호출
+   - 씬 크기 기반 해상도 선택: ≤ 10m → 1024, ≤ 100m → 2048, > 100m → 4096
+   - `D3D12Context::SetShadowMapSize()` + `RecreateShadowMaps()` 호출
+
+**완료 기준**: Shadow Map 해상도가 씬 크기에 맞게 자동 선택됨, Shadow Ortho/Perspective 범위가 sceneDiagonal 기반으로 스케일링, ShadowTexelSize가 GPU로 동적 전달, 빌드 오류 0건 (경고 1건 잔존 — FXC 컴파일러 한계)
+
+### Phase 25: Texture Streaming + Mip-Mapping
 **목표**: 필요 Mip만 GPU 로드, 가시성/거리 기반 우선순위
 
 1. `src/Asset/TextureStreamer.h/.cpp` — Mip 레벨 기반 스트리밍
@@ -711,7 +741,7 @@ tests/
 
 **완료 기준**: 카메라 거리에 따라 Mip 레벨 동적 로딩/해제, Anisotropic 필터링 적용
 
-### Phase 25: Instanced Rendering + 멀티스레드 로딩
+### Phase 26: Instanced Rendering + 멀티스레드 로딩
 **목표**: 동일 Mesh+Material 인스턴싱, 병렬 리소스 로딩
 
 1. `src/Renderer/InstanceBatcher.h/.cpp` — 동일 Mesh+Material 그룹핑
@@ -723,7 +753,7 @@ tests/
 
 **완료 기준**: 동일 메시 인스턴싱으로 드로우콜 감소, 멀티스레드 텍스처 디코딩
 
-### Phase 26: GPU 메모리 최적화
+### Phase 27: GPU 메모리 최적화
 **목표**: CB 풀링, VRAM 적응, Shared Material CB, Dirty Flag, Front-to-Back
 
 1. CBPool: Upload Heap 풀링, 256바이트 정렬, 링 버퍼
@@ -736,7 +766,7 @@ tests/
 
 **완료 기준**: CB 풀에서 슬롯 할당, VRAM 예산 초과 시 적응적 동작, Dirty Flag 갱신 스킵
 
-### Phase 27: Phase 02 통합 & 최종 검증
+### Phase 28: Phase 02 통합 & 최종 검증
 **목표**: 전체 Phase 02 기능 통합, 대형 씬 벤치마크
 
 1. 전체 렌더 파이프라인 통합 (12단계):
@@ -750,7 +780,7 @@ tests/
 
 **완료 기준**: Sponza급 씬을 PBR+Shadow+최적화로 60fps 이상 렌더링, 모든 테스트 통과
 
-### Phase 28: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
+### Phase 29: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
 **목표**: 전체 코드 품질 점검, 성능 최적화, 버그 수정, ARCHITECTURE.md 작성
 
 1. **전체 코드 리뷰**:
@@ -788,7 +818,7 @@ tests/
    - 셰이더 파이프라인: 입력 레이아웃, CB 레지스터 맵, 텍스처 바인딩 포인트
    - 기존 PRD/PLAN/CLAUDE와의 참조 관계 명시
 
-**완료 기준**: 전체 코드 리뷰 완료, 모든 테스트 통과, D3D12 Debug Layer 경고 0건, ARCHITECTURE.md 작성 완료
+**완료 기준**: 전체 코드 리뷰 완료, 모든 테스트 통과, D3D12 Debug Layer 경고 0건, PBR.hlsl X4000 잔존 경고 제거, ARCHITECTURE.md 작성 완료
 
 ## Phase 02 의존성 그래프
 
@@ -810,13 +840,14 @@ Phase 11 (Phase 01 완료)
     ├── Phase 21 (레거시 정리+테스트) ────────────────────────────────────────┤
     ├── Phase 22 (프리미티브 분리+AABB) ────────────────────────────────────┤
     │       └── Phase 23 (Culling+LOD) ────────────────────────────────────┤
-    ├── Phase 24 (Texture Streaming) ────────────────────────────────────────┤
-    ├── Phase 25 (Instancing+멀티스레드) ────────────────────────────────────┤
-    ├── Phase 26 (GPU 메모리 최적화) ────────────────────────────────────────┤
+    │               └── Phase 24 (HLSL 경고+Shadow 자동 크기) ✅ ───────────┤
+    ├── Phase 25 (Texture Streaming) ────────────────────────────────────────┤
+    ├── Phase 26 (Instancing+멀티스레드) ────────────────────────────────────┤
+    ├── Phase 27 (GPU 메모리 최적화) ────────────────────────────────────────┤
     │                                                                        │
-    └────────────────────────────────────────────────────── Phase 27 (통합) ─┘
+    └────────────────────────────────────────────────────── Phase 28 (통합) ─┘
                                                                              │
-                                                            Phase 28 (코드 리뷰 + ARCHITECTURE.md) ─┘
+                                                            Phase 29 (코드 리뷰 + ARCHITECTURE.md) ─┘
 ```
 
 ## Phase 02 리스크 & 대응

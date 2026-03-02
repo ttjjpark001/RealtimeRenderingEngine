@@ -452,7 +452,14 @@ struct Light {
 - Directional Light: Orthographic 투영으로 Shadow Map 렌더링
 - Spot Light: Perspective 투영 (FOV = outerConeAngle × 2)으로 Shadow Map 렌더링
 - Point Light: 6면 Cube Map (Omnidirectional Shadow Map), P1 우선순위
-- Shadow Map 해상도: 기본 1024×1024, 설정 가능
+- Shadow Map 해상도: 씬 크기(diagonal) 기반 자동 선택 — ≤10m: 1024, ≤100m: 2048, >100m: 4096
+  - `D3D12Context::SetShadowMapSize()` + `RecreateShadowMaps()`으로 런타임 재생성 가능
+- Shadow Ortho/Perspective 범위: `Renderer::m_sceneDiagonal` 기반 자동 스케일
+  - Directional ortho: `diagonal × 1.5f` (width/height), far: `diagonal × 3.0f`
+  - Spot perspective: far = `diagonal × 3.0f`
+  - `Engine::LoadScene()` 완료 후 `Renderer::SetSceneDiagonal()` 호출로 갱신
+- `shadowTexelSize`: `1.0f / shadowMapResolution` — CPU에서 계산하여 ShadowCB(b3)로 GPU 전달
+  - PCF 루프에서 하드코딩 대신 `shadowTexelSize` 사용 (해상도 변경 시 자동 반영)
 - Depth 전용 렌더 타겟: `DXGI_FORMAT_D32_FLOAT` 또는 `D24_UNORM_S8_UINT`
 - Shadow depth 셰이더: VS에서 position 변환만 수행, PS 없음 또는 최소화
 

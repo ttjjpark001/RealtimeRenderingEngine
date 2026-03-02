@@ -757,6 +757,26 @@ void D3D12Context::DrawPrimitivesPBR(IRHIBuffer* vb, IRHIBuffer* ib,
     m_commandList->DrawIndexedInstanced(indexCount, 1, 0, 0, 0);
 }
 
+void D3D12Context::SetShadowMapSize(uint32 size)
+{
+    // Clamp to [512, 4096] and snap to nearest power-of-two
+    if (size <= 512)       size = 512;
+    else if (size <= 1024) size = 1024;
+    else if (size <= 2048) size = 2048;
+    else                   size = 4096;
+    m_shadowMapSize = size;
+}
+
+void D3D12Context::RecreateShadowMaps()
+{
+    // Release existing shadow map resources so CreateShadowMaps() rebuilds them
+    // at the current m_shadowMapSize.  Caller must have called WaitForGPU() first.
+    for (uint32 i = 0; i < MAX_SHADOW_MAPS; i++)
+        m_shadowMaps[i].Reset();
+    m_shadowMapsCreated = false;
+    CreateShadowMaps();
+}
+
 void D3D12Context::CreateShadowMaps()
 {
     if (m_shadowMapsCreated || !m_device)
@@ -770,8 +790,8 @@ void D3D12Context::CreateShadowMaps()
 
     D3D12_RESOURCE_DESC texDesc = {};
     texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-    texDesc.Width = SHADOW_MAP_SIZE;
-    texDesc.Height = SHADOW_MAP_SIZE;
+    texDesc.Width = m_shadowMapSize;
+    texDesc.Height = m_shadowMapSize;
     texDesc.DepthOrArraySize = 1;
     texDesc.MipLevels = 1;
     texDesc.Format = DXGI_FORMAT_R32_TYPELESS;
@@ -843,15 +863,15 @@ void D3D12Context::BeginShadowPass(uint32 shadowIndex)
 
     // Set viewport and scissor for shadow map
     D3D12_VIEWPORT viewport = {};
-    viewport.Width = static_cast<float>(SHADOW_MAP_SIZE);
-    viewport.Height = static_cast<float>(SHADOW_MAP_SIZE);
+    viewport.Width = static_cast<float>(m_shadowMapSize);
+    viewport.Height = static_cast<float>(m_shadowMapSize);
     viewport.MinDepth = 0.0f;
     viewport.MaxDepth = 1.0f;
     m_commandList->RSSetViewports(1, &viewport);
 
     D3D12_RECT scissor = {};
-    scissor.right = SHADOW_MAP_SIZE;
-    scissor.bottom = SHADOW_MAP_SIZE;
+    scissor.right = static_cast<LONG>(m_shadowMapSize);
+    scissor.bottom = static_cast<LONG>(m_shadowMapSize);
     m_commandList->RSSetScissorRects(1, &scissor);
 
     // Set Shadow Depth PSO and root signature
