@@ -888,6 +888,49 @@ tests/
 
 ---
 
+### Phase 32: Skeletal Animation
+**목표**: glTF Node Transform 애니메이션(키프레임)과 Skeletal Animation(본/스킨) 구현.
+Part A가 Part B의 전제 조건이므로 순서대로 구현한다.
+
+#### Part A: Node Transform Animation (G-08)
+
+1. **Animation 데이터 구조**:
+   - `src/Asset/Animation.h`: `AnimationChannel` (target node, property: TRS, keyframes), `AnimationClip` (name, duration, channels 배열)
+   - 키프레임 보간 지원: LINEAR, STEP, CUBICSPLINE (glTF `sampler.interpolation`)
+   - Assimp `aiAnimation`, `aiNodeAnim`에서 TRS 키프레임 추출
+
+2. **AnimationController**:
+   - `src/Core/AnimationController.h/.cpp`: 현재 재생 시간 추적, Play/Pause/Loop 제어
+   - `Update(float dt)`: 시간 전진 → 각 채널의 현재 TRS 보간 → 해당 SceneNode Transform 갱신
+   - Engine::Update()에서 AnimationController::Update() 호출
+   - "Animation" 메뉴: 클립 선택, 재생 속도 조절
+
+3. **SceneLoader 확장**:
+   - `SceneLoader::LoadAnimations()`: aiScene의 aiAnimation 배열 순회 → AnimationClip 생성
+   - 채널 target name → SceneNode 포인터 매핑
+
+#### Part B: Skeletal Animation (G-09)
+
+4. **Skeleton / Skin 데이터 구조**:
+   - `src/Asset/Skeleton.h`: `Bone` (name, parentIndex, inverseBindMatrix), `Skeleton` (bones 배열)
+   - `Skin` (skeleton 참조, joint 인덱스 배열, inverse bind matrices)
+   - SceneLoader: aiMesh의 aiBone 배열 → Skeleton 생성, per-vertex joint/weight 추출
+
+5. **Vertex 포맷 확장**:
+   - `Vertex` 구조체에 `XMUSHORT4 joints` (JOINTS_0) + `XMFLOAT4 weights` (WEIGHTS_0) 추가
+   - D3D12 Input Layout, HLSL 입력 구조체, `static_assert` 갱신
+
+6. **GPU Skinning**:
+   - Joint matrix palette CB: `cbuffer SkinCB : register(b4)` — 최대 128개 bone matrix
+   - `src/Shaders/PBR.hlsl`: `#define SKINNING` 조건부 컴파일로 스킨드/비스킨드 분기
+     - `float4 skinnedPos = Σ(weights[i] * mul(jointMatrices[joints[i]], localPos))`
+     - Normal, Tangent도 동일 변환 적용
+   - AnimationController::Update() 후 현재 bone world matrix 계산 → GPU 업로드
+
+**완료 기준**: glTF 애니메이션 파일(예: CesiumMan.glb, RiggedFigure.glb)에서 노드 TRS 애니메이션 및 스킨 메시 애니메이션이 정상 재생, 모든 테스트 통과
+
+---
+
 ## Phase 02 의존성 그래프
 
 ```
@@ -920,6 +963,8 @@ Phase 11 (Phase 01 완료)
                                                             Phase 30 (Occlusion Culling P1: Hi-Z GPU)
                                                                              │
                                                             Phase 31 (Point Light Cube Map Shadowing)
+                                                                             │
+                                                            Phase 32 (Skeletal Animation)
 ```
 
 ## Phase 02 리스크 & 대응

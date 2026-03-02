@@ -1917,3 +1917,101 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 31 섹션을 참조하여 Phase 31을 구현
 빌드하여 모든 테스트가 통과하고, Sponza 씬에서 횃불 위치(castShadow=true Point light)의
 구면 그림자가 정상 렌더링되는지 확인하라.
 ```
+
+---
+
+## Prompt 32: Skeletal Animation
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 32 섹션을 참조하여 Phase 32를 구현하라.
+Part A(Node Transform Animation)를 먼저 완성한 뒤 Part B(Skeletal Animation)를 구현한다.
+
+=== Part A: Node Transform Animation (G-08) ===
+
+1. Animation 데이터 구조를 만든다.
+   - src/Asset/Animation.h를 신규 생성한다.
+     · struct Keyframe<T> { float time; T value; }
+     · struct AnimationChannel {
+           SceneNode* targetNode;
+           enum Property { Translation, Rotation, Scale } property;
+           std::vector<Keyframe<XMFLOAT3>> posKeys;   // Translation/Scale
+           std::vector<Keyframe<XMFLOAT4>> rotKeys;   // Rotation (quaternion)
+           enum Interpolation { Linear, Step, CubicSpline } interpolation;
+       }
+     · struct AnimationClip { std::string name; float duration; std::vector<AnimationChannel> channels; }
+   - 보간 함수 구현:
+     · Linear: XMVectorLerp / XMQuaternionSlerp
+     · Step: 현재 시간 이하의 마지막 키프레임 값 반환
+     · CubicSpline: glTF cubic spline 공식 적용 (in-tangent, value, out-tangent 삼중 구조)
+
+2. SceneLoader에 애니메이션 로딩을 추가한다.
+   - SceneLoader::LoadAnimations(const aiScene*, SceneGraph*) 메서드 신규 추가
+   - aiAnimation → AnimationClip 변환:
+     · aiNodeAnim::mPositionKeys → Translation 채널
+     · aiNodeAnim::mRotationKeys → Rotation 채널 (aiQuaternion → XMFLOAT4)
+     · aiNodeAnim::mScalingKeys → Scale 채널
+   - 채널 target name(aiNodeAnim::mNodeName) → SceneNode* 매핑
+     (SceneGraph에서 name으로 노드 검색)
+   - Engine::LoadScene() 에서 LoadAnimations() 호출
+
+3. AnimationController를 구현한다.
+   - src/Core/AnimationController.h/.cpp를 신규 생성한다.
+   - AnimationController::Update(float dt):
+     · m_currentTime += dt * m_playbackSpeed
+     · 루프: m_currentTime >= clip.duration 시 0으로 리셋
+     · 각 채널의 보간값 계산 → SceneNode의 Transform 갱신
+       (SetLocalTranslation / SetLocalRotation / SetLocalScale 또는 SetLocalMatrix)
+   - Play(), Pause(), SetClip(AnimationClip*), SetPlaybackSpeed(float) 메서드
+   - Engine::Update()에서 AnimationController::Update(dt) 호출
+   - "Animation" 메뉴에서 클립 선택 가능 (씬 로드 후 클립 목록 동적 생성)
+
+=== Part B: Skeletal Animation (G-09) ===
+
+4. Skeleton / Skin 데이터 구조를 만든다.
+   - src/Asset/Skeleton.h를 신규 생성한다.
+     · struct Bone { std::string name; int parentIndex; XMFLOAT4X4 inverseBindMatrix; }
+     · struct Skeleton { std::vector<Bone> bones; int FindBone(const std::string& name) const; }
+     · struct Skin { Skeleton* skeleton; std::vector<int> jointIndices; }
+   - SceneLoader에서 aiMesh::mBones 배열을 순회하여 Skeleton/Skin 생성:
+     · aiBone::mName → Bone.name
+     · aiBone::mOffsetMatrix → Bone.inverseBindMatrix (Assimp 전치 주의)
+     · aiBone::mWeights → per-vertex joint index + weight 저장
+   - Mesh 구조체에 Skin* skin 포인터 추가
+
+5. Vertex 포맷을 확장한다.
+   - Vertex 구조체에 추가:
+     · XMUINT4 joints  (JOINTS_0)  — 영향을 주는 본 인덱스 최대 4개
+     · XMFLOAT4 weights (WEIGHTS_0) — 각 본의 가중치 (합=1.0)
+   - D3D12 Input Layout에 슬롯 추가:
+     · JOINTS_0:  R8G8B8A8_UINT,  offset = sizeof(이전 필드까지)
+     · WEIGHTS_0: R32G32B32A32_FLOAT
+   - HLSL VSInput 구조체에 동일 필드 추가
+   - static_assert로 sizeof(Vertex) 및 각 멤버 오프셋 검증 갱신
+
+6. GPU Skinning 셰이더를 구현한다.
+   - PBR.hlsl에 Skinning 지원 추가:
+     · cbuffer SkinCB : register(b4) { float4x4 jointMatrices[128]; uint jointCount; }
+     · VSInput에 uint4 joints : JOINTS_0; float4 weights : WEIGHTS_0; 추가
+     · VSMain 내 스키닝 계산:
+       float4x4 skinMatrix =
+           weights.x * jointMatrices[joints.x] +
+           weights.y * jointMatrices[joints.y] +
+           weights.z * jointMatrices[joints.z] +
+           weights.w * jointMatrices[joints.w];
+       float4 skinnedPos = mul(float4(input.position, 1.0f), skinMatrix);
+       float4 worldPos = mul(skinnedPos, World);
+       (Normal, Tangent도 동일 skin matrix로 변환)
+     · 스킨 메시 여부: SkinCB의 jointCount > 0 이면 스키닝 적용
+   - Renderer: 스킨 메시 드로우콜 전 SkinCB 바인딩 (jointCount=0이면 identity 바인딩)
+
+7. AnimationController를 Part B 연동으로 확장한다.
+   - Part A에서 각 채널이 SceneNode Transform을 갱신한 뒤,
+     SceneGraph를 순회하여 bone world matrix 배열(joint palette)을 계산:
+     · boneWorldMatrix[i] = parentBoneWorldMatrix * bone[i].localTRS
+     · jointMatrix[i] = inverseBindMatrix[i] * boneWorldMatrix[i]
+   - 계산된 jointMatrix 배열을 SkinCB Upload Buffer에 복사
+
+빌드하여 CesiumMan.glb 또는 RiggedFigure.glb에서 노드 TRS 애니메이션과
+스킨 메시 애니메이션이 정상 재생되는지 확인하라.
+모든 유닛·스모크 테스트가 통과해야 한다.
+```

@@ -176,6 +176,31 @@ CPU Readback 방식(Phase 23.5)을 대체하는 GPU Hi-Z Occlusion Culling. Comp
 
 ---
 
+### Phase 32 — Skeletal Animation
+
+glTF Node Transform 애니메이션(키프레임)과 Skeletal Animation(본/스킨) 구현.
+
+**Part A: Node Transform Animation (G-08)**
+
+| 작업 | 설명 |
+|------|------|
+| `Animation.h` | `AnimationClip`, `AnimationChannel`, `Keyframe<T>` 구조체 |
+| 키프레임 보간 | LINEAR (Lerp/Slerp), STEP, CUBICSPLINE |
+| SceneLoader 확장 | `aiAnimation` → `AnimationClip` 변환, target name → SceneNode 매핑 |
+| `AnimationController` | `Update(dt)`, Play/Pause/Loop, 클립 목록 메뉴 |
+
+**Part B: Skeletal Animation (G-09)**
+
+| 작업 | 설명 |
+|------|------|
+| `Skeleton.h` | `Bone`, `Skeleton`, `Skin` 구조체, inverse bind matrix |
+| SceneLoader 확장 | `aiMesh::mBones` → `Skeleton/Skin` 생성, per-vertex joint/weight 추출 |
+| Vertex 포맷 확장 | `JOINTS_0` (XMUINT4) + `WEIGHTS_0` (XMFLOAT4) 추가, Input Layout/HLSL 갱신 |
+| GPU Skinning | `SkinCB : register(b4)` (joint matrix palette 128개), PBR.hlsl VS 스키닝 계산 |
+| Joint palette 업로드 | AnimationController::Update() 후 bone world matrix → GPU 복사 |
+
+---
+
 ## 권장 구현 순서
 
 ```
@@ -199,7 +224,11 @@ Phase 30    Occlusion Culling P1 (Hi-Z GPU)
     │           Compute Shader 파이프라인 구축 후 구현
     │
 Phase 31    Point Light Cube Map Shadowing
-            Omnidirectional Shadow Map (TextureCube, 6-pass depth)
+    │           Omnidirectional Shadow Map (TextureCube, 6-pass depth)
+    │
+Phase 32    Skeletal Animation
+            Part A: Node Transform Animation (TRS 키프레임)
+            Part B: Skeletal Animation (본/스킨, GPU Skinning)
 ```
 
 ---
