@@ -48,7 +48,7 @@ void DebugHUD::Render(IRHIContext& context)
     context.DrawText(x, y, buf, green);
     y += lineHeight;
 
-    snprintf(buf, sizeof(buf), "Polygons: %u", m_lastStats.totalPolygons);
+    snprintf(buf, sizeof(buf), "Polys (rendered): %u", m_lastStats.totalPolygons);
     context.DrawText(x, y, buf, green);
     y += lineHeight;
 

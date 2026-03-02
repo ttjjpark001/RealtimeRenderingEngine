@@ -270,6 +270,7 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
                 it->second.vb.get(), it->second.ib.get(), worldFloat);
         }
 
+        m_lastCullStats.renderedPolygons += drawMesh->GetPolygonCount();
         m_lastCullStats.visibleNodes++;
     });
 
@@ -327,6 +328,7 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
                 it->second.vb.get(), it->second.ib.get(),
                 dc.worldFloat, dc.node->GetMaterial(), m_textureCache);
 
+            m_lastCullStats.renderedPolygons += dc.drawMesh->GetPolygonCount();
             m_lastCullStats.visibleNodes++;
         }
     }

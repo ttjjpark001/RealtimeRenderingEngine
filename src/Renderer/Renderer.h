@@ -31,6 +31,7 @@ struct CullStats
     uint32 occlusionCulledNodes = 0;  // nodes rejected by occlusion cull (P0: always 0)
     uint32 activeLights         = 0;  // lights submitted to GPU after light culling
     uint32 culledLights         = 0;  // Point/Spot lights rejected by light culler
+    uint32 renderedPolygons     = 0;  // actual triangles submitted (after culling + LOD)
 };
 
 class D3D12Context;
