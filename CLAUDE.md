@@ -154,7 +154,7 @@ tests/
 - **마우스 네비게이션 (Phase 02)**:
   - 우클릭 드래그: Yaw/Pitch 회전 (FPS 스타일 시선 제어)
   - 마우스 휠: 전진/후진 (돌리 줌)
-  - 중클릭 드래그: 상하좌우 패닝 (P1)
+  - 중클릭 드래그: 상하좌우 패닝
 - **Fit to Scene**: 씬 바운딩 박스를 계산하여 카메라를 씬 전체가 보이는 위치로 자동 배치
   - 바운딩 박스 중심을 lookAt 타겟으로, 대각선 길이 기반으로 적절한 거리 산출
   - 씬 로드 시 자동 호출, "Camera" 메뉴의 "Fit to Scene" 항목으로도 수동 호출
@@ -343,7 +343,7 @@ src/Asset/
 5. 카메라 배치: 씬 파일에 카메라 노드가 있으면 해당 위치/방향 사용, 없으면 씬 바운딩 박스 기반 Fit to Scene 자동 실행
 6. 렌더링 시작 (텍스처 로딩 완료 전에는 폴백 텍스처로 렌더링)
 
-**드래그 앤 드롭 (P1):**
+**드래그 앤 드롭:**
 - Win32 `WM_DROPFILES` 메시지 처리 → 드롭된 파일 경로 추출 → 위 2~6 동일 흐름
 
 **씬 교체 시 주의사항:**
@@ -601,7 +601,7 @@ struct Light {
   - FullPBR: 모든 플래그 원래값, Shadow Pass 스킵
 - **FullPBRShadows**: Shadow Depth Pass 수행 + Shadow Map 바인딩
 - 메뉴: `CheckMenuRadioItem`으로 현재 모드 체크 표시
-- DebugHUD에 현재 모드명 표시 (P1)
+- DebugHUD에 현재 모드명 표시
 
 ### SceneNode 확장
 
@@ -623,7 +623,7 @@ struct Light {
 - AABB vs Frustum 교차 검사: 6개 평면 모두에 대해 AABB가 완전히 바깥이면 culled
 - `DirectX::BoundingFrustum` + `BoundingBox::Intersects()` 활용 (DirectXCollision.h)
 - Scene Graph 순회 시 culled 노드는 DrawPrimitives 스킵
-- Shadow Depth Pass에도 적용 (광원 시점 frustum 기준, P1)
+- Shadow Depth Pass에도 적용 (광원 시점 frustum 기준)
 - 구현 위치: `src/Renderer/FrustumCuller.h/.cpp`
 
 #### Occlusion Culling

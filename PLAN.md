@@ -470,11 +470,11 @@ tests/
 1. Win32Menu에 "File" 메뉴 추가: "Open Scene..." (GetOpenFileName, 필터: `*.gltf;*.glb;*.fbx`)
 2. 씬 로딩 워크플로우: 기존 씬 해제 → Assimp 파싱 → SceneNode/Material/Texture 구축
 3. 카메라 배치: 씬 파일 내 카메라 있으면 사용, 없으면 Fit to Scene
-4. 드래그 앤 드롭: WM_DROPFILES 처리 (P1)
+4. 드래그 앤 드롭: WM_DROPFILES 처리
 5. 카메라 마우스 네비게이션:
    - 우클릭 드래그: Yaw/Pitch 회전
    - 마우스 휠: 전진/후진 (돌리 줌)
-   - 중클릭 드래그: 패닝 (P1)
+   - 중클릭 드래그: 패닝
 6. 카메라 키보드 네비게이션:
    - WASD: 카메라 시선 방향 기준 전진/후퇴/좌/우 이동
    - Q/E: 월드 Y축 기준 상/하 이동
@@ -772,11 +772,13 @@ tests/
 1. 전체 렌더 파이프라인 통합 (12단계):
    Scene Graph 순회 → Frustum Culling → Occlusion Culling → LOD(자동 LOD 포함) → Light Culling →
    Instance Batching → Texture Streaming → CB 갱신 → Material 정렬 → Front-to-Back → Shadow Pass → Main Pass
-2. 대형 씬 벤치마크: Sponza, Bistro 등 로딩 및 렌더링 확인
-3. 5단계 렌더링 모드 전체 동작 확인
-4. DebugHUD 전체 항목: FPS, 해상도, 폴리곤, culled/occluded 수, 드로우콜, VRAM, 스트리밍, 렌더모드
-5. 모든 유닛 테스트 + 스모크 테스트 통과
-6. 성능 프로파일링 및 최적화 조정
+2. **Shadow Depth Pass Frustum Culling**: 광원 시점의 BoundingFrustum을 생성하여 FrustumCuller를
+   Shadow Depth Pass에도 적용 — 광원 시야 밖 오브젝트의 shadow draw call 스킵
+3. 대형 씬 벤치마크: Sponza, Bistro 등 로딩 및 렌더링 확인
+4. 5단계 렌더링 모드 전체 동작 확인
+5. DebugHUD 전체 항목: FPS, 해상도, 폴리곤, culled/occluded 수, 드로우콜, VRAM, 스트리밍, 렌더모드
+6. 모든 유닛 테스트 + 스모크 테스트 통과
+7. 성능 프로파일링 및 최적화 조정
 
 **완료 기준**: Sponza급 씬을 PBR+Shadow+최적화로 60fps 이상 렌더링, 모든 테스트 통과
 
@@ -799,14 +801,18 @@ tests/
    - 드로우콜 수, 상태 전환 횟수 최소화 확인
    - 메모리 누수 점검 (D3D12 Live Object 리포트)
 
-3. **버그 수정 및 엣지 케이스 처리**:
+3. **UX 개선**:
+   - **드래그 앤 드롭**: Win32 `WM_DROPFILES` 처리 → 파일 경로 추출 → `LoadScene()` 호출
+   - **Camera 중클릭 패닝**: 중클릭 드래그 시 right·up 벡터 기준 카메라 평행 이동
+
+4. **버그 수정 및 엣지 케이스 처리**:
    - 모든 유닛 테스트 + 스모크 테스트 재실행, 실패 항목 수정
    - 윈도우 리사이즈/모드 전환 중 안정성 확인
    - 빈 씬(메시 0개), Material 없는 Mesh, 텍스처 없는 Material 등 엣지 케이스 처리
    - 대형 씬 로딩 중 메모리 부족 시 graceful 처리
    - 멀티스레드 race condition 검증 (ThreadSanitizer 또는 수동 검증)
 
-4. **ARCHITECTURE.md 작성**:
+5. **ARCHITECTURE.md 작성**:
    - 프로젝트 전체 디렉토리 구조 + 각 파일의 역할 설명
    - 모듈 간 의존성 다이어그램 (텍스트 기반)
    - 엔진 초기화 → 메인 루프 → 종료까지의 동작 흐름

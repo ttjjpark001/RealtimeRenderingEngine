@@ -1671,7 +1671,7 @@ VRAM 사용량이 HUD에 표시되는지 확인하라.
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 28를 구현하라.
 
-1. 전체 렌더 파이프라인을 11단계로 통합한다.
+1. 전체 렌더 파이프라인을 12단계로 통합한다.
    ① Scene Graph 순회 → AABB + 월드 행렬 수집
    ② Frustum Culling → 시야 밖 제외
    ③ Occlusion Culling → 가려진 오브젝트 제외 (CB + Draw 스킵)
@@ -1684,26 +1684,33 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 28를 구현
    ⑩ Shadow Depth Pass → 광원별 depth-only 렌더링
    ⑪ Main Pass → Opaque(인스턴싱) → Alpha Mask → Alpha Blend(back-to-front)
 
-2. 대형 씬 벤치마크를 수행한다.
+2. Shadow Depth Pass에 Frustum Culling을 적용한다.
+   - 각 그림자 광원에 대해 광원 시점의 BoundingFrustum을 생성한다.
+     · Directional: XMMatrixOrthographicLH + LVP로부터 BoundingFrustum 생성
+     · Spot: XMMatrixPerspectiveFovLH + LVP로부터 BoundingFrustum 생성
+   - Shadow Depth Pass 내부의 SceneGraph Traverse 람다에서 FrustumCuller를 호출하여
+     광원 시야 밖 오브젝트의 DrawShadowDepth 호출을 스킵한다.
+   - DebugHUD에 shadowCulledNodes 수 표시 (CullStats 확장)
+
+3. 대형 씬 벤치마크를 수행한다.
    - Sponza (glTF): 로딩 → PBR + Shadow + 최적화 렌더링
    - Bistro (glTF): 대규모 씬 로딩 및 네비게이션
    - 60fps 이상 유지 확인 (DebugHUD FPS 모니터링)
 
-3. 5단계 렌더링 모드를 전체 검증한다.
+4. 5단계 렌더링 모드를 전체 검증한다.
    - Wireframe → Solid → Base Color → Full PBR → Full PBR + Shadows
    - 각 모드에서 정상 렌더링되는지 확인
 
-4. 전체 기능을 통합 검증한다.
-   - File 메뉴에서 glTF/FBX 파일 열기 (다이얼로그 + 드래그앤드롭)
+5. 전체 기능을 통합 검증한다.
+   - File 메뉴에서 glTF/FBX 파일 열기 (파일 다이얼로그)
    - 씬 파일 내 카메라 있으면 해당 위치, 없으면 Fit to Scene
-   - 마우스 네비게이션 (우클릭 회전, 휠 줌, 중클릭 패닝)
    - WASD+QE 키보드 이동, Render 메뉴 모드 전환
    - 다중 광원 (Directional + Point + Spot), 그림자
    - DebugHUD: FPS, 해상도, 폴리곤, culled/occluded, 드로우콜,
      인스턴스, VRAM, 스트리밍, 렌더모드
    - Phase 01 오브젝트(vertex-color)도 BasicColor PSO로 정상 렌더링
 
-5. 모든 테스트를 실행한다.
+6. 모든 테스트를 실행한다.
    - 기존 Phase 01 유닛/스모크 테스트 통과 확인
    - Phase 02 테스트: test_Material, test_FrustumCuller, test_SceneLoader
 
@@ -1716,9 +1723,22 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 28를 구현
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 29를 구현하라.
-이 단계는 Phase 02의 마지막 단계로, 전체 코드 품질을 점검하고 ARCHITECTURE.md를 작성한다.
+이 단계는 Phase 02의 마지막 단계로, UX 개선 2건을 구현하고 전체 코드 품질을 점검하며 ARCHITECTURE.md를 작성한다.
 
-1. 전체 코드 리뷰를 수행한다.
+1. UX 개선 항목을 구현한다.
+   a. 드래그 앤 드롭 씬 로딩을 구현한다.
+      - Win32Window::Initialize()에서 DragAcceptFiles(hwnd, TRUE) 호출
+      - WndProc에 WM_DROPFILES 핸들러 추가:
+        · DragQueryFile(hDrop, 0, path, MAX_PATH)로 첫 번째 파일 경로 추출
+        · 확장자 확인: .gltf / .glb / .fbx인 경우에만 Engine::LoadScene() 호출
+        · DragFinish(hDrop) 호출
+   b. Camera 중클릭 드래그 패닝을 구현한다.
+      - Win32Input에서 WM_MBUTTONDOWN / WM_MBUTTONUP / WM_MOUSEMOVE 처리
+      - 중클릭 드래그 델타 → Camera right/up 벡터 기준 position 이동
+        · panSpeed = m_moveSpeedScale * deltaPixels * panSensitivity
+        · position += right * (-deltaX * panSpeed) + up * (deltaY * panSpeed)
+
+2. 전체 코드 리뷰를 수행한다.
    - src/ 하위 모든 소스 파일(.h, .cpp, .hlsl)을 순회하며 코드 품질을 점검한다.
    - 점검 항목:
      a. 사용되지 않는 코드(dead code), 불필요한 #include, 중복 로직 → 제거
@@ -1731,7 +1751,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 29를 구현
      h. include 순서: 자기 헤더 → 프로젝트 → DirectX/Windows → 표준 라이브러리
    - 발견된 문제를 즉시 수정한다.
 
-2. 성능 최적화를 수행한다.
+3. 성능 최적화를 수행한다.
    - D3D12 Debug Layer를 활성화하고 Warning/Error 메시지를 전수 확인한다.
      모든 경고를 0건으로 만든다.
    - D3D12 Live Object 리포트로 메모리 누수를 점검한다.
@@ -1741,7 +1761,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 29를 구현
    - GPU 측 점검: 드로우콜 수, PSO 상태 전환 횟수가 Material 정렬로 최소화되었는지 확인
    - 셰이더 최적화: 불필요한 동적 분기를 상수 분기로 대체 가능한 곳 확인
 
-3. 버그 수정 및 엣지 케이스를 처리한다.
+4. 버그 수정 및 엣지 케이스를 처리한다.
    - 모든 유닛 테스트 + 스모크 테스트를 재실행한다. 실패 항목이 있으면 수정한다.
    - 엣지 케이스 검증:
      a. 빈 씬 (메시 0개): 크래시 없이 빈 화면 렌더링
@@ -1752,7 +1772,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 29를 구현
      f. 잘못된 파일 경로/손상된 파일 로딩: 오류 처리 및 사용자 알림
    - 멀티스레드 안전성: 텍스처 교체, 상태 플래그 읽기/쓰기에 race condition 없는지 확인
 
-4. ARCHITECTURE.md를 프로젝트 루트에 작성한다.
+5. ARCHITECTURE.md를 프로젝트 루트에 작성한다.
    다음 내용을 포함한다:
 
    a. 프로젝트 개요 (1~2문단)
@@ -1766,7 +1786,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 29를 구현
    d. 엔진 라이프사이클:
       Initialize → MainLoop(ProcessMessages → Update → Render) → Shutdown
       각 단계에서 호출되는 주요 함수/클래스
-   e. 프레임당 렌더링 파이프라인 (11단계 상세):
+   e. 프레임당 렌더링 파이프라인 (12단계 상세):
       각 단계의 입력/출력, 담당 클래스, 데이터 흐름
    f. 주요 클래스 관계도 (텍스트 기반 UML 스타일):
       Engine, Renderer, SceneGraph, Camera, LightManager,
