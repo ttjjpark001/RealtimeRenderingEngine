@@ -1500,10 +1500,57 @@ DebugHUD에 씬 전체/실제 렌더링 폴리곤 수, culled 오브젝트 수, 
 
 ---
 
-## Prompt 24: Texture Streaming + Mip-Mapping
+## Prompt 24: HLSL 경고 수정 + Shadow Map 자동 크기 조정
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 24를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 24 섹션을 참조하여 Phase 24를 구현하라.
+이 단계는 PBR.hlsl X4000 경고를 최소화하고, Shadow Map 해상도·투영 범위를 씬 크기에 맞춰
+자동 조정한다. Phase 24는 이미 구현 완료(✅)이므로, 이 프롬프트는 재현·참조용이다.
+
+1. PBR.hlsl X4000 경고를 최소화한다.
+   a. SampleShadowMap() 함수 구조 변경:
+      - [branch] switch 방식 → float result = 1.0f; if/else-if 체인 방식으로 교체
+      - result를 명시적으로 초기화(1.0f = lit 기본값)하여 FXC가 초기화 추적 가능하도록 함
+      - 이로써 SampleShadowMap X4000 경고 제거
+   b. CalcShadow() 함수:
+      - shadowIdx = min(shadowIdx, MAX_SHADOW_MAPS - 1) 클램프 추가
+      - PCF 누적: shadow += saturate(SampleShadowMap(...))
+      - CalcShadow X4000 경고 1건은 FXC 컴파일러 한계(비교 샘플러 + 동적 cbuffer 인덱스
+        조합)로 제거 불가 — Phase 29에서 Texture2DArray 리팩터링으로 재검토
+
+2. ShadowCB(b3)에 shadowTexelSize 필드를 추가한다.
+   - cbuffer ShadowCB: float shadowTexelSize 필드 추가
+   - PCF 루프의 하드코딩 1.0f/1024.0f → shadowTexelSize cbuffer 값으로 교체
+   - CPU 측: shadowConst.shadowTexelSize = 1.0f / GetShadowMapSize()로 매 프레임 계산
+
+3. D3D12Context에 런타임 Shadow Map 해상도 변경 지원을 추가한다.
+   - SHADOW_MAP_SIZE 상수 제거 → m_shadowMapSize = 1024 런타임 멤버로 교체
+   - SetShadowMapSize(uint32): [512, 4096] 범위에서 2의 제곱수로 스냅
+   - RecreateShadowMaps(): Fence 대기 후 기존 리소스 해제 → CreateShadowMaps() 재호출
+   - GetShadowMapSize(): 현재 해상도 반환
+   - BeginShadowPass()의 viewport/scissor에 m_shadowMapSize 사용
+
+4. Renderer에 씬 크기 기반 Shadow 투영 자동 조정을 추가한다.
+   - m_sceneDiagonal 멤버 추가 (기본값 10.0f)
+   - SetSceneDiagonal(float d): 씬 로드 시 호출
+   - Directional Shadow: XMMatrixOrthographicLH(diagonal*1.5f, diagonal*1.5f, 0.1f, diagonal*3.0f)
+   - Spot Shadow far plane: diagonal * 3.0f
+
+5. Engine::LoadScene()에 씬 로드 후 Shadow Map 자동 설정을 추가한다.
+   - Renderer::SetSceneDiagonal(m_sceneDiagonal) 호출
+   - 해상도 선택: diagonal > 100m → 4096, > 10m → 2048, else → 1024
+   - context->SetShadowMapSize(shadowSize); context->RecreateShadowMaps();
+
+빌드하여 X4000 경고가 최소화되고, Sponza 로드 시 Shadow Map 해상도 및 투영 범위가
+씬 크기에 맞게 자동 설정되는지 확인하라.
+```
+
+---
+
+## Prompt 25: Texture Streaming + Mip-Mapping
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 25를 구현하라.
 
 1. src/Asset/TextureStreamer.h/.cpp를 만든다.
    - 텍스처별 요구 Mip 레벨 관리
@@ -1538,10 +1585,10 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 24를 구현
 
 ---
 
-## Prompt 25: Instanced Rendering + 멀티스레드 로딩
+## Prompt 26: Instanced Rendering + 멀티스레드 로딩
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 25를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 26를 구현하라.
 
 1. src/Renderer/InstanceBatcher.h/.cpp를 만든다.
    - Scene Graph에서 동일 Mesh+Material 조합을 그룹핑
@@ -1574,10 +1621,10 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 25를 구현
 
 ---
 
-## Prompt 26: GPU 메모리 최적화
+## Prompt 27: GPU 메모리 최적화
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 26를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 27를 구현하라.
 
 1. CBPool을 Renderer에 통합한다.
    - 매 프레임 ResetFrame(frameIndex) 호출
@@ -1619,10 +1666,10 @@ VRAM 사용량이 HUD에 표시되는지 확인하라.
 
 ---
 
-## Prompt 27: Phase 02 통합 & 최종 검증
+## Prompt 28: Phase 02 통합 & 최종 검증
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 27를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 28를 구현하라.
 
 1. 전체 렌더 파이프라인을 11단계로 통합한다.
    ① Scene Graph 순회 → AABB + 월드 행렬 수집
@@ -1665,10 +1712,10 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 27를 구현
 
 ---
 
-## Prompt 28: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
+## Prompt 29: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 28를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 29를 구현하라.
 이 단계는 Phase 02의 마지막 단계로, 전체 코드 품질을 점검하고 ARCHITECTURE.md를 작성한다.
 
 1. 전체 코드 리뷰를 수행한다.
@@ -1745,7 +1792,7 @@ ARCHITECTURE.md가 프로젝트 루트에 생성되었는지 확인하라.
 
 ---
 
-## Prompt 29: Occlusion Culling P1 — Hi-Z GPU
+## Prompt 30: Occlusion Culling P1 — Hi-Z GPU
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 30 섹션을 참조하여 Phase 30을 구현하라.
@@ -1796,7 +1843,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 30 섹션을 참조하여 Phase 30을 구현
 
 ---
 
-## Prompt 30: Point Light Cube Map Shadowing
+## Prompt 31: Point Light Cube Map Shadowing
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 31 섹션을 참조하여 Phase 31을 구현하라.
