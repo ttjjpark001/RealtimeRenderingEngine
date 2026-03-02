@@ -1500,12 +1500,13 @@ DebugHUD에 씬 전체/실제 렌더링 폴리곤 수, culled 오브젝트 수, 
 
 ---
 
-## Prompt 24: HLSL 경고 수정 + Shadow Map 자동 크기 조정
+## Prompt 24: HLSL 경고 수정 + Shadow Map 자동 크기 조정 + Sponza 빠른 로드
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 24 섹션을 참조하여 Phase 24를 구현하라.
 이 단계는 PBR.hlsl X4000 경고를 최소화하고, Shadow Map 해상도·투영 범위를 씬 크기에 맞춰
-자동 조정한다. Phase 24는 이미 구현 완료(✅)이므로, 이 프롬프트는 재현·참조용이다.
+자동 조정하며, Sponza 빠른 로드 메뉴를 추가한다.
+Phase 24는 이미 구현 완료(✅)이므로, 이 프롬프트는 재현·참조용이다.
 
 1. PBR.hlsl X4000 경고를 최소화한다.
    a. SampleShadowMap() 함수 구조 변경:
@@ -1533,8 +1534,17 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 24 섹션을 참조하여 Phase 24를 구현
 4. Renderer에 씬 크기 기반 Shadow 투영 자동 조정을 추가한다.
    - m_sceneDiagonal 멤버 추가 (기본값 10.0f)
    - SetSceneDiagonal(float d): 씬 로드 시 호출
-   - Directional Shadow: XMMatrixOrthographicLH(diagonal*1.5f, diagonal*1.5f, 0.1f, diagonal*3.0f)
-   - Spot Shadow far plane: diagonal * 3.0f
+   - Directional Shadow:
+     - orthoSize = diagonal × 1.5f, farPlane = diagonal × 3.0f
+     - nearPlane = diagonal × 0.5f  ← 씬 앞쪽 잘림 방지
+     - shadowCamPos = sceneCenter - dir*(farPlane*0.5f)
+       → 카메라를 씬 중심에서 farPlane/2 뒤에 배치하여 깊이 범위(near~far) 내에 씬 전체 포함
+     - XMMatrixOrthographicLH(orthoSize, orthoSize, nearPlane, farPlane)
+   - Spot Shadow:
+     - farPlane = diagonal × 3.0f, nearPlane = diagonal × 0.05f
+   - shadowNormalBiasWorld = (diagonal × 1.5f) / shadowMapSize × 2.0f
+     → 씬 크기·해상도에 비례하는 월드 공간 노말 바이어스 (Shadow Acne 방지)
+   - 위 값을 ShadowCB의 shadowNormalBiasWorld 필드로 매 프레임 GPU에 전달
 
 5. Engine::LoadScene()에 씬 로드 후 Shadow Map 자동 설정을 추가한다.
    - Renderer::SetSceneDiagonal(m_sceneDiagonal) 호출
@@ -1549,9 +1559,26 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 24 섹션을 참조하여 Phase 24를 구현
      direction = normalize(-offset)  (offset = 카메라 뷰축 기준 궤도 위치 벡터)
      → 광원이 항상 씬 중심(원점 방향)을 가리키도록 유지
 
-빌드하여 X4000 경고가 최소화되고, Sponza 로드 시 Shadow Map 해상도 및 투영 범위가
+7. Sponza 빠른 로드 메뉴를 추가한다.
+   - Win32Menu에 ID_FILE_OPEN_SPONZA = 6002, FileSponzaCallback 추가
+   - File 메뉴 하단에 "Sponza!" 항목 추가 (WM_COMMAND → m_fileSponzaCallback 호출)
+   - Engine::LoadSponzaScene() 구현:
+     a. 파일 다이얼로그로 Sponza.gltf 경로를 사용자에게 선택하게 함
+     b. LoadScene(utf8Path)로 표준 씬 로드 수행
+     c. 카메라를 Sponza 전용 프리셋으로 설정:
+        - SetPosition({10, 4.5, 4}), LookAt({0,0,0}), FOV 60°
+        - SetMoveSpeedScale(sceneDiagonal / 40.0f)
+     d. 기존 광원을 모두 클리어 후 Sponza 전용 광원 배치:
+        - Directional "Sun" (warm white 1,0.95,0.9, intensity=8, castShadow=true)
+        - Point "Sky Fill" (cool blue 0.7,0.8,1.0, intensity=4)
+        - Point "Torch" × 4 (orange 1.0,0.55,0.1, intensity=12, fast falloff Kl=0.7/Kq=1.8)
+          — 씬 바닥 근처 네 모서리 배치 (y=1.5)
+   - Engine 생성자에서 m_menu->SetFileSponzaCallback([this]() { LoadSponzaScene(); }) 등록
+
+빌드하여 X4000 경고가 최소화되고, 씬 로드 시 Shadow Map 해상도 및 투영 범위가
 씬 크기에 맞게 자동 설정되는지 확인하라. Orbit Directional Light가 매 프레임 회전하며
-그림자를 생성하는지 확인하라.
+그림자를 생성하는지 확인하라. File 메뉴의 "Sponza!" 항목으로 Sponza 씬이 전용 카메라·광원
+프리셋으로 로드되는지 확인하라.
 ```
 
 ---

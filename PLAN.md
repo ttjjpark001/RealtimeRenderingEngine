@@ -699,8 +699,8 @@ tests/
 
 **완료 기준**: Frustum 밖 오브젝트 culled, Occluded 오브젝트 스킵, 거리별 LOD 전환 (자동 생성 포함), 원거리/저기여 광원 컬링, DebugHUD에 씬 전체 폴리곤 수와 렌더링된 폴리곤 수 각각 표시, Optimization 메뉴에서 각 기능 on/off 가능, 91/91 테스트 통과
 
-### Phase 24: HLSL 경고 수정 + Shadow Map 자동 크기 조정 ✅
-**목표**: PBR.hlsl X4000 경고 최소화, Shadow Map 해상도 및 투영 범위를 씬 크기에 맞게 자동 조정
+### Phase 24: HLSL 경고 수정 + Shadow Map 자동 크기 조정 + Sponza 빠른 로드 ✅
+**목표**: PBR.hlsl X4000 경고 최소화, Shadow Map 해상도·투영 범위·카메라 배치를 씬 크기에 맞게 자동 조정, Sponza 전용 빠른 로드 메뉴 추가
 
 1. **PBR.hlsl — SampleShadowMap 구조 개선** (X4000 경고 최소화)
    - `[branch] switch` → `float result = 1.0f; if/else-if` 체인으로 교체
@@ -720,7 +720,11 @@ tests/
 4. **Renderer — 씬 대각선 기반 Shadow 투영 스케일링**
    - `SetSceneDiagonal(float)` + `m_sceneDiagonal = 10.0f` 멤버 추가
    - Directional 그림자 Ortho 범위: 고정 `20×20m` → `sceneDiagonal × 1.5f` 자동 계산
-   - Spot/Directional far plane: 고정 `100.0f` → `sceneDiagonal × 3.0f`
+   - Directional/Spot far plane: 고정 `100.0f` → `sceneDiagonal × 3.0f`
+   - Directional near plane: `sceneDiagonal × 0.5f` (소형 씬에서 z-fighting 방지)
+   - Spot near plane: `sceneDiagonal × 0.05f` (was hardcoded 0.1f)
+   - Shadow 카메라 배치: `shadowCamPos = sceneCenter - dir*(farPlane*0.5f)` — farPlane 절반 거리에서 씬 중심을 향하도록 위치시켜 씬 전체가 깊이 범위에 포함되도록 보장
+   - Shadow Normal Bias: `shadowNormalBiasWorld = (sceneDiagonal × 1.5f) / shadowMapSize × 2.0f` — 씬 크기와 해상도에 비례한 world-space bias
    - Shadow pass 전 `shadowConst.shadowTexelSize = 1.0f / GetShadowMapSize()`
 5. **Engine::LoadScene() — 씬 로드 후 자동 연결**
    - `Renderer::SetSceneDiagonal(m_sceneDiagonal)` 호출
@@ -732,8 +736,21 @@ tests/
      - `offset = right*cos(θ) + up*sin(θ)` (궤도 위치 벡터)
      - `direction = normalize(-offset)` (궤도 위치에서 씬 중심을 향하는 방향)
    - Directional 광원이므로 매 프레임 Shadow Depth Pass 1회 실행 → 회전하는 그림자 효과
+7. **Sponza 빠른 로드 — File 메뉴 "Sponza!" 항목 추가**
+   - `Win32Menu`: `ID_FILE_OPEN_SPONZA = 6002`, `AppendMenuW(m_fileMenu, MF_STRING, ID_FILE_OPEN_SPONZA, L"Sponza!")` 추가
+   - `Win32Menu::HandleCommand`: `case ID_FILE_OPEN_SPONZA → m_fileSponzaCallback()` 처리
+   - `FileSponzaCallback` + `SetFileSponzaCallback()` 추가
+   - `Engine::LoadSponzaScene()` 구현:
+     - 파일 열기 다이얼로그로 씬 선택 → `LoadScene()` 호출 (표준 로딩 절차 동일)
+     - 카메라를 Sponza 전용 위치로 재배치: position `{10, 4.5, 4}`, lookAt `{0, 0, 0}`, FOV 60°
+     - Sponza 전용 조명 레이아웃 설정: 기존 3-point + Orbit 라이트를 교체
+       - Key Light: Directional (태양, warm `{1.0, 0.95, 0.8}`, intensity=7, castShadow=true), direction `normalize({-0.3, -1, 0.5})`
+       - Fill Light: Point (하늘 간접광, cool `{0.4, 0.5, 0.7}`, intensity=1.75, position `{-6, 10, 0}`)
+       - Torch ×4: Point (횃불 `{1.0, 0.45, 0.08}`, intensity=8, 빠른 감쇠 Kl=0.7/Kq=1.8), 코너 4곳 배치
+     - `m_orbitLightIndex = SIZE_MAX` — Sponza에서는 Orbit 조명 비활성화
+   - `Engine::Initialize()`: `m_menu->SetFileSponzaCallback([this](){ LoadSponzaScene(); })` 연결
 
-**완료 기준**: Shadow Map 해상도가 씬 크기에 맞게 자동 선택됨, Shadow Ortho/Perspective 범위가 sceneDiagonal 기반으로 스케일링, ShadowTexelSize가 GPU로 동적 전달, Orbit Directional Light 회전 그림자 정상 렌더링, 빌드 오류 0건 (경고 1건 잔존 — FXC 컴파일러 한계)
+**완료 기준**: Shadow Map 해상도가 씬 크기에 맞게 자동 선택됨, Shadow 카메라가 씬 전체 깊이 범위를 커버, nearPlane·spotNear·shadowNormalBiasWorld가 sceneDiagonal 기반으로 스케일링, ShadowTexelSize가 GPU로 동적 전달, Orbit Directional Light 회전 그림자 정상 렌더링, "File > Sponza!" 메뉴 항목에서 Sponza 씬 로드 및 전용 카메라/조명 자동 적용, 빌드 오류 0건 (경고 1건 잔존 — FXC 컴파일러 한계)
 
 ### Phase 25: Texture Streaming + Mip-Mapping
 **목표**: 필요 Mip만 GPU 로드, 가시성/거리 기반 우선순위

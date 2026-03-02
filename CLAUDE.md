@@ -457,9 +457,11 @@ struct Light {
 - Shadow Map 해상도: 씬 크기(diagonal) 기반 자동 선택 — ≤10m: 1024, ≤100m: 2048, >100m: 4096
   - `D3D12Context::SetShadowMapSize()` + `RecreateShadowMaps()`으로 런타임 재생성 가능
 - Shadow Ortho/Perspective 범위: `Renderer::m_sceneDiagonal` 기반 자동 스케일
-  - Directional ortho: `diagonal × 1.5f` (width/height), far: `diagonal × 3.0f`
-  - Spot perspective: far = `diagonal × 3.0f`
+  - Directional ortho: `diagonal × 1.5f` (width/height), far: `diagonal × 3.0f`, near: `diagonal × 0.5f`
+  - Spot perspective: far = `diagonal × 3.0f`, near = `diagonal × 0.05f`
   - `Engine::LoadScene()` 완료 후 `Renderer::SetSceneDiagonal()` 호출로 갱신
+- Shadow 카메라 배치 (Directional): `shadowCamPos = sceneCenter - dir*(farPlane*0.5f)` — far plane 절반 거리에서 씬 중심을 향하도록 배치, 씬 전체가 깊이 범위에 포함됨
+- Shadow Normal Bias: `shadowNormalBiasWorld = (diagonal × 1.5f) / shadowMapSize × 2.0f` — 씬 크기·해상도 비례 world-space bias (Shadow Acne 방지, Karan-Hanrahan 공식)
 - `shadowTexelSize`: `1.0f / shadowMapResolution` — CPU에서 계산하여 ShadowCB(b3)로 GPU 전달
   - PCF 루프에서 하드코딩 대신 `shadowTexelSize` 사용 (해상도 변경 시 자동 반영)
 - Depth 전용 렌더 타겟: `DXGI_FORMAT_D32_FLOAT` 또는 `D24_UNORM_S8_UINT`
