@@ -462,11 +462,11 @@ void Engine::LoadSponzaScene()
     // Standard load: scene graph, textures, bounds, shadow maps
     LoadScene(utf8Path);
 
-    // --- Camera: Sponza Option A (SceneSettings.md) ---
+    // --- Camera: Sponza Option B (SceneSettings.md) ---
     if (m_camera)
     {
-        m_camera->SetPosition({ 0.0f, 2.0f, -10.0f });
-        m_camera->SetLookAt ({ 0.0f, 2.0f,   0.0f });
+        m_camera->SetPosition({ 10.0f, 4.5f, 4.0f });
+        m_camera->SetLookAt ({ 0.0f,  0.0f, 0.0f });
         m_camera->SetFov(XMConvertToRadians(60.0f));
     }
 
@@ -513,8 +513,8 @@ void Engine::LoadSponzaScene()
             torch.type      = LightType::Point;
             torch.position  = pos;
             torch.color     = { 1.0f, 0.45f, 0.08f };
-            torch.intensity = 3.0f;
-            torch.Kc = 1.0f; torch.Kl = 0.7f; torch.Kq = 1.8f;
+            torch.intensity = 8.0f;
+            torch.Kc = 1.0f; torch.Kl = 0.35f; torch.Kq = 0.44f;
             torch.castShadow = false;
             m_lightManager->AddLight(torch);
         }
