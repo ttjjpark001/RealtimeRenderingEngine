@@ -54,6 +54,9 @@ public:
     void SetRenderMode(RenderMode mode) { m_renderMode = mode; }
     RenderMode GetRenderMode() const { return m_renderMode; }
 
+    void SetLODEnabled(bool enabled) { m_lodEnabled = enabled; }
+    bool IsLODEnabled() const { return m_lodEnabled; }
+
     // Upload mesh VB/IB to GPU (cached, idempotent)
     void UploadMesh(Mesh* mesh);
 
@@ -84,6 +87,7 @@ private:
     ID3D12Device* m_d3dDevice    = nullptr;
     TextureCache* m_textureCache = nullptr;
     RenderMode    m_renderMode   = RenderMode::FullPBRShadows;
+    bool          m_lodEnabled   = true;
 
     std::unordered_map<Mesh*, MeshBuffers> m_meshCache;
 

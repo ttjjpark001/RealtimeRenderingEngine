@@ -37,6 +37,8 @@ constexpr UINT ID_RENDER_BASECOLOR       = 7003;
 constexpr UINT ID_RENDER_FULL_PBR        = 7004;
 constexpr UINT ID_RENDER_FULL_PBR_SHADOW = 7005;
 
+constexpr UINT ID_OPTIM_LOD              = 8001;
+
 class Win32Menu
 {
 public:
@@ -50,6 +52,7 @@ public:
     using FileOpenCallback = std::function<void()>;
     using CameraFitToSceneCallback = std::function<void()>;
     using RenderModeCallback = std::function<void(uint32 mode)>;
+    using LODToggleCallback  = std::function<void()>;
 
     Win32Menu() = default;
     ~Win32Menu() = default;
@@ -68,6 +71,7 @@ public:
     void SetFileOpenCallback(FileOpenCallback callback) { m_fileOpenCallback = std::move(callback); }
     void SetCameraFitToSceneCallback(CameraFitToSceneCallback callback) { m_cameraFitToSceneCallback = std::move(callback); }
     void SetRenderModeCallback(RenderModeCallback callback) { m_renderModeCallback = std::move(callback); }
+    void SetLODToggleCallback(LODToggleCallback callback)   { m_lodToggleCallback = std::move(callback); }
 
 private:
     HWND m_hwnd = nullptr;
@@ -77,6 +81,7 @@ private:
     HMENU m_lightMenu = nullptr;
     HMENU m_cameraMenu = nullptr;
     HMENU m_renderMenu = nullptr;
+    HMENU m_optimMenu = nullptr;
 
     ViewCallback m_viewCallback;
     LightColorCallback m_lightColorCallback;
@@ -88,6 +93,7 @@ private:
     FileOpenCallback m_fileOpenCallback;
     CameraFitToSceneCallback m_cameraFitToSceneCallback;
     RenderModeCallback m_renderModeCallback;
+    LODToggleCallback  m_lodToggleCallback;
 };
 
 } // namespace RRE

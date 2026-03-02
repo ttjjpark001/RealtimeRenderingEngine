@@ -76,6 +76,11 @@ bool Win32Menu::Initialize(HWND hwnd)
     CheckMenuRadioItem(m_renderMenu, ID_RENDER_WIREFRAME, ID_RENDER_FULL_PBR_SHADOW,
         ID_RENDER_FULL_PBR_SHADOW, MF_BYCOMMAND);
 
+    // Optimization menu
+    m_optimMenu = CreatePopupMenu();
+    AppendMenuW(m_optimMenu, MF_STRING | MF_CHECKED, ID_OPTIM_LOD, L"LOD");
+    AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_optimMenu), L"Optimization");
+
     SetMenu(hwnd, m_menuBar);
     return true;
 }
@@ -197,6 +202,16 @@ bool Win32Menu::HandleCommand(WPARAM wParam)
             id, MF_BYCOMMAND);
         if (m_renderModeCallback) m_renderModeCallback(id - ID_RENDER_WIREFRAME);
         return true;
+
+    // Optimization commands
+    case ID_OPTIM_LOD:
+    {
+        UINT state = GetMenuState(m_optimMenu, ID_OPTIM_LOD, MF_BYCOMMAND);
+        CheckMenuItem(m_optimMenu, ID_OPTIM_LOD,
+            MF_BYCOMMAND | ((state & MF_CHECKED) ? MF_UNCHECKED : MF_CHECKED));
+        if (m_lodToggleCallback) m_lodToggleCallback();
+        return true;
+    }
 
     default:
         return false;

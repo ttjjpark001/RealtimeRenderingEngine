@@ -61,8 +61,10 @@ void Renderer::RegisterMeshesForLOD(
     {
         if (!mesh) continue;
         // LOD switch distances scale with the scene so transitions feel natural.
-        float dist1 = sceneDiagonal * 0.5f;
-        float dist2 = sceneDiagonal * 2.0f;
+        // Multipliers are intentionally large so LOD changes are barely noticeable during
+        // normal navigation and only kick in when the camera is very far from an object.
+        float dist1 = sceneDiagonal * 2.0f;
+        float dist2 = sceneDiagonal * 6.0f;
         m_lodSelector.RegisterMesh(mesh.get(), dist1, dist2);
     }
 }
@@ -237,7 +239,7 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
         XMVECTOR objCenter = XMLoadFloat3(&worldAABB.Center);
         XMVECTOR camV      = XMLoadFloat3(&camPos);
         float dist = XMVectorGetX(XMVector3Length(XMVectorSubtract(objCenter, camV)));
-        Mesh* drawMesh = m_lodSelector.SelectLOD(mesh, dist);
+        Mesh* drawMesh = m_lodEnabled ? m_lodSelector.SelectLOD(mesh, dist) : mesh;
 
         Material* material = node->GetMaterial();
 
