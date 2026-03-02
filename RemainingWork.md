@@ -1,0 +1,186 @@
+# 잔여 구현 항목 정리
+
+> 작성일: 2026-03-01 (Phase 23 완료 시점 기준)
+> Phase 23까지 구현된 내용을 바탕으로, 이후 필요한 작업을 정리한다.
+
+---
+
+## 현재 구현 완료 범위 (Phase 23)
+
+| 항목 | 상태 |
+|------|------|
+| FrustumCuller (AABB vs Frustum 교차) | ✅ 완료 |
+| LightCuller (거리·기여도 기반 광원 컬링) | ✅ 완료 |
+| LODSelector (거리 기반 + 비동기 자동 LOD 생성) | ✅ 완료 |
+| OcclusionCuller | ⚠️ P0 스텁 (항상 false, 실제 컬링 없음) |
+| CullStats + DebugHUD 이중 폴리곤 표시 | ✅ 완료 |
+| Optimization 메뉴 (Frustum / Light / LOD 토글) | ✅ 완료 |
+| Shadow Mapping (Directional/Spot, PCF) | ✅ 완료 |
+| PBR 셰이더 + 텍스처 로딩 | ✅ 완료 |
+| 프리미티브 → SceneNode 분리 + Per-Mesh AABB | ✅ 완료 |
+
+---
+
+## 잔여 구현 항목
+
+### Phase 23.5 — Occlusion Culling (P0: CPU Readback)
+
+현재 `OcclusionCuller::IsOccluded()`는 항상 `false`를 반환하는 스텁이다.
+Phase 27 통합 단계에 넣기에는 신규 D3D12 리소스 작업이 포함되므로 **별도 Phase가 필요**하다.
+
+**구현 범위 (P0)**
+
+| 작업 | 설명 |
+|------|------|
+| Readback Buffer 생성 | `D3D12_HEAP_TYPE_READBACK` 리소스, 이전 프레임 Depth 복사용 |
+| Copy Command + Fence 동기화 | GPU Depth → CPU 복사, 1프레임 레이턴시 관리 |
+| AABB → NDC 투영 | 8개 코너를 ViewProj로 변환 후 screen-space min/max 계산 |
+| Depth 비교 | 해당 영역의 readback depth 값과 AABB 근거리 Z 비교 |
+| GPU stall 방지 | Fence wait 타이밍 조정 — 잘못하면 프레임 드롭 원인 |
+| `occlusionCulledNodes` 통계 | CullStats 반영, DebugHUD 표시 |
+| Optimization 메뉴 항목 추가 | `ID_OPTIM_OCCLUSION_CULL = 8004` |
+
+**P1 (Hi-Z GPU 방식) — 별도 확장으로 이연**
+
+| 작업 | 설명 |
+|------|------|
+| Compute Shader 파이프라인 | 현재 엔진에 Compute 인프라 없음, 신규 구축 필요 |
+| Depth Mip chain (UAV) 생성 | 이전 프레임 Depth Buffer를 반씩 축소하는 Compute 패스 |
+| GPU-side AABB depth 비교 | Compute Shader에서 AABB 투영 + Mip 레벨 depth 샘플링 |
+
+> P1은 Phase 28 이후 별도 확장으로 구현하는 것이 현실적이다.
+
+---
+
+### Phase 24 — Texture Streaming + Mip-Mapping
+
+현재 모든 텍스처가 최고 해상도(단일 Mip)로 메인 스레드에서 한 번에 로드된다.
+
+**구현 항목**
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| `TextureStreamer.h/.cpp` | 미존재 | 가시성·거리 기반 우선순위 큐, Mip 레벨 동적 로딩/해제 |
+| Mip chain 생성 | `MipLevels = 1` | `floor(log2(max(w,h))) + 1` 전체 Mip 생성 |
+| Anisotropic Sampler | Linear Wrap 사용 중 | `D3D12_FILTER_ANISOTROPIC`, MaxAnisotropy = 16 |
+| 스트리밍 우선순위 | 없음 | `priority = isVisible ? (1/distance) : 0` |
+| VRAM 예산 연동 | 없음 | VRAM 초과 시 LRU + 거리 기반 Mip 해제 |
+
+**Shadow Map 자동 조정** ← 이 Phase에서 함께 처리 권장
+
+| 항목 | 현재 (하드코딩) | 권장 |
+|------|-----------------|------|
+| Shadow Map 해상도 (`SHADOW_MAP_SIZE`) | 1024×1024 | 씬 크기 기반 자동 선택 (최소 2048) |
+| Ortho 투영 범위 | 20×20m | `sceneDiagonal × 1.5` 정도로 자동 계산 |
+
+> 현재 값은 `SceneSettings.md`에 Sponza 권장값으로 문서화되어 있으나 코드에 미반영.
+
+---
+
+### Phase 25 — Instanced Rendering + 멀티스레드 로딩
+
+**Instanced Rendering**
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| `InstanceBatcher.h/.cpp` | 미존재 | 동일 Mesh+Material 그룹핑, Instance Buffer 생성 |
+| `DrawIndexedInstanced` | 미사용 | 현재 동일 Mesh라도 노드마다 개별 Draw 호출 |
+| per-instance Input Layout | 없음 | slot 1: `INSTANCE_WORLD` (4×float4, per-instance) |
+| HLSL `SV_InstanceID` | 없음 | VS에서 Instance Buffer World Matrix 인덱싱 |
+
+**멀티스레드 로딩**
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| `ThreadPool.h/.cpp` | 미존재 | CPU 코어 수 기반 워커 스레드 |
+| 텍스처 디코딩 병렬화 | 순차 실행 | 씬 로드 중 메인 스레드 프리즈 원인 |
+| Copy Queue (P1) | 없음 | Graphics Queue와 병렬 GPU 업로드 |
+
+---
+
+### Phase 26 — GPU 메모리 최적화
+
+**CB 풀링**
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| `D3D12CBPool.h/.cpp` | 미존재 | Upload Heap 풀, 256바이트 정렬, 링 버퍼 (프레임 0/1 영역 분리) |
+| Per-Object / Per-Material CB 분리 | 없음 | `register b0` (오브젝트), `register b2` (Material) |
+
+**갱신 최적화**
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| Transform Dirty Flag | 없음 | 변경 없으면 CB 갱신 스킵 |
+| Material Dirty Flag | 없음 | Material 파라미터 미변경 시 갱신 스킵 |
+| Light CB Dirty Flag | 없음 | 광원 데이터 미변경 시 갱신 스킵 |
+| VRAM 모니터링 | 없음 | `IDXGIAdapter3::QueryVideoMemoryInfo`, DebugHUD 표시 |
+| 적응적 CB 갱신 | 없음 | VRAM > Budget 80% 시 저우선순위 오브젝트 갱신 빈도 감소 |
+
+**정렬 최적화**
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| Opaque Front-to-Back 정렬 | 없음 | Early-Z rejection 극대화 |
+| Material 기반 드로우콜 정렬 | 없음 | PSO/텍스처 상태 전환 최소화 |
+
+---
+
+### Phase 27 — 통합 & 벤치마크
+
+Phase 24~26 완료 후 전체 파이프라인 연결 및 검증.
+
+| 작업 | 설명 |
+|------|------|
+| 12단계 파이프라인 통합 | Scene Graph 순회 → Frustum → Occlusion → LOD → Light Cull → Instance Batching → Texture Streaming → CB 갱신 → Material 정렬 → Front-to-Back → Shadow Pass → Main Pass |
+| DebugHUD 전체 항목 | VRAM 사용량, 스트리밍 리소스 수, 드로우콜 수 추가 |
+| 대형 씬 벤치마크 | Sponza, Bistro 로딩 + Full PBR + Shadows + 모든 최적화 활성 상태에서 60fps 목표 |
+| 5단계 렌더링 모드 전체 확인 | Wireframe / Solid / Base Color / Full PBR / Full PBR+Shadows |
+| 전체 테스트 통과 확인 | 유닛 + 스모크 통과 |
+
+---
+
+### Phase 28 — 코드 리뷰 & 문서화
+
+| 작업 | 설명 |
+|------|------|
+| 전체 코드 리뷰 | Dead code 제거, include 정리, 네이밍 일관성 검증 |
+| PBR.hlsl 경고 수정 | `CalcShadow` 미초기화 변수 경고 (매 빌드 시 출력 중) |
+| GPU 리소스 해제 누락 검사 | Fence 대기 후 해제 보장, ComPtr 사용 일관성 |
+| PIX / 타임스탬프 쿼리 프로파일링 | 병목 구간 식별 및 최적화 |
+| `ARCHITECTURE.md` 작성 | 전체 엔진 구조, 모듈 간 의존성, 렌더 파이프라인 다이어그램 |
+
+---
+
+## 권장 구현 순서
+
+```
+Phase 23   완료 ✅
+    │
+Phase 23.5  Occlusion Culling P0 (CPU Readback)
+    │           → P1(Hi-Z)은 Phase 28 이후 별도 확장
+    │
+Phase 24    Texture Streaming + Mip-Mapping
+    │           + Shadow Map 크기 자동 조정 (씬 diagonal 기반)
+    │           + Anisotropic Sampler 교체
+    │
+Phase 25    Instanced Rendering + 멀티스레드 로딩
+    │
+Phase 26    GPU 메모리 최적화
+    │           (CBPool + Dirty Flag + Front-to-Back + VRAM 모니터링)
+    │
+Phase 27    통합 & 벤치마크 (Sponza 60fps 목표)
+    │
+Phase 28    코드 리뷰 + HLSL 경고 정리 + ARCHITECTURE.md
+    │
+(미래)      Occlusion Culling P1 (Hi-Z GPU)
+            Compute Shader 파이프라인 구축 후 구현
+```
+
+---
+
+## 기타 메모
+
+- **PBR.hlsl CalcShadow 경고**: `warning X4000` — 기능 문제는 없으나 Phase 28 전에 정리 권장
+- **Shadow Map 하드코딩**: `D3D12Context.h SHADOW_MAP_SIZE = 1024`, `Renderer.cpp OrthographicLH(20, 20)` — Phase 24에서 씬 diagonal 기반 자동 계산으로 교체
+- **Occlusion Culling Optimization 메뉴 항목**: P0 구현 완료 후 `ID_OPTIM_OCCLUSION_CULL = 8004` 추가
