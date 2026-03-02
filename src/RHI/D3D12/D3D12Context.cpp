@@ -900,6 +900,36 @@ void D3D12Context::EndShadowPass(uint32 shadowIndex)
     m_commandList->ResourceBarrier(1, &barrier);
 }
 
+void D3D12Context::RestoreMainRenderTarget()
+{
+    if (!m_swapChain)
+        return;
+
+    D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_swapChain->GetCurrentRTV();
+
+    if (m_depthBuffer)
+    {
+        D3D12_CPU_DESCRIPTOR_HANDLE dsv = m_dsvHeap.GetCPUStart();
+        m_commandList->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+    }
+    else
+    {
+        m_commandList->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+    }
+
+    D3D12_VIEWPORT viewport = {};
+    viewport.Width = static_cast<float>(m_swapChain->GetWidth());
+    viewport.Height = static_cast<float>(m_swapChain->GetHeight());
+    viewport.MinDepth = 0.0f;
+    viewport.MaxDepth = 1.0f;
+    m_commandList->RSSetViewports(1, &viewport);
+
+    D3D12_RECT scissor = {};
+    scissor.right = static_cast<LONG>(m_swapChain->GetWidth());
+    scissor.bottom = static_cast<LONG>(m_swapChain->GetHeight());
+    m_commandList->RSSetScissorRects(1, &scissor);
+}
+
 void D3D12Context::DrawShadowDepth(IRHIBuffer* vb, IRHIBuffer* ib,
     const DirectX::XMFLOAT4X4& worldMatrix,
     const DirectX::XMFLOAT4X4& lightViewProj)

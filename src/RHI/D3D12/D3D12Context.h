@@ -193,6 +193,8 @@ public:
     void RecreateShadowMaps();
     void BeginShadowPass(uint32 shadowIndex);
     void EndShadowPass(uint32 shadowIndex);
+    // Restore main back-buffer RTV + DSV + viewport after all shadow passes
+    void RestoreMainRenderTarget();
     void DrawShadowDepth(IRHIBuffer* vb, IRHIBuffer* ib,
         const DirectX::XMFLOAT4X4& worldMatrix,
         const DirectX::XMFLOAT4X4& lightViewProj);

@@ -209,6 +209,9 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
             shadowIdx++;
         }
         shadowConst.shadowMapCount = shadowIdx;
+
+        // Restore main back-buffer RTV/DSV/viewport after all shadow passes
+        m_context->RestoreMainRenderTarget();
     }
     shadowConst.shadowTexelSize = 1.0f / static_cast<float>(m_context->GetShadowMapSize());
     m_context->SetShadowData(shadowConst);
