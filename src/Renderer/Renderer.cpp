@@ -225,6 +225,11 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
         m_context->RestoreMainRenderTarget();
     }
     shadowConst.shadowTexelSize = 1.0f / static_cast<float>(m_context->GetShadowMapSize());
+    // Normal-offset bias: shift shadow sampling by 2 world-space texels along surface normal.
+    // Prevents PCF samples from crossing geometry discontinuities (e.g. base top → base front face).
+    // Scales with orthoSize (= diagonal * 1.5) so it works across small and large scenes.
+    shadowConst.shadowNormalBiasWorld =
+        (m_sceneDiagonal * 1.5f) / static_cast<float>(m_context->GetShadowMapSize()) * 2.0f;
     m_context->SetShadowData(shadowConst);
 
     // -----------------------------------------------------------------------

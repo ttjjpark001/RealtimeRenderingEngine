@@ -343,9 +343,9 @@ bool D3D12PipelineState::CreateShadowDepthPipelineState(ID3D12Device* device)
     psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
     psoDesc.RasterizerState.FrontCounterClockwise = FALSE;
     psoDesc.RasterizerState.DepthClipEnable = TRUE;
-    psoDesc.RasterizerState.DepthBias = 1000;
+    psoDesc.RasterizerState.DepthBias = 10000;
     psoDesc.RasterizerState.DepthBiasClamp = 0.0f;
-    psoDesc.RasterizerState.SlopeScaledDepthBias = 1.0f;
+    psoDesc.RasterizerState.SlopeScaledDepthBias = 2.0f;
 
     // No blend state needed (no render targets)
 

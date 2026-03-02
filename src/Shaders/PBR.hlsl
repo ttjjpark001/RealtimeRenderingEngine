@@ -59,8 +59,9 @@ cbuffer ShadowCB : register(b3)
 {
     float4x4 lightViewProj[MAX_SHADOW_MAPS];
     uint shadowMapCount;
-    float shadowTexelSize;   // 1.0 / shadowMapResolution, computed on CPU
-    float2 _padShadow;
+    float shadowTexelSize;         // 1.0 / shadowMapResolution
+    float shadowNormalBiasWorld;   // world-space normal offset = orthoSize/mapSize * 2
+    float _padShadow;
 };
 
 // ---------------------------------------------------------------------------
@@ -326,11 +327,14 @@ float4 PSMain(PSInput input) : SV_TARGET
         float3 kD = (1.0f - F) * (1.0f - metallic);
         float3 diffuse = kD * albedo / PI;
 
-        // Shadow factor
+        // Shadow factor — normal offset bias prevents PCF samples from crossing geometry
+        // boundaries (base top face sampling base front face → false shadow).
+        // Bias = 2 shadow-map texels in world space, scaled with scene size.
         float shadowFactor = 1.0f;
         if (lights[i].shadowMapIndex >= 0 && (uint)lights[i].shadowMapIndex < shadowMapCount)
         {
-            shadowFactor = CalcShadow((uint)lights[i].shadowMapIndex, input.worldPos);
+            float3 shadowPos = input.worldPos + N * shadowNormalBiasWorld;
+            shadowFactor = CalcShadow((uint)lights[i].shadowMapIndex, shadowPos);
         }
 
         Lo += (diffuse + specular) * lightColor * attenuation * NdotL * shadowFactor;

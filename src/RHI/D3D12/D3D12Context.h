@@ -102,7 +102,8 @@ struct ShadowConstants
     DirectX::XMFLOAT4X4 lightViewProj[MAX_SHADOW_MAPS]; // 64 * 8 = 512
     uint32 shadowMapCount;                                // 4
     float  shadowTexelSize;                               // 4  (= 1.0f / shadowMapSize)
-    float _pad[2];                                        // 8
+    float  shadowNormalBiasWorld;                         // 4  (= orthoSize / mapSize * 2)
+    float _pad;                                           // 4
 };  // Total: 528 bytes → 768 aligned (256 * 3)
 static_assert(sizeof(ShadowConstants) <= 768, "ShadowConstants exceeds 768-byte CB slot");
 
