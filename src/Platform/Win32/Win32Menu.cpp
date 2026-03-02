@@ -78,7 +78,9 @@ bool Win32Menu::Initialize(HWND hwnd)
 
     // Optimization menu
     m_optimMenu = CreatePopupMenu();
-    AppendMenuW(m_optimMenu, MF_STRING | MF_CHECKED, ID_OPTIM_LOD, L"LOD");
+    AppendMenuW(m_optimMenu, MF_STRING | MF_CHECKED, ID_OPTIM_FRUSTUM_CULL, L"Frustum Culling");
+    AppendMenuW(m_optimMenu, MF_STRING | MF_CHECKED, ID_OPTIM_LIGHT_CULL,   L"Light Culling");
+    AppendMenuW(m_optimMenu, MF_STRING | MF_CHECKED, ID_OPTIM_LOD,          L"LOD");
     AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_optimMenu), L"Optimization");
 
     SetMenu(hwnd, m_menuBar);
@@ -204,6 +206,24 @@ bool Win32Menu::HandleCommand(WPARAM wParam)
         return true;
 
     // Optimization commands
+    case ID_OPTIM_FRUSTUM_CULL:
+    {
+        UINT state = GetMenuState(m_optimMenu, ID_OPTIM_FRUSTUM_CULL, MF_BYCOMMAND);
+        CheckMenuItem(m_optimMenu, ID_OPTIM_FRUSTUM_CULL,
+            MF_BYCOMMAND | ((state & MF_CHECKED) ? MF_UNCHECKED : MF_CHECKED));
+        if (m_frustumCullToggleCallback) m_frustumCullToggleCallback();
+        return true;
+    }
+
+    case ID_OPTIM_LIGHT_CULL:
+    {
+        UINT state = GetMenuState(m_optimMenu, ID_OPTIM_LIGHT_CULL, MF_BYCOMMAND);
+        CheckMenuItem(m_optimMenu, ID_OPTIM_LIGHT_CULL,
+            MF_BYCOMMAND | ((state & MF_CHECKED) ? MF_UNCHECKED : MF_CHECKED));
+        if (m_lightCullToggleCallback) m_lightCullToggleCallback();
+        return true;
+    }
+
     case ID_OPTIM_LOD:
     {
         UINT state = GetMenuState(m_optimMenu, ID_OPTIM_LOD, MF_BYCOMMAND);

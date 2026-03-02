@@ -785,13 +785,31 @@ struct PerMaterialCB {
 - GPU의 Early-Z rejection을 극대화하여 overdraw 감소
 - 정렬 키: `distance = length(objectCenter - cameraPosition)`
 
+### Optimization 메뉴 (Phase 23)
+
+"Optimization" 메뉴에서 구현된 최적화 기능을 각각 런타임 on/off 할 수 있다.
+디버깅·비교 측정·퍼포먼스 분석 시 유용하다.
+
+| 메뉴 항목 | 기본 | 설명 | Renderer API |
+|-----------|------|------|--------------|
+| **Frustum Culling** | ON | 시야(Frustum) 밖 SceneNode를 드로우콜에서 제외 | `SetFrustumCullingEnabled(bool)` |
+| **Light Culling** | ON | Frustum 밖 + 기여도 낮은 Point/Spot 광원 제외, Directional은 항상 포함 | `SetLightCullingEnabled(bool)` |
+| **LOD** | ON | 카메라 거리에 따라 자동 생성된 하위 LOD 메시 사용 (전환 거리: 2×/6× sceneDiagonal) | `SetLODEnabled(bool)` |
+
+> **Occlusion Culling**: P0 스텁(항상 false 반환, 실제 컬링 없음)이므로 메뉴 항목 없음.
+> 향후 Hi-Z 구현 시 항목 추가 예정.
+
+- 메뉴 ID: `ID_OPTIM_FRUSTUM_CULL = 8002`, `ID_OPTIM_LIGHT_CULL = 8003`, `ID_OPTIM_LOD = 8001`
+- 각 항목은 체크마크 토글 방식 (`CheckMenuItem` + `MF_CHECKED/MF_UNCHECKED`)
+- 관련 파일: `Win32Menu.h/.cpp` (ID, 콜백), `Engine.cpp` (콜백 연결), `Renderer.h/.cpp` (플래그 + 분기)
+
 #### 렌더 파이프라인 통합 (최적화 적용 순서)
 
 1. **Scene Graph 순회** → 각 노드의 AABB + 월드 행렬 수집
-2. **Frustum Culling** → 시야 밖 오브젝트 제외
-3. **Occlusion Culling** → 완전히 가려진 오브젝트 제외 (CB 갱신 + Draw 모두 스킵)
-4. **LOD 선택** → 카메라 거리에 따라 적절한 LOD Mesh 결정 (자동 생성 LOD 포함)
-5. **Light Culling** → Frustum 밖/저기여 광원 제외, 활성 광원만 GPU에 전달
+2. **Frustum Culling** → 시야 밖 오브젝트 제외 (Optimization 메뉴로 on/off)
+3. **Occlusion Culling** → 완전히 가려진 오브젝트 제외 (CB 갱신 + Draw 모두 스킵) — P0 스텁
+4. **LOD 선택** → 카메라 거리에 따라 적절한 LOD Mesh 결정 (Optimization 메뉴로 on/off)
+5. **Light Culling** → Frustum 밖/저기여 광원 제외, 활성 광원만 GPU에 전달 (Optimization 메뉴로 on/off)
 6. **Instance Batching** → 동일 Mesh+Material 그룹핑, Instance Buffer 생성
 7. **Texture Streaming** → 가시성+거리 기반 우선순위로 Mip 레벨 업데이트, 비동기 로딩 요청
 8. **CB 갱신** → Dirty Flag 체크, VRAM 예산 기반 적응적 갱신 빈도 조절, 풀에서 슬롯 할당

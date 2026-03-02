@@ -179,6 +179,14 @@ bool Engine::Initialize(const EngineInitParams& params)
         if (m_renderer)
             m_renderer->SetRenderMode(static_cast<RenderMode>(mode));
     });
+    m_menu->SetFrustumCullToggleCallback([this]() {
+        if (m_renderer)
+            m_renderer->SetFrustumCullingEnabled(!m_renderer->IsFrustumCullingEnabled());
+    });
+    m_menu->SetLightCullToggleCallback([this]() {
+        if (m_renderer)
+            m_renderer->SetLightCullingEnabled(!m_renderer->IsLightCullingEnabled());
+    });
     m_menu->SetLODToggleCallback([this]() {
         if (m_renderer)
             m_renderer->SetLODEnabled(!m_renderer->IsLODEnabled());

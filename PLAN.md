@@ -688,8 +688,16 @@ tests/
     - `Visible: N  Culled: M` — 노드 컬링 통계
     - `Lights: N active  M culled` — 광원 컬링 통계
 13. 유닛 테스트: `test_FrustumCuller.cpp` (8개), `test_LightCuller.cpp` (7개)
+14. **Optimization 메뉴** (Win32Menu.h/.cpp, Engine.cpp):
+    - "Optimization" 메뉴바 추가; 기능별 체크 가능한 하위 항목으로 런타임 on/off
+    - **Frustum Culling** (`ID_OPTIM_FRUSTUM_CULL = 8002`): 비활성 시 Frustum 교차 검사 스킵 → 씬 전체 렌더링
+    - **Light Culling** (`ID_OPTIM_LIGHT_CULL = 8003`): 비활성 시 전체 광원을 GPU에 전달
+    - **LOD** (`ID_OPTIM_LOD = 8001`): 비활성 시 항상 LOD 0(원본) 메시 사용
+    - Occlusion Culling은 P0 스텁(항상 false)이므로 메뉴 항목 없음
+    - LOD 전환 거리: `sceneDiagonal × 2.0` (LOD 1), `sceneDiagonal × 6.0` (LOD 2) — 충분히 원거리에서만 전환
+    - `Renderer::SetFrustumCullingEnabled()`, `SetLightCullingEnabled()`, `SetLODEnabled()` API 제공
 
-**완료 기준**: Frustum 밖 오브젝트 culled, Occluded 오브젝트 스킵, 거리별 LOD 전환 (자동 생성 포함), 원거리/저기여 광원 컬링, DebugHUD에 씬 전체 폴리곤 수와 렌더링된 폴리곤 수 각각 표시, 91/91 테스트 통과
+**완료 기준**: Frustum 밖 오브젝트 culled, Occluded 오브젝트 스킵, 거리별 LOD 전환 (자동 생성 포함), 원거리/저기여 광원 컬링, DebugHUD에 씬 전체 폴리곤 수와 렌더링된 폴리곤 수 각각 표시, Optimization 메뉴에서 각 기능 on/off 가능, 91/91 테스트 통과
 
 ### Phase 24: Texture Streaming + Mip-Mapping
 **목표**: 필요 Mip만 GPU 로드, 가시성/거리 기반 우선순위

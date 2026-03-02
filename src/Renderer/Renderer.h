@@ -54,8 +54,14 @@ public:
     void SetRenderMode(RenderMode mode) { m_renderMode = mode; }
     RenderMode GetRenderMode() const { return m_renderMode; }
 
-    void SetLODEnabled(bool enabled) { m_lodEnabled = enabled; }
-    bool IsLODEnabled() const { return m_lodEnabled; }
+    void SetLODEnabled(bool enabled)            { m_lodEnabled = enabled; }
+    bool IsLODEnabled() const                   { return m_lodEnabled; }
+
+    void SetFrustumCullingEnabled(bool enabled) { m_frustumCullingEnabled = enabled; }
+    bool IsFrustumCullingEnabled() const        { return m_frustumCullingEnabled; }
+
+    void SetLightCullingEnabled(bool enabled)   { m_lightCullingEnabled = enabled; }
+    bool IsLightCullingEnabled() const          { return m_lightCullingEnabled; }
 
     // Upload mesh VB/IB to GPU (cached, idempotent)
     void UploadMesh(Mesh* mesh);
@@ -86,8 +92,10 @@ private:
     D3D12Context* m_context      = nullptr;
     ID3D12Device* m_d3dDevice    = nullptr;
     TextureCache* m_textureCache = nullptr;
-    RenderMode    m_renderMode   = RenderMode::FullPBRShadows;
-    bool          m_lodEnabled   = true;
+    RenderMode    m_renderMode             = RenderMode::FullPBRShadows;
+    bool          m_lodEnabled             = true;
+    bool          m_frustumCullingEnabled  = true;
+    bool          m_lightCullingEnabled    = true;
 
     std::unordered_map<Mesh*, MeshBuffers> m_meshCache;
 

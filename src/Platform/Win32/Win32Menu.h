@@ -38,6 +38,8 @@ constexpr UINT ID_RENDER_FULL_PBR        = 7004;
 constexpr UINT ID_RENDER_FULL_PBR_SHADOW = 7005;
 
 constexpr UINT ID_OPTIM_LOD              = 8001;
+constexpr UINT ID_OPTIM_FRUSTUM_CULL     = 8002;
+constexpr UINT ID_OPTIM_LIGHT_CULL       = 8003;
 
 class Win32Menu
 {
@@ -52,7 +54,9 @@ public:
     using FileOpenCallback = std::function<void()>;
     using CameraFitToSceneCallback = std::function<void()>;
     using RenderModeCallback = std::function<void(uint32 mode)>;
-    using LODToggleCallback  = std::function<void()>;
+    using LODToggleCallback          = std::function<void()>;
+    using FrustumCullToggleCallback  = std::function<void()>;
+    using LightCullToggleCallback    = std::function<void()>;
 
     Win32Menu() = default;
     ~Win32Menu() = default;
@@ -71,7 +75,9 @@ public:
     void SetFileOpenCallback(FileOpenCallback callback) { m_fileOpenCallback = std::move(callback); }
     void SetCameraFitToSceneCallback(CameraFitToSceneCallback callback) { m_cameraFitToSceneCallback = std::move(callback); }
     void SetRenderModeCallback(RenderModeCallback callback) { m_renderModeCallback = std::move(callback); }
-    void SetLODToggleCallback(LODToggleCallback callback)   { m_lodToggleCallback = std::move(callback); }
+    void SetLODToggleCallback(LODToggleCallback callback)             { m_lodToggleCallback = std::move(callback); }
+    void SetFrustumCullToggleCallback(FrustumCullToggleCallback cb)   { m_frustumCullToggleCallback = std::move(cb); }
+    void SetLightCullToggleCallback(LightCullToggleCallback cb)       { m_lightCullToggleCallback = std::move(cb); }
 
 private:
     HWND m_hwnd = nullptr;
@@ -93,7 +99,9 @@ private:
     FileOpenCallback m_fileOpenCallback;
     CameraFitToSceneCallback m_cameraFitToSceneCallback;
     RenderModeCallback m_renderModeCallback;
-    LODToggleCallback  m_lodToggleCallback;
+    LODToggleCallback         m_lodToggleCallback;
+    FrustumCullToggleCallback m_frustumCullToggleCallback;
+    LightCullToggleCallback   m_lightCullToggleCallback;
 };
 
 } // namespace RRE

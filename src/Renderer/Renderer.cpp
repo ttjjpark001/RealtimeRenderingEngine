@@ -92,8 +92,18 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
     std::vector<uint32_t> activeLightIndices;
     if (lightManager && lightManager->GetActiveLightCount() > 0)
     {
-        activeLightIndices = m_lightCuller.CullLights(
-            m_frustumCuller.GetFrustum(), camPos, *lightManager);
+        if (m_lightCullingEnabled)
+        {
+            activeLightIndices = m_lightCuller.CullLights(
+                m_frustumCuller.GetFrustum(), camPos, *lightManager);
+        }
+        else
+        {
+            // Light culling disabled: pass all lights to GPU
+            uint32_t count = static_cast<uint32_t>(lightManager->GetActiveLightCount());
+            activeLightIndices.resize(count);
+            for (uint32_t i = 0; i < count; i++) activeLightIndices[i] = i;
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -222,7 +232,7 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
 
         // --- Frustum culling ---
         DirectX::BoundingBox worldAABB = node->GetWorldAABB();
-        if (!m_frustumCuller.IsVisible(worldAABB))
+        if (m_frustumCullingEnabled && !m_frustumCuller.IsVisible(worldAABB))
         {
             m_lastCullStats.frustumCulledNodes++;
             return;
@@ -235,7 +245,7 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
             return;
         }
 
-        // --- LOD selection ---
+        // --- LOD selection (Pass 1) ---
         XMVECTOR objCenter = XMLoadFloat3(&worldAABB.Center);
         XMVECTOR camV      = XMLoadFloat3(&camPos);
         float dist = XMVectorGetX(XMVector3Length(XMVectorSubtract(objCenter, camV)));
@@ -300,7 +310,7 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
             if (!material || material->alphaMode != AlphaMode::Blend) return;
 
             DirectX::BoundingBox worldAABB = node->GetWorldAABB();
-            if (!m_frustumCuller.IsVisible(worldAABB)) return;
+            if (m_frustumCullingEnabled && !m_frustumCuller.IsVisible(worldAABB)) return;
             if (m_occlusionCuller.IsOccluded(worldAABB, viewProj)) return;
 
             XMVECTOR objCenter = XMLoadFloat3(&worldAABB.Center);
@@ -309,7 +319,8 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
             float distSq = XMVectorGetX(XMVector3Dot(diff, diff));
             float dist   = sqrtf(distSq);
 
-            Mesh* drawMesh = m_lodSelector.SelectLOD(mesh, dist);
+            // --- LOD selection (Pass 2) ---
+            Mesh* drawMesh = m_lodEnabled ? m_lodSelector.SelectLOD(mesh, dist) : mesh;
             UploadMesh(drawMesh);
             if (m_meshCache.find(drawMesh) == m_meshCache.end()) return;
 
