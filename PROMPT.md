@@ -1556,8 +1556,10 @@ Phase 24는 이미 구현 완료(✅)이므로, 이 프롬프트는 재현·참�
    - position, Kc/Kl/Kq 제거; direction = {0,-1,0} (초기값, 매 프레임 갱신됨) 설정
    - castShadow = true 설정 (씬 로드 시 DirectX Depth Pass 1회/프레임 활성화)
    - Engine::Update()에서 position 대신 direction을 갱신:
-     direction = normalize(-offset)  (offset = 카메라 뷰축 기준 궤도 위치 벡터)
-     → 광원이 항상 씬 중심(원점 방향)을 가리키도록 유지
+     - 월드 Y축을 중심으로 회전하며 45° 앙각 고정 (카메라 독립)
+     - kElevRad = π/4,  cosElev = cos(45°) ≈ 0.707,  sinElev = sin(45°) ≈ 0.707
+     - lightDir = { -cosElev*cos(θ),  -sinElev,  -cosElev*sin(θ) }  (단위 벡터, 정규화 불필요)
+     - 항상 원점(씬 중심)을 가리키며 카메라 위치·방향에 무관하게 동작
 
 7. Sponza 빠른 로드 메뉴를 추가한다.
    - Win32Menu에 ID_FILE_OPEN_SPONZA = 6002, FileSponzaCallback 추가

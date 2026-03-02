@@ -733,8 +733,9 @@ tests/
 6. **Orbit Light → Directional + castShadow**
    - Orbit Light 타입 변경: `LightType::Point` → `LightType::Directional`, `castShadow = true`
    - `Engine::Update()`: `position` 갱신 → `direction` 갱신으로 변경
-     - `offset = right*cos(θ) + up*sin(θ)` (궤도 위치 벡터)
-     - `direction = normalize(-offset)` (궤도 위치에서 씬 중심을 향하는 방향)
+     - 월드 Y축 기준 회전, 45° 앙각 고정 (카메라 독립)
+     - `kElevRad = π/4`, `cosElev = cos(45°) ≈ 0.707`, `sinElev = sin(45°) ≈ 0.707`
+     - `lightDir = { -cosElev·cos(θ), -sinElev, -cosElev·sin(θ) }` (이미 단위 벡터, 항상 원점 향함)
    - Directional 광원이므로 매 프레임 Shadow Depth Pass 1회 실행 → 회전하는 그림자 효과
 7. **Sponza 빠른 로드 — File 메뉴 "Sponza!" 항목 추가**
    - `Win32Menu`: `ID_FILE_OPEN_SPONZA = 6002`, `AppendMenuW(m_fileMenu, MF_STRING, ID_FILE_OPEN_SPONZA, L"Sponza!")` 추가
