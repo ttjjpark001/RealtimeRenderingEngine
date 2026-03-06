@@ -18,41 +18,45 @@
 | 삼각형 수 | ~262K |
 | glTF root node scale | 0.008 (원본 좌표계 cm → m 변환) |
 
-### 카메라 추천 세팅
+### 카메라 세팅 (현재 엔진 적용값)
 ```
-Position:  (0.0, 2.0, -10.0)   // 중정 한쪽 끝, 지상 2m
-LookAt:    (0.0, 2.0,   0.0)   // 중앙 기둥열 방향
-FOV:       60°                   // 넓은 내부 공간에 적합 (45°보다 60° 권장)
-Near:      0.1m
-Far:       200.0m                // 씬 대각선 37m의 여유분 포함
+Position:  (10.0, 4.5, 4.0)    // 측면 전경, 지상 4.5m (Option B)
+LookAt:    (0.0,  0.0, 0.0)    // 씬 중심
+FOV:       60°
+MoveSpeedScale: sceneDiagonal / 40.0   // ≈ 0.925 (diagonal≈37m)
 ```
 
-> 대안: 측면 전경 포지션 `(10.0, 4.5, 4.0)` → 중심 방향 (twinpeekz 참조 구현 기준, Y-up 변환)
+> 참고: 정면 중앙 포지션 — `Position (0.0, 2.0, -10.0)`, LookAt `(0.0, 2.0, 0.0)`
 
 ### 광원 추천 세팅
 
 Sponza는 지붕이 열린 중정 구조 → **Directional Light(태양광) 1개**가 핵심.
 Point Light 여러 개보다 강한 Directional + Shadow가 훨씬 사실적.
 
-#### Key Light — Directional (태양)
+#### Key Light — Directional (태양) ★ 현재 엔진 적용값
 ```
 type:       Directional
-direction:  normalize(-0.3, -1.0, 0.5)   // 오른쪽 상단 전면에서 내리쬐는 태양
+direction:  normalize(-0.3, -1.0, 0.5)   // 앙각 ≈ 60°, 오른쪽 전면 상단
 color:      (1.0, 0.95, 0.8)             // 따뜻한 태양광
-intensity:  6.0 ~ 8.0                    // HDR 범위 (>1.0)
+intensity:  10.0
 castShadow: true
 ```
 
-#### Fill Light — 간접광 모사 (하늘빛)
+> **L 키 토글** (Sponza! 메뉴 로드 시에만): 태양 방향을 두 프리셋 사이에서 전환
+> - 기본: `normalize(-0.3, -1.0, 0.5)` — 앙각 ≈ 60° (전통적 오후 태양)
+> - Alt:  `normalize(-0.3, -1.5, 0.3)` — 앙각 ≈ 74° (1층까지 더 깊이 조명, shadow reach 절반)
+
+#### Fill Light — 간접광 모사 (하늘빛) ★ 현재 엔진 적용값
 ```
-type:       Point (또는 Directional)
-position:   (-8.0, 12.0, 6.0)            // 반대편 상단
+type:       Point
+position:   (-6.0, 10.0, 0.0)           // 좌측 상단
 color:      (0.4, 0.5, 0.7)             // 차가운 하늘빛 (sky ambient)
-intensity:  1.5 ~ 2.0
+intensity:  1.75
+Kc = 1.0,  Kl = 0.027,  Kq = 0.005
 castShadow: false
 ```
 
-#### 횃불 Point Light (Torch Sconces)
+#### 횃불 Point Light (Torch Sconces) ★ 현재 엔진 적용값
 
 glTF 파일 분석 결과, Sponza에는 중정 4개 코너에 벽면 횃불(sconce)이 **총 4개** 존재한다.
 각 횃불은 bracket(mat 20) + torch body(mat 21) 2개 프리미티브로 구성.
@@ -63,7 +67,7 @@ glTF 파일 분석 결과, Sponza에는 중정 4개 코너에 벽면 횃불(scon
 ```
 type:       Point
 color:      (1.0, 0.45, 0.08)   // 불꽃 오렌지
-intensity:  3.0
+intensity:  8.0
 Kc = 1.0,  Kl = 0.7,  Kq = 1.8  // 유효 반경 ~3-4m
 castShadow: false
 

@@ -1571,16 +1571,35 @@ Phase 24는 이미 구현 완료(✅)이므로, 이 프롬프트는 재현·참�
         - SetPosition({10, 4.5, 4}), LookAt({0,0,0}), FOV 60°
         - SetMoveSpeedScale(sceneDiagonal / 40.0f)
      d. 기존 광원을 모두 클리어 후 Sponza 전용 광원 배치:
-        - Directional "Sun" (warm white 1,0.95,0.9, intensity=8, castShadow=true)
-        - Point "Sky Fill" (cool blue 0.7,0.8,1.0, intensity=4)
-        - Point "Torch" × 4 (orange 1.0,0.55,0.1, intensity=12, fast falloff Kl=0.7/Kq=1.8)
-          — 씬 바닥 근처 네 모서리 배치 (y=1.5)
+        - Directional "Sun" (warm white 1,0.95,0.8, intensity=10, castShadow=true),
+          direction normalize({-0.3, -1.0, 0.5})
+        - Point "Sky Fill" (cool blue 0.4,0.5,0.7, intensity=1.75, position {-6,10,0})
+        - Point "Torch" × 4 (orange 1.0,0.45,0.08, intensity=8, fast falloff Kl=0.7/Kq=1.8)
+          — 코너 4곳 배치 (y=1.836)
+     e. m_orbitLightIndex = SIZE_MAX — Sponza에서 Orbit 조명 비활성화
    - Engine 생성자에서 m_menu->SetFileSponzaCallback([this]() { LoadSponzaScene(); }) 등록
+
+8. Sponza 태양 방향 토글을 구현한다 (L 키, Sponza! 메뉴 로드 시에만 활성).
+   - Engine.h에 멤버 추가:
+     - bool m_isSponzaScene = false
+     - bool m_sponzaSunAltMode = false
+     - bool m_sponzaSunToggleKeyWasDown = false
+     - size_t m_sponzaSunKeyIndex = 0   // LightManager 내 sun light 인덱스
+   - Engine::LoadSponzaScene(): m_lightManager->Clear() 직후에
+     m_isSponzaScene=true, m_sponzaSunAltMode=false, m_sponzaSunKeyIndex=0 설정
+   - Engine::LoadScene(): 함수 진입 시 m_isSponzaScene=false 설정
+     (LoadSponzaScene()이 내부에서 LoadScene() 호출 후 true로 덮어씀)
+   - Engine::Update(): L 키 에지(pressed, not held) 감지:
+     bool keyDown = (GetAsyncKeyState('L') & 0x8000) != 0;
+     if (keyDown && !m_sponzaSunToggleKeyWasDown) → m_sponzaSunAltMode 토글
+     - false(기본): XMVector3Normalize({-0.3, -1.0, 0.5}) — 앙각 ≈ 60°
+     - true(alt):   XMVector3Normalize({-0.3, -1.5, 0.3}) — 앙각 ≈ 74° (1층 더 밝음)
+     m_sponzaSunToggleKeyWasDown = keyDown 저장
 
 빌드하여 X4000 경고가 최소화되고, 씬 로드 시 Shadow Map 해상도 및 투영 범위가
 씬 크기에 맞게 자동 설정되는지 확인하라. Orbit Directional Light가 매 프레임 회전하며
 그림자를 생성하는지 확인하라. File 메뉴의 "Sponza!" 항목으로 Sponza 씬이 전용 카메라·광원
-프리셋으로 로드되는지 확인하라.
+프리셋으로 로드되고, L 키로 태양 방향이 60°↔74° 사이에서 토글되는지 확인하라.
 ```
 
 ---

@@ -279,6 +279,22 @@ void Engine::Update(float deltaTime)
         m_lightManager->GetLightMutable(m_orbitLightIndex).direction = lightDir;
     }
 
+    // Sponza sun direction toggle (L key) — only when loaded via Sponza! menu
+    if (m_isSponzaScene && m_lightManager &&
+        m_sponzaSunKeyIndex < m_lightManager->GetActiveLightCount())
+    {
+        bool keyDown = (GetAsyncKeyState('L') & 0x8000) != 0;
+        if (keyDown && !m_sponzaSunToggleKeyWasDown)
+        {
+            m_sponzaSunAltMode = !m_sponzaSunAltMode;
+            XMVECTOR dir = m_sponzaSunAltMode
+                ? XMVector3Normalize(XMVectorSet(-0.3f, -1.5f, 0.3f, 0.0f))  // high sun (~74°)
+                : XMVector3Normalize(XMVectorSet(-0.3f, -1.0f, 0.5f, 0.0f)); // default (~60°)
+            XMStoreFloat3(&m_lightManager->GetLightMutable(m_sponzaSunKeyIndex).direction, dir);
+        }
+        m_sponzaSunToggleKeyWasDown = keyDown;
+    }
+
     // Move camera with WASD+QE, adjust FOV with +/-
     if (m_camera)
     {
@@ -477,6 +493,11 @@ void Engine::LoadSponzaScene()
         m_lightManager->Clear();
         m_orbitLightIndex = SIZE_MAX;   // disable orbit light for this scene
 
+        // Sponza scene flag + sun toggle state
+        m_isSponzaScene = true;
+        m_sponzaSunAltMode = false;
+        m_sponzaSunKeyIndex = 0;        // Key light is added first (index 0)
+
         // Key Light — Directional (sun): warm, casts shadows
         {
             Light key;
@@ -484,7 +505,7 @@ void Engine::LoadSponzaScene()
             XMStoreFloat3(&key.direction,
                 XMVector3Normalize(XMVectorSet(-0.3f, -1.0f, 0.5f, 0.0f)));
             key.color      = { 1.0f, 0.95f, 0.8f };
-            key.intensity  = 7.0f;
+            key.intensity  = 10.0f;
             key.castShadow = true;
             m_lightManager->AddLight(key);
         }
@@ -524,6 +545,9 @@ void Engine::LoadSponzaScene()
 
 void Engine::LoadScene(const std::string& filePath)
 {
+    // Clear Sponza-specific state (overridden by LoadSponzaScene if called from there)
+    m_isSponzaScene = false;
+
     // Wait for GPU to finish all pending work
     auto* context = static_cast<D3D12Context*>(m_rhiDevice->GetContext());
     context->WaitForGPU();

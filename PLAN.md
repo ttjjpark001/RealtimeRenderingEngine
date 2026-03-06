@@ -745,13 +745,21 @@ tests/
      - 파일 열기 다이얼로그로 씬 선택 → `LoadScene()` 호출 (표준 로딩 절차 동일)
      - 카메라를 Sponza 전용 위치로 재배치: position `{10, 4.5, 4}`, lookAt `{0, 0, 0}`, FOV 60°
      - Sponza 전용 조명 레이아웃 설정: 기존 3-point + Orbit 라이트를 교체
-       - Key Light: Directional (태양, warm `{1.0, 0.95, 0.8}`, intensity=7, castShadow=true), direction `normalize({-0.3, -1, 0.5})`
+       - Key Light: Directional (태양, warm `{1.0, 0.95, 0.8}`, intensity=10, castShadow=true), direction `normalize({-0.3, -1, 0.5})`
        - Fill Light: Point (하늘 간접광, cool `{0.4, 0.5, 0.7}`, intensity=1.75, position `{-6, 10, 0}`)
        - Torch ×4: Point (횃불 `{1.0, 0.45, 0.08}`, intensity=8, 빠른 감쇠 Kl=0.7/Kq=1.8), 코너 4곳 배치
      - `m_orbitLightIndex = SIZE_MAX` — Sponza에서는 Orbit 조명 비활성화
    - `Engine::Initialize()`: `m_menu->SetFileSponzaCallback([this](){ LoadSponzaScene(); })` 연결
+8. **Sponza 태양 방향 토글 — L 키**
+   - `Engine.h`: `m_isSponzaScene`, `m_sponzaSunAltMode`, `m_sponzaSunToggleKeyWasDown`, `m_sponzaSunKeyIndex` 추가
+   - `Engine::LoadSponzaScene()`: `m_isSponzaScene = true`, `m_sponzaSunAltMode = false`, `m_sponzaSunKeyIndex = 0` 설정
+   - `Engine::LoadScene()`: `m_isSponzaScene = false` (일반 씬 로드 시 토글 비활성화)
+   - `Engine::Update()`: `m_isSponzaScene && L 키 에지` 감지 시 방향 토글
+     - 기본: `normalize({-0.3, -1.0, 0.5})` → 앙각 ≈ 60°
+     - Alt: `normalize({-0.3, -1.5, 0.3})` → 앙각 ≈ 74° (1층까지 더 깊이 조명)
+   - `Sponza!` 메뉴로 로드된 경우에만 동작, 일반 `LoadScene()`으로 열면 비활성
 
-**완료 기준**: Shadow Map 해상도가 씬 크기에 맞게 자동 선택됨, Shadow 카메라가 씬 전체 깊이 범위를 커버, nearPlane·spotNear·shadowNormalBiasWorld가 sceneDiagonal 기반으로 스케일링, ShadowTexelSize가 GPU로 동적 전달, Orbit Directional Light 회전 그림자 정상 렌더링, "File > Sponza!" 메뉴 항목에서 Sponza 씬 로드 및 전용 카메라/조명 자동 적용, 빌드 오류 0건 (경고 1건 잔존 — FXC 컴파일러 한계)
+**완료 기준**: Shadow Map 해상도가 씬 크기에 맞게 자동 선택됨, Shadow 카메라가 씬 전체 깊이 범위를 커버, nearPlane·spotNear·shadowNormalBiasWorld가 sceneDiagonal 기반으로 스케일링, ShadowTexelSize가 GPU로 동적 전달, Orbit Directional Light 회전 그림자 정상 렌더링, "File > Sponza!" 메뉴 항목에서 Sponza 씬 로드 및 전용 카메라/조명 자동 적용, L 키로 태양 방향 60°↔74° 토글 (Sponza 전용), 빌드 오류 0건 (경고 1건 잔존 — FXC 컴파일러 한계)
 
 ### Phase 25: Texture Streaming + Mip-Mapping
 **목표**: 필요 Mip만 GPU 로드, 가시성/거리 기반 우선순위

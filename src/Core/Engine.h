@@ -80,6 +80,12 @@ private:
     size_t m_orbitLightIndex = 0;
     float m_orbitLightAngle = 0.0f;
 
+    // Sponza-specific sun direction toggle (L key)
+    bool m_isSponzaScene = false;
+    bool m_sponzaSunAltMode = false;
+    bool m_sponzaSunToggleKeyWasDown = false;
+    size_t m_sponzaSunKeyIndex = 0;  // index of sun (Key) light in m_lightManager
+
     bool m_isInitialized = false;
 
     // High-resolution timer
