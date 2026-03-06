@@ -28,23 +28,25 @@
 
 ## 잔여 구현 항목
 
-### Phase 29 — RRScenePreprocessor (오프라인 씬 전처리 도구)
+### Phase 29 — RRScenePreprocessor (오프라인 전처리 도구 + 백그라운드 자동 생성)
 
-glTF/GLB/FBX 씬을 오프라인에서 처리하여 엔진 전용 바이너리(`.rrscene`)로 저장하는
-독립 커맨드라인 도구. 렌더링 앱은 `.rrscene`을 직접 로드하여 GPU 업로드만 수행한다.
+glTF/GLB/FBX 씬을 처리하여 엔진 전용 바이너리(`.rrscene`)로 저장하는 파이프라인.
+CLI 도구와 렌더링 앱 내 백그라운드 자동 생성의 두 진입점을 제공한다.
 
 **구현 항목**
 
 | 작업 | 설명 |
 |------|------|
-| VS 프로젝트 추가 | `RRScenePreprocessor` (Console Application), 엔진 헤더 공유 |
+| `ScenePreprocessor.h/.cpp` | 전처리 파이프라인 공용 클래스 (`src/Asset/`). `Generate()`(동기) + `GenerateAsync()`(비동기, `std::future<bool>`) |
+| VS 프로젝트 추가 | `RRScenePreprocessor` (Console Application) — `ScenePreprocessor::Generate()` 호출하는 얇은 CLI 래퍼 |
 | `.rrscene` 포맷 정의 | `src/Asset/RRSceneFormat.h` (공용): Header + Scene/Mesh/Material/Texture/Light 섹션 |
-| 전처리 파이프라인 | Assimp 파싱 → Vertex 변환 + Tangent → 프리미티브 분리 → AABB → Auto-LOD → 이미지 디코딩 → Mip chain → 씬 직렬화 |
+| 전처리 파이프라인 | Assimp 파싱 → Vertex 변환 + Tangent → 프리미티브 분리 → AABB → Auto-LOD → 이미지 디코딩 → Mip chain → 씬 직렬화, 원자적 파일 쓰기(.tmp→rename) |
 | 이중 로딩 경로 | `SceneLoader::LoadScene()`: `.rrscene` 존재 + 해시 일치 시 고속 경로, 없으면 Assimp 폴백 |
-| 해시 기반 변경 감지 | 원본 파일 크기^수정시각 → sourceHash, 불일치 시 폴백 + 로그 |
-| DebugHUD 표시 | "Fast (.rrscene)" / "Standard (Assimp)" 로딩 경로 표시 |
+| 해시 기반 변경 감지 | 원본 파일 크기^수정시각 → sourceHash, 불일치 시 폴백 + 재전처리 시작 |
+| 백그라운드 자동 생성 | `Engine::LoadScene()` 표준 경로 완료 후 `GenerateAsync()` 호출. `m_preprocessFuture` 저장, 매 프레임 폴링, 완료 시 로그 출력 |
+| DebugHUD 표시 | "Fast (.rrscene)" / "Standard (Assimp)" 로딩 경로 + "Preprocessing scene..." 진행 상태 |
 
-**절감 효과 (Sponza급 씬 기준)**: 로딩 시간 ~90% 단축 (10~40초 → 1~3초)
+**절감 효과 (Sponza급 씬 기준)**: 첫 로딩은 표준 경로 + 백그라운드 전처리, 두 번째부터 ~90% 단축 (10~40초 → 1~3초)
 
 ---
 

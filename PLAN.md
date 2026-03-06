@@ -806,40 +806,44 @@ tests/
 
 **완료 기준**: Sponza급 씬을 PBR+Shadow+최적화로 60fps 이상 렌더링, 모든 테스트 통과
 
-### Phase 29: RRScenePreprocessor — 오프라인 씬 전처리 도구
-**목표**: glTF/GLB/FBX 씬을 오프라인에서 처리하여 엔진 전용 바이너리(`.rrscene`)로 저장하는
-독립 커맨드라인 도구를 구현한다. 렌더링 앱은 `.rrscene`을 직접 로드하여
-Assimp 파싱·이미지 디코딩·LOD 생성·Mip chain 생성을 건너뛰고 GPU 업로드만 수행한다.
+### Phase 29: RRScenePreprocessor — 오프라인 씬 전처리 도구 + 백그라운드 자동 생성
+**목표**: glTF/GLB/FBX 씬을 처리하여 엔진 전용 바이너리(`.rrscene`)로 저장하는 파이프라인을 구현한다.
+두 가지 진입점을 제공한다: ① 독립 CLI 도구(`RRScenePreprocessor.exe`), ② 표준 경로 로딩 완료 후
+렌더링 앱 내 백그라운드 자동 생성. 렌더링 앱은 `.rrscene`을 직접 로드하여 GPU 업로드만 수행한다.
 
-1. **VS 프로젝트 `RRScenePreprocessor` 추가** (솔루션 내 새 Console Application 프로젝트):
-   - 엔진 헤더(Asset, Scene, Renderer, Math)를 공유 include로 참조
+1. **전처리 파이프라인 구현** (`src/Asset/ScenePreprocessor.h/.cpp`, CLI와 엔진이 공유):
+   - `ScenePreprocessor::Generate(sourcePath, outputPath)`: 동기 전처리 (CLI 도구용)
+   - `ScenePreprocessor::GenerateAsync(sourcePath)`: `std::async`로 백그라운드 실행, `std::future<bool>` 반환 (엔진 내 자동 생성용)
+   - 내부 파이프라인: Assimp 파싱 → Vertex/Index 변환 + Tangent → 프리미티브 분리 → 메시별 AABB → Auto-LOD(QEM, LOD1=50%/LOD2=25%) → 이미지 디코딩(stb_image) → Mip chain(CPU box filter) → 씬 직렬화
+   - 원자적 파일 쓰기: 임시 파일(`.rrscene.tmp`) 완성 후 원본 경로로 rename (부분 파일 방지)
+
+2. **VS 프로젝트 `RRScenePreprocessor` 추가** (솔루션 내 Console Application):
+   - `ScenePreprocessor` (엔진 헤더 공유)를 호출하는 얇은 CLI 래퍼
+   - 진입점: `main(argc, argv)` — 입력 파일 경로를 인수로 받아 `Generate()` 호출
    - 출력: `bin/Debug/RRScenePreprocessor.exe`
 
-2. **`.rrscene` 바이너리 포맷 정의** (`src/Asset/RRSceneFormat.h`, 렌더러와 전처리기 공용):
-   - Header: magic("RRSC"), version(uint32), 원본 파일 해시(변경 감지용), 섹션 오프셋 테이블
+3. **`.rrscene` 바이너리 포맷 정의** (`src/Asset/RRSceneFormat.h`, 공용 헤더):
+   - Header: magic("RRSC"), version(uint32), sourceHash(uint64, 크기^수정시각), 섹션 오프셋 테이블
    - Scene Section: 노드 계층(부모-자식 인덱스, 이름, 로컬 TRS), 씬 AABB, 카메라 초기 상태
-   - Mesh Section: 메시별 — 엔진 Vertex 배열(position/color/normal/texCoord/tangent), Index 배열, AABB, LOD 데이터(LOD 0~2 Vertex/Index + 전환 거리)
+   - Mesh Section: 메시별 — Vertex 배열(position/color/normal/texCoord/tangent) raw dump, Index 배열, AABB, LOD 데이터(LOD 0~2 Vertex/Index + 전환 거리)
    - Material Section: PBR factor 값, AlphaMode, doubleSided, 텍스처 인덱스, sRGB/Linear 포맷 힌트
-   - Texture Section: 텍스처별 — 너비/높이/Mip 수, DXGI 포맷, 전체 Mip chain 픽셀 데이터(연속 배치)
+   - Texture Section: 텍스처별 — 너비/높이/Mip 수, DXGI_FORMAT, 전체 Mip chain 픽셀 데이터(연속 배치)
    - Light Section: 타입/색상/강도/위치/방향/감쇠/원뿔각/castShadow/BoundingSphere radius
 
-3. **전처리기 파이프라인 구현** (`tools/RRScenePreprocessor/Preprocessor.h/.cpp`):
-   - Assimp 파싱 → 엔진 Vertex/Index 변환 + Tangent 생성(Gram-Schmidt 재직교화)
-   - 프리미티브 → SceneNode 분리, 메시별 AABB 계산(`BoundingBox::CreateFromPoints`)
-   - Auto-LOD 생성: QEM Edge Collapse (LOD 1 = 50%, LOD 2 = 25%), 백그라운드 스레드
-   - 이미지 디코딩: stb_image → RGBA 픽셀 버퍼, sRGB/Linear 자동 분류
-   - Mip chain 생성: CPU box filter, 전체 레벨(`floor(log2(max(w,h))) + 1`)
-   - 씬 구조 직렬화: 노드 계층, 씬 AABB, 카메라 초기 배치, Material, Light
-   - 출력: `.rrscene` 파이너리 파일 (원본과 동일 디렉토리)
-
 4. **렌더링 앱 이중 로딩 경로 추가** (`src/Asset/SceneLoader`):
-   - **고속 경로**: `.rrscene` 발견 시 → 바이너리 직접 읽기 → GPU 업로드(VB/IB/텍스처)만 수행
-     - 원본 파일 해시 비교 → 불일치 시 원본 로딩으로 폴백
-   - **표준 경로**: `.rrscene` 없으면 기존 Assimp 런타임 파싱 경로 그대로 유지
+   - **고속 경로**: `.rrscene` 발견 + 해시 일치 → 바이너리 직접 읽기 → GPU 업로드(VB/IB/텍스처)만 수행
+   - **표준 경로**: `.rrscene` 없거나 해시 불일치 → Assimp 런타임 파싱 → 로딩 완료 후 항목 5 실행
    - 자동 감지: 원본 파일과 동일 디렉토리에 동일 이름 `.rrscene` 존재 → 자동 선택
-   - DebugHUD에 로딩 경로 표시("rrscene" / "assimp")
+   - DebugHUD에 로딩 경로 표시: "Fast (.rrscene)" / "Standard (Assimp)"
 
-**완료 기준**: RRScenePreprocessor로 Sponza.gltf → Sponza.rrscene 생성, 렌더링 앱에서 고속 로딩 확인(1~3초), 표준 경로(Assimp) 대비 로딩 시간 ~90% 단축, 렌더링 결과 동일
+5. **표준 경로 로딩 후 백그라운드 자동 전처리** (`Engine::LoadScene()`):
+   - 표준 경로(Assimp) 로딩 완료 직후: `ScenePreprocessor::GenerateAsync(sourcePath)` 호출
+   - 렌더링을 블로킹하지 않고 백그라운드 스레드에서 전처리 파이프라인 실행
+   - DebugHUD에 진행 상태 표시: "Preprocessing scene..." (완료 후 사라짐)
+   - 완료 시: `.rrscene` 파일 원자적 저장, 콘솔 로그 출력 ("Sponza.rrscene saved")
+   - 다음 로딩 시 자동으로 고속 경로 사용
+
+**완료 기준**: 신규 씬 첫 로딩 시 표준 경로 + 백그라운드 자동 생성 동작 확인, 두 번째 로딩 시 자동으로 고속 경로 사용 확인(1~3초), CLI 도구(`RRScenePreprocessor.exe`)로도 동일한 `.rrscene` 생성 가능, 렌더링 결과 동일
 
 ---
 

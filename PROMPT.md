@@ -1757,21 +1757,14 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 28를 구현
 
 ---
 
-## Prompt 29: RRScenePreprocessor — 오프라인 씬 전처리 도구
+## Prompt 29: RRScenePreprocessor — 오프라인 씬 전처리 도구 + 백그라운드 자동 생성
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 29 섹션과 GoodToPreprocess.md를 참조하여 Phase 29를 구현하라.
-이 단계는 glTF/GLB/FBX 씬을 오프라인에서 처리하여 엔진 전용 바이너리(.rrscene)로 저장하는
-독립 커맨드라인 도구(RRScenePreprocessor)를 구현하고, 렌더링 앱에 이중 로딩 경로를 추가한다.
+이 단계는 .rrscene 전처리 파이프라인을 공용 클래스로 구현하고,
+CLI 도구와 렌더링 앱 내 백그라운드 자동 생성의 두 진입점을 제공한다.
 
-1. VS 솔루션에 RRScenePreprocessor 프로젝트를 추가한다.
-   - 프로젝트 타입: Console Application (SubSystem: Console)
-   - 엔진 헤더(src/Asset, src/Scene, src/Renderer, src/Math)를 include 경로에 추가
-   - Assimp, stb_image 링크 (렌더링 앱과 동일 vcpkg 설정)
-   - 출력: bin/Debug/RRScenePreprocessor.exe, bin/Release/RRScenePreprocessor.exe
-   - 진입점: main(argc, argv) — 인수로 입력 파일 경로 받음
-
-2. .rrscene 바이너리 포맷을 정의한다 (src/Asset/RRSceneFormat.h, 공용 헤더).
+1. .rrscene 바이너리 포맷을 정의한다 (src/Asset/RRSceneFormat.h, 공용 헤더).
    헤더:
      · char magic[4] = "RRSC"
      · uint32 version = 1
@@ -1786,22 +1779,31 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 29 섹션과 GoodToPreprocess.md를 참조�
    - Texture: 텍스처 수, 텍스처별(width, height, mipLevels, DXGI_FORMAT, 전체 Mip chain 픽셀 데이터 연속 배치)
    - Light: 광원 수, 광원별(type, color, intensity, position, direction, Kc/Kl/Kq, innerCone, outerCone, castShadow, bsRadius)
 
-3. 전처리기 파이프라인을 구현한다 (tools/RRScenePreprocessor/Preprocessor.cpp).
-   a. Assimp 파싱: aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_CalcTangentSpace | aiProcess_ConvertToLeftHanded
-   b. Vertex/Index 변환: aiMesh → 엔진 Vertex 구조체 (position, color, normal, texCoord, tangent)
-      · Tangent 없으면 Gram-Schmidt 재직교화로 생성
-   c. 프리미티브 분리: aiNode의 복수 aiMesh → 각각 SceneNode로 분리
-   d. 메시별 AABB: BoundingBox::CreateFromPoints()
-   e. Auto-LOD 생성: std::async로 비동기 수행
-      · LOD 1: 원본 삼각형 50% (QEM Edge Collapse)
-      · LOD 2: 원본 삼각형 25%
-      · 전환 거리: sceneDiagonal × 2.0f (LOD 1), × 6.0f (LOD 2)
-   f. 이미지 디코딩: stb_image로 PNG/JPEG → RGBA 픽셀 버퍼
-      · baseColor/emissive: sRGB 플래그 설정
-      · normal/metallicRoughness/occlusion: Linear 플래그 설정
-   g. Mip chain 생성: CPU box filter, floor(log2(max(w,h))) + 1 레벨
-   h. 씬 구조 직렬화: 노드 계층, 씬 AABB, 카메라 초기 배치, Material, Light(BoundingSphere 포함)
-   i. .rrscene 파일 쓰기: 섹션별 순차 기록, 오프셋 테이블 완성 후 헤더 재기록
+2. 전처리 파이프라인을 공용 클래스로 구현한다 (src/Asset/ScenePreprocessor.h/.cpp).
+   - static bool Generate(const std::string& sourcePath, const std::string& outputPath):
+     동기 실행, CLI 도구와 엔진에서 모두 호출 가능
+     a. Assimp 파싱: aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_CalcTangentSpace | aiProcess_ConvertToLeftHanded
+     b. Vertex/Index 변환: aiMesh → 엔진 Vertex 구조체
+        · Tangent 없으면 Gram-Schmidt 재직교화로 생성
+     c. 프리미티브 분리: aiNode의 복수 aiMesh → 각각 SceneNode로 분리
+     d. 메시별 AABB: BoundingBox::CreateFromPoints()
+     e. Auto-LOD 생성:
+        · LOD 1: 원본 삼각형 50% (QEM Edge Collapse)
+        · LOD 2: 원본 삼각형 25%
+        · 전환 거리: sceneDiagonal × 2.0f (LOD 1), × 6.0f (LOD 2)
+     f. 이미지 디코딩: stb_image로 PNG/JPEG → RGBA 픽셀 버퍼
+        · baseColor/emissive: sRGB 플래그 설정
+        · normal/metallicRoughness/occlusion: Linear 플래그 설정
+     g. Mip chain 생성: CPU box filter, floor(log2(max(w,h))) + 1 레벨
+     h. 씬 구조 직렬화: 노드 계층, 씬 AABB, 카메라 초기 배치, Material, Light(BoundingSphere 포함)
+     i. 원자적 파일 쓰기: 임시 파일(.rrscene.tmp) 완성 후 최종 경로로 rename
+   - static std::future<bool> GenerateAsync(const std::string& sourcePath):
+     std::async로 백그라운드 스레드에서 Generate() 실행, future 반환
+
+3. CLI 도구 프로젝트를 추가한다 (RRScenePreprocessor, Console Application).
+   - ScenePreprocessor::Generate()를 호출하는 얇은 래퍼
+   - main(argc, argv): 입력 파일 경로 인수 받음, 출력 경로 = 입력과 동일 디렉토리 + .rrscene 확장자
+   - 출력: bin/Debug/RRScenePreprocessor.exe
 
 4. 렌더링 앱에 이중 로딩 경로를 추가한다 (src/Asset/SceneLoader).
    - SceneLoader::LoadScene(path):
@@ -1811,16 +1813,30 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 29 섹션과 GoodToPreprocess.md를 참조�
         · sourceHash와 원본 파일 해시 비교 → 불일치 시 표준 경로로 폴백 + 로그
         · 검증 통과 시: 섹션 순서대로 SceneNode/Mesh/Material/Texture/Light 객체 생성
         · GPU 업로드(VB/IB/Texture)만 수행 (Assimp 파싱 없음)
-     c. 없거나 실패 시: 기존 Assimp 표준 경로 그대로 사용
+     c. 없거나 실패 시: 기존 Assimp 표준 경로 사용 → 로딩 완료 후 항목 5 실행
    - DebugHUD에 로딩 경로 표시: "Fast (.rrscene)" 또는 "Standard (Assimp)"
 
-5. 동작을 검증한다.
-   - Sponza.gltf를 RRScenePreprocessor에 입력 → Sponza.rrscene 생성
-   - 렌더링 앱에서 Sponza.gltf 열기 → 자동으로 Sponza.rrscene 고속 로딩 확인
-   - Assimp 경로 대비 로딩 시간 비교 (DebugHUD 또는 콘솔 출력)
-   - 원본 파일 변경 후 로딩 → 해시 불일치 감지 → 표준 경로 폴백 확인
+5. 표준 경로 로딩 후 백그라운드 자동 전처리를 구현한다 (Engine::LoadScene()).
+   - 표준 경로(Assimp) 로딩 완료 직후: ScenePreprocessor::GenerateAsync(sourcePath) 호출
+     · 반환된 std::future<bool>을 Engine 멤버(m_preprocessFuture)에 저장
+   - 렌더링 블로킹 없이 백그라운드 스레드에서 전처리 파이프라인 실행
+   - DebugHUD에 진행 상태 표시:
+     · 진행 중: "Preprocessing scene..." (m_preprocessFuture가 유효한 동안)
+     · 완료 후: 메시지 사라짐
+   - 매 프레임 Engine::Update()에서 future 완료 여부 폴링:
+     · future.wait_for(0ms) == ready → 결과 확인, 성공 시 콘솔 로그 출력
+       ("Sponza.rrscene saved — next load will use fast path")
+     · m_preprocessFuture 초기화(reset)
+   - 씬 교체 시 이전 전처리 future가 실행 중이면 detach(취소 불가) 후 진행
 
-빌드하여 Sponza 로딩 시간이 ~90% 단축되고, 렌더링 결과가 표준 경로와 동일한지 확인하라.
+6. 동작을 검증한다.
+   - Sponza.gltf 첫 로딩: 표준 경로(Assimp) 사용 + DebugHUD "Preprocessing scene..." 표시 확인
+   - 전처리 완료 후: Sponza.rrscene 파일 생성 확인, 콘솔 로그 확인
+   - Sponza.gltf 두 번째 로딩: 자동으로 고속 경로 사용(~90% 단축) 확인
+   - CLI 도구로 동일한 .rrscene 생성 후 렌더링 앱에서 고속 로딩 확인
+   - 원본 파일 변경 후 로딩: 해시 불일치 감지 → 표준 경로 폴백 + 재전처리 시작 확인
+
+빌드하여 첫 로딩 시 백그라운드 자동 생성이 동작하고, 두 번째 로딩부터 고속 경로가 사용되는지 확인하라.
 ```
 
 ---

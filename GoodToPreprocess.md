@@ -461,9 +461,12 @@
    - 바이너리를 직접 읽어 GPU 업로드만 수행
 
 2. **원본 씬 파일 로딩** (기존 경로, 폴백)
-   - `.rrscene`이 없으면 기존대로 Assimp 파싱 → 런타임 가공
+   - `.rrscene`이 없거나 해시 불일치 시 기존대로 Assimp 파싱 → 런타임 가공
    - 사용자가 새 씬 파일을 처음 열 때 사용
-   - 향후 확장: 로딩 완료 후 백그라운드에서 `.rrscene` 자동 생성 (다음 로딩 시 고속 경로 사용)
+   - **로딩 완료 직후** `ScenePreprocessor::GenerateAsync(sourcePath)` 호출 → 백그라운드에서 `.rrscene` 자동 생성
+     - 렌더링 블로킹 없음 (`std::future<bool>` 비동기)
+     - DebugHUD에 "Preprocessing scene..." 표시, 완료 시 콘솔 로그
+     - 다음 로딩 시 자동으로 고속 경로 사용
 
 ### 변경 감지
 
