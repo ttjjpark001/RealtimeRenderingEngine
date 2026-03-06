@@ -1757,10 +1757,78 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 28를 구현
 
 ---
 
-## Prompt 29: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
+## Prompt 29: RRScenePreprocessor — 오프라인 씬 전처리 도구
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 29를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 29 섹션과 GoodToPreprocess.md를 참조하여 Phase 29를 구현하라.
+이 단계는 glTF/GLB/FBX 씬을 오프라인에서 처리하여 엔진 전용 바이너리(.rrscene)로 저장하는
+독립 커맨드라인 도구(RRScenePreprocessor)를 구현하고, 렌더링 앱에 이중 로딩 경로를 추가한다.
+
+1. VS 솔루션에 RRScenePreprocessor 프로젝트를 추가한다.
+   - 프로젝트 타입: Console Application (SubSystem: Console)
+   - 엔진 헤더(src/Asset, src/Scene, src/Renderer, src/Math)를 include 경로에 추가
+   - Assimp, stb_image 링크 (렌더링 앱과 동일 vcpkg 설정)
+   - 출력: bin/Debug/RRScenePreprocessor.exe, bin/Release/RRScenePreprocessor.exe
+   - 진입점: main(argc, argv) — 인수로 입력 파일 경로 받음
+
+2. .rrscene 바이너리 포맷을 정의한다 (src/Asset/RRSceneFormat.h, 공용 헤더).
+   헤더:
+     · char magic[4] = "RRSC"
+     · uint32 version = 1
+     · uint64 sourceHash  (원본 파일 크기 ^ 수정 시각, 변경 감지용)
+     · uint32 sectionCount
+     · SectionEntry[] { SectionType type; uint64 offset; uint64 size; }
+   섹션 타입: Scene / Mesh / Material / Texture / Light
+   각 섹션 세부 구조:
+   - Scene: 노드 수, 노드별(부모 인덱스, 이름, 로컬 TRS 행렬, meshIndex, materialIndex), 씬 AABB, 카메라 초기(position/yaw/pitch/fov)
+   - Mesh: 메시 수, 메시별(vertex 수, index 수, Vertex 배열 raw dump, Index 배열 raw dump, AABB, LOD 수, LOD별 vertex/index + 전환 거리)
+   - Material: 재질 수, 재질별(PBR factor, AlphaMode, doubleSided, textureIndex 참조 5개, sRGB 플래그)
+   - Texture: 텍스처 수, 텍스처별(width, height, mipLevels, DXGI_FORMAT, 전체 Mip chain 픽셀 데이터 연속 배치)
+   - Light: 광원 수, 광원별(type, color, intensity, position, direction, Kc/Kl/Kq, innerCone, outerCone, castShadow, bsRadius)
+
+3. 전처리기 파이프라인을 구현한다 (tools/RRScenePreprocessor/Preprocessor.cpp).
+   a. Assimp 파싱: aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_CalcTangentSpace | aiProcess_ConvertToLeftHanded
+   b. Vertex/Index 변환: aiMesh → 엔진 Vertex 구조체 (position, color, normal, texCoord, tangent)
+      · Tangent 없으면 Gram-Schmidt 재직교화로 생성
+   c. 프리미티브 분리: aiNode의 복수 aiMesh → 각각 SceneNode로 분리
+   d. 메시별 AABB: BoundingBox::CreateFromPoints()
+   e. Auto-LOD 생성: std::async로 비동기 수행
+      · LOD 1: 원본 삼각형 50% (QEM Edge Collapse)
+      · LOD 2: 원본 삼각형 25%
+      · 전환 거리: sceneDiagonal × 2.0f (LOD 1), × 6.0f (LOD 2)
+   f. 이미지 디코딩: stb_image로 PNG/JPEG → RGBA 픽셀 버퍼
+      · baseColor/emissive: sRGB 플래그 설정
+      · normal/metallicRoughness/occlusion: Linear 플래그 설정
+   g. Mip chain 생성: CPU box filter, floor(log2(max(w,h))) + 1 레벨
+   h. 씬 구조 직렬화: 노드 계층, 씬 AABB, 카메라 초기 배치, Material, Light(BoundingSphere 포함)
+   i. .rrscene 파일 쓰기: 섹션별 순차 기록, 오프셋 테이블 완성 후 헤더 재기록
+
+4. 렌더링 앱에 이중 로딩 경로를 추가한다 (src/Asset/SceneLoader).
+   - SceneLoader::LoadScene(path):
+     a. 동일 디렉토리에 path.rrscene 존재 여부 확인
+     b. 존재하면: LoadRRScene(rrscenePath) 시도
+        · Header magic/version 검증
+        · sourceHash와 원본 파일 해시 비교 → 불일치 시 표준 경로로 폴백 + 로그
+        · 검증 통과 시: 섹션 순서대로 SceneNode/Mesh/Material/Texture/Light 객체 생성
+        · GPU 업로드(VB/IB/Texture)만 수행 (Assimp 파싱 없음)
+     c. 없거나 실패 시: 기존 Assimp 표준 경로 그대로 사용
+   - DebugHUD에 로딩 경로 표시: "Fast (.rrscene)" 또는 "Standard (Assimp)"
+
+5. 동작을 검증한다.
+   - Sponza.gltf를 RRScenePreprocessor에 입력 → Sponza.rrscene 생성
+   - 렌더링 앱에서 Sponza.gltf 열기 → 자동으로 Sponza.rrscene 고속 로딩 확인
+   - Assimp 경로 대비 로딩 시간 비교 (DebugHUD 또는 콘솔 출력)
+   - 원본 파일 변경 후 로딩 → 해시 불일치 감지 → 표준 경로 폴백 확인
+
+빌드하여 Sponza 로딩 시간이 ~90% 단축되고, 렌더링 결과가 표준 경로와 동일한지 확인하라.
+```
+
+---
+
+## Prompt 30: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 30을 구현하라.
 이 단계는 Phase 02의 마지막 단계로, UX 개선 2건을 구현하고 전체 코드 품질을 점검하며 ARCHITECTURE.md를 작성한다.
 
 1. UX 개선 항목을 구현한다.
@@ -1850,10 +1918,10 @@ ARCHITECTURE.md가 프로젝트 루트에 생성되었는지 확인하라.
 
 ---
 
-## Prompt 30: Occlusion Culling — Hi-Z GPU
+## Prompt 31: Occlusion Culling — Hi-Z GPU
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 30 섹션을 참조하여 Phase 30을 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 31 섹션을 참조하여 Phase 31을 구현하라.
 이 단계는 현재 P0 스텁(항상 false)인 OcclusionCuller를 GPU Hi-Z 방식으로 완전 구현한다.
 CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 현재 엔진에 Compute Shader 인프라가 없으므로, 먼저 인프라를 구축한다.
@@ -1904,10 +1972,10 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 
 ---
 
-## Prompt 31: Point Light Cube Map Shadowing
+## Prompt 32: Point Light Cube Map Shadowing
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 31 섹션을 참조하여 Phase 31을 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 32 섹션을 참조하여 Phase 32를 구현하라.
 이 단계는 castShadow = true인 Point Light에 대해 Omnidirectional Shadow Map(TextureCube)을 구현한다.
 
 1. TextureCube D3D12 리소스를 생성한다.
@@ -1961,10 +2029,10 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 31 섹션을 참조하여 Phase 31을 구현
 
 ---
 
-## Prompt 32: Skeletal Animation
+## Prompt 33: Skeletal Animation
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 32 섹션을 참조하여 Phase 32를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 33 섹션을 참조하여 Phase 33을 구현하라.
 Part A(Node Transform Animation)를 먼저 완성한 뒤 Part B(Skeletal Animation)를 구현한다.
 
 === Part A: Node Transform Animation (G-08) ===
@@ -2055,4 +2123,61 @@ Part A(Node Transform Animation)를 먼저 완성한 뒤 Part B(Skeletal Animati
 빌드하여 CesiumMan.glb 또는 RiggedFigure.glb에서 노드 TRS 애니메이션과
 스킨 메시 애니메이션이 정상 재생되는지 확인하라.
 모든 유닛·스모크 테스트가 통과해야 한다.
+```
+
+---
+
+## Prompt 34: RRScenePreprocessor 확장 — Skeletal Animation 지원
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 34 섹션과 GoodToPreprocess.md를 참조하여 Phase 34를 구현하라.
+이 단계는 Phase 33에서 추가된 Skeleton/Skin/Animation 데이터를 .rrscene 포맷에 통합하여
+전처리기와 렌더링 앱 고속 로딩 경로를 모두 확장한다.
+
+1. .rrscene 포맷을 v2로 버전 업한다 (src/Asset/RRSceneFormat.h 수정).
+   - Header.version: 1 → 2
+   - Vertex 구조체에 joints(uint32×4), weights(float×4) 필드 추가
+     · 스킨 메시: isSkinned 플래그 = true, 해당 필드 포함
+     · 비스킨 메시: isSkinned = false, 해당 필드 생략 (파일 크기 절약)
+   - Skeleton Section 추가 (SectionType::Skeleton):
+     · uint32 boneCount
+     · 본별: 이름(문자열), parentIndex(int32), inverseBindMatrix(float 4×4)
+     · Skin 수, Skin별: skeletonIndex, jointIndices 배열
+   - Animation Section 추가 (SectionType::Animation):
+     · uint32 clipCount
+     · 클립별: 이름, 재생 시간(float), 채널 수
+     · 채널별: targetNodeIndex, Property(TRS enum), Interpolation enum,
+               키프레임 수, 키프레임 배열(float time + float3/float4 value)
+   - 하위 호환: version == 1 파일 로딩 시 Skeleton/Animation 섹션 미존재 → 관련 객체 미생성
+
+2. RRScenePreprocessor를 확장한다.
+   - Assimp aiMesh::mBones 순회:
+     · aiBone::mName, mOffsetMatrix → Bone 생성 (Assimp 전치 주의)
+     · aiBone::mWeights → per-vertex joint index + weight 기록
+     · 스킨 메시 Vertex에 joints/weights 기록 후 Skeleton Section 직렬화
+   - Assimp aiAnimation 순회:
+     · aiNodeAnim::mPositionKeys → Translation 키프레임 (XMFLOAT3 + time)
+     · aiNodeAnim::mRotationKeys → Rotation 키프레임 (XMFLOAT4 quaternion + time)
+     · aiNodeAnim::mScalingKeys → Scale 키프레임 (XMFLOAT3 + time)
+     · Interpolation: Assimp aiAnimBehaviour → Linear/Step/CubicSpline 매핑
+     · target name → 노드 인덱스 매핑 후 Animation Section 직렬화
+   - 버전 2 헤더와 전체 섹션 목록(Scene/Mesh/Material/Texture/Light/Skeleton/Animation) 기록
+
+3. 렌더링 앱 고속 로딩 경로를 확장한다.
+   - SceneLoader::LoadRRScene() 내 version 분기:
+     · version == 2: Skeleton/Animation 섹션 파싱
+       - Skeleton Section → Skeleton/Skin 객체 생성 → Mesh.skin 포인터 연결
+       - Animation Section → AnimationClip 배열 생성 → AnimationController 등록
+     · version == 1: 기존 로직 유지 (Skeleton/Animation 없이 로딩)
+   - 스킨 Vertex(joints/weights 포함) → GPU VB 업로드 (Input Layout v2 사용)
+   - AnimationController에 클립 자동 등록, 첫 번째 클립 자동 재생 시작
+
+4. 동작을 검증한다.
+   - CesiumMan.glb를 RRScenePreprocessor에 입력 → CesiumMan.rrscene(v2) 생성
+   - 렌더링 앱에서 CesiumMan.gltf 열기 → v2 고속 경로로 스켈레탈 애니메이션 재생 확인
+   - 비애니메이션 씬의 v1 .rrscene 파일도 계속 정상 로딩되는지 확인 (하위 호환)
+   - v1과 v2 rrscene 모두 Assimp 표준 경로 렌더링 결과와 동일한지 비교
+
+빌드하여 모든 테스트가 통과하고, CesiumMan.rrscene에서 스켈레탈 애니메이션이
+표준 로딩 경로와 동일하게 재생되는지 확인하라. v1 파일 하위 호환을 유지해야 한다.
 ```

@@ -806,7 +806,44 @@ tests/
 
 **완료 기준**: Sponza급 씬을 PBR+Shadow+최적화로 60fps 이상 렌더링, 모든 테스트 통과
 
-### Phase 29: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
+### Phase 29: RRScenePreprocessor — 오프라인 씬 전처리 도구
+**목표**: glTF/GLB/FBX 씬을 오프라인에서 처리하여 엔진 전용 바이너리(`.rrscene`)로 저장하는
+독립 커맨드라인 도구를 구현한다. 렌더링 앱은 `.rrscene`을 직접 로드하여
+Assimp 파싱·이미지 디코딩·LOD 생성·Mip chain 생성을 건너뛰고 GPU 업로드만 수행한다.
+
+1. **VS 프로젝트 `RRScenePreprocessor` 추가** (솔루션 내 새 Console Application 프로젝트):
+   - 엔진 헤더(Asset, Scene, Renderer, Math)를 공유 include로 참조
+   - 출력: `bin/Debug/RRScenePreprocessor.exe`
+
+2. **`.rrscene` 바이너리 포맷 정의** (`src/Asset/RRSceneFormat.h`, 렌더러와 전처리기 공용):
+   - Header: magic("RRSC"), version(uint32), 원본 파일 해시(변경 감지용), 섹션 오프셋 테이블
+   - Scene Section: 노드 계층(부모-자식 인덱스, 이름, 로컬 TRS), 씬 AABB, 카메라 초기 상태
+   - Mesh Section: 메시별 — 엔진 Vertex 배열(position/color/normal/texCoord/tangent), Index 배열, AABB, LOD 데이터(LOD 0~2 Vertex/Index + 전환 거리)
+   - Material Section: PBR factor 값, AlphaMode, doubleSided, 텍스처 인덱스, sRGB/Linear 포맷 힌트
+   - Texture Section: 텍스처별 — 너비/높이/Mip 수, DXGI 포맷, 전체 Mip chain 픽셀 데이터(연속 배치)
+   - Light Section: 타입/색상/강도/위치/방향/감쇠/원뿔각/castShadow/BoundingSphere radius
+
+3. **전처리기 파이프라인 구현** (`tools/RRScenePreprocessor/Preprocessor.h/.cpp`):
+   - Assimp 파싱 → 엔진 Vertex/Index 변환 + Tangent 생성(Gram-Schmidt 재직교화)
+   - 프리미티브 → SceneNode 분리, 메시별 AABB 계산(`BoundingBox::CreateFromPoints`)
+   - Auto-LOD 생성: QEM Edge Collapse (LOD 1 = 50%, LOD 2 = 25%), 백그라운드 스레드
+   - 이미지 디코딩: stb_image → RGBA 픽셀 버퍼, sRGB/Linear 자동 분류
+   - Mip chain 생성: CPU box filter, 전체 레벨(`floor(log2(max(w,h))) + 1`)
+   - 씬 구조 직렬화: 노드 계층, 씬 AABB, 카메라 초기 배치, Material, Light
+   - 출력: `.rrscene` 파이너리 파일 (원본과 동일 디렉토리)
+
+4. **렌더링 앱 이중 로딩 경로 추가** (`src/Asset/SceneLoader`):
+   - **고속 경로**: `.rrscene` 발견 시 → 바이너리 직접 읽기 → GPU 업로드(VB/IB/텍스처)만 수행
+     - 원본 파일 해시 비교 → 불일치 시 원본 로딩으로 폴백
+   - **표준 경로**: `.rrscene` 없으면 기존 Assimp 런타임 파싱 경로 그대로 유지
+   - 자동 감지: 원본 파일과 동일 디렉토리에 동일 이름 `.rrscene` 존재 → 자동 선택
+   - DebugHUD에 로딩 경로 표시("rrscene" / "assimp")
+
+**완료 기준**: RRScenePreprocessor로 Sponza.gltf → Sponza.rrscene 생성, 렌더링 앱에서 고속 로딩 확인(1~3초), 표준 경로(Assimp) 대비 로딩 시간 ~90% 단축, 렌더링 결과 동일
+
+---
+
+### Phase 30: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
 **목표**: 전체 코드 품질 점검, 성능 최적화, 버그 수정, ARCHITECTURE.md 작성
 
 1. **전체 코드 리뷰**:
@@ -852,7 +889,7 @@ tests/
 
 ---
 
-### Phase 30: Occlusion Culling — Hi-Z GPU
+### Phase 31: Occlusion Culling — Hi-Z GPU
 **목표**: 현재 P0 스텁(항상 false)인 `OcclusionCuller`를 GPU Hi-Z 방식으로 완전 구현.
 CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 현재 엔진에 Compute Shader 인프라가 없으므로, 먼저 인프라를 구축한 뒤 Hi-Z를 구현한다.
@@ -882,7 +919,7 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 
 ---
 
-### Phase 31: Point Light Cube Map Shadowing
+### Phase 32: Point Light Cube Map Shadowing
 **목표**: `castShadow = true`인 Point Light에 대해 6면 Cube Map 기반 Omnidirectional Shadow Map 구현.
 
 1. **TextureCube D3D12 리소스 생성**:
@@ -913,7 +950,7 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 
 ---
 
-### Phase 32: Skeletal Animation
+### Phase 33: Skeletal Animation
 **목표**: glTF Node Transform 애니메이션(키프레임)과 Skeletal Animation(본/스킨) 구현.
 Part A가 Part B의 전제 조건이므로 순서대로 구현한다.
 
@@ -956,6 +993,36 @@ Part A가 Part B의 전제 조건이므로 순서대로 구현한다.
 
 ---
 
+### Phase 34: RRScenePreprocessor 확장 — Skeletal Animation 지원
+**목표**: Phase 33에서 추가된 Skeleton/Skin/Animation 데이터를 `.rrscene` 포맷에 통합하여
+전처리기와 렌더러 양쪽을 확장한다. 애니메이션 씬도 고속 로딩 경로를 사용할 수 있게 된다.
+
+1. **`.rrscene` 포맷 버전 업 (v2)**:
+   - Header의 version 필드: 1 → 2
+   - Vertex 포맷 확장: `joints(XMUINT4)` + `weights(XMFLOAT4)` 필드 추가 (스킨 메시용)
+   - **Skeleton Section 추가**: 본 수, 본별 이름/parentIndex/inverseBindMatrix, Skin → joint 인덱스 배열
+   - **Animation Section 추가**: 클립 수, 클립별 — 이름, 재생 시간, 채널 수, 채널별 — target 노드 인덱스/Property(TRS)/Interpolation/키프레임 배열(시간+값)
+   - 하위 호환: v1(비애니메이션 씬) 파일도 계속 로딩 가능
+
+2. **RRScenePreprocessor 확장**:
+   - Assimp `aiMesh::mBones` → Skeleton/Skin 직렬화 (per-vertex joint/weight 포함)
+   - Assimp `aiAnimation` → AnimationClip 직렬화 (TRS 키프레임, 보간 타입 포함)
+   - 스킨 메시의 Vertex에 joints/weights 필드 포함하여 `.rrscene` Mesh Section 저장
+   - 비스킨 메시는 joints/weights 필드 생략 (플래그로 구분)
+
+3. **렌더링 앱 고속 경로 확장**:
+   - `.rrscene` v2 로딩: Skeleton/Skin → `Skeleton`/`Skin` 객체 생성, Animation → `AnimationClip` 객체 생성
+   - AnimationController에 클립 등록, 자동 재생 시작 (씬에 클립이 있을 때)
+   - 스킨 Vertex 데이터 → GPU VB(joint/weight 포함) 업로드
+
+4. **버전 감지 및 마이그레이션**:
+   - v1 파일 로딩 시 Skeleton/Animation Section 없음 → 해당 객체 미생성으로 처리
+   - 원본 파일 해시 불일치 → 재전처리 안내 메시지 출력
+
+**완료 기준**: CesiumMan.glb를 RRScenePreprocessor로 전처리 후 렌더링 앱에서 `.rrscene` 고속 로딩으로 스켈레탈 애니메이션 정상 재생 확인, 비애니메이션 `.rrscene`(v1)과의 하위 호환 유지
+
+---
+
 ## Phase 02 의존성 그래프
 
 ```
@@ -983,13 +1050,17 @@ Phase 11 (Phase 01 완료)
     │                                                                        │
     └────────────────────────────────────────────────────── Phase 28 (통합) ─┘
                                                                              │
-                                                            Phase 29 (코드 리뷰 + ARCHITECTURE.md) ─┘
+                                                            Phase 29 (RRScenePreprocessor: .rrscene 전처리 도구) ─┘
                                                                              │
-                                                            Phase 30 (Occlusion Culling P1: Hi-Z GPU)
+                                                            Phase 30 (코드 리뷰 + ARCHITECTURE.md)
                                                                              │
-                                                            Phase 31 (Point Light Cube Map Shadowing)
+                                                            Phase 31 (Occlusion Culling: Hi-Z GPU)
                                                                              │
-                                                            Phase 32 (Skeletal Animation)
+                                                            Phase 32 (Point Light Cube Map Shadowing)
+                                                                             │
+                                                            Phase 33 (Skeletal Animation)
+                                                                             │
+                                                            Phase 34 (RRScenePreprocessor 확장: Skeletal 지원)
 ```
 
 ## Phase 02 리스크 & 대응

@@ -1,6 +1,6 @@
 # 잔여 구현 항목 정리
 
-> 최종 업데이트: 2026-03-06 (Phase 23.5 → Phase 30 통합 결정 반영)
+> 최종 업데이트: 2026-03-06 (Phase 29 RRScenePreprocessor 삽입, Phase 34 추가, 기존 29~32 → 30~33 재번호)
 > Phase 24까지 구현된 내용을 바탕으로, 이후 필요한 작업을 정리한다.
 
 ---
@@ -27,6 +27,26 @@
 ---
 
 ## 잔여 구현 항목
+
+### Phase 29 — RRScenePreprocessor (오프라인 씬 전처리 도구)
+
+glTF/GLB/FBX 씬을 오프라인에서 처리하여 엔진 전용 바이너리(`.rrscene`)로 저장하는
+독립 커맨드라인 도구. 렌더링 앱은 `.rrscene`을 직접 로드하여 GPU 업로드만 수행한다.
+
+**구현 항목**
+
+| 작업 | 설명 |
+|------|------|
+| VS 프로젝트 추가 | `RRScenePreprocessor` (Console Application), 엔진 헤더 공유 |
+| `.rrscene` 포맷 정의 | `src/Asset/RRSceneFormat.h` (공용): Header + Scene/Mesh/Material/Texture/Light 섹션 |
+| 전처리 파이프라인 | Assimp 파싱 → Vertex 변환 + Tangent → 프리미티브 분리 → AABB → Auto-LOD → 이미지 디코딩 → Mip chain → 씬 직렬화 |
+| 이중 로딩 경로 | `SceneLoader::LoadScene()`: `.rrscene` 존재 + 해시 일치 시 고속 경로, 없으면 Assimp 폴백 |
+| 해시 기반 변경 감지 | 원본 파일 크기^수정시각 → sourceHash, 불일치 시 폴백 + 로그 |
+| DebugHUD 표시 | "Fast (.rrscene)" / "Standard (Assimp)" 로딩 경로 표시 |
+
+**절감 효과 (Sponza급 씬 기준)**: 로딩 시간 ~90% 단축 (10~40초 → 1~3초)
+
+---
 
 ### Phase 25 — Texture Streaming + Mip-Mapping
 
@@ -107,7 +127,7 @@ Phase 25~27 완료 후 전체 파이프라인 연결 및 검증.
 
 ---
 
-### Phase 29 — 코드 리뷰 & 문서화
+### Phase 30 — 코드 리뷰 & 문서화
 
 | 작업 | 설명 |
 |------|------|
@@ -119,7 +139,7 @@ Phase 25~27 완료 후 전체 파이프라인 연결 및 검증.
 
 ---
 
-### Phase 30 — Occlusion Culling (Hi-Z GPU)
+### Phase 31 — Occlusion Culling (Hi-Z GPU)
 
 현재 `OcclusionCuller::IsOccluded()`는 항상 `false`를 반환하는 스텁이다.
 CPU Readback 간이 방식을 거치지 않고 GPU Hi-Z 방식으로 바로 구현한다.
@@ -136,7 +156,7 @@ Compute Shader 파이프라인 인프라 구축이 선행 조건이다.
 
 ---
 
-### Phase 31 — Point Light Cube Map Shadowing
+### Phase 32 — Point Light Cube Map Shadowing
 
 `castShadow = true`인 Point Light에 대해 6면 TextureCube 기반 Omnidirectional Shadow Map 구현.
 
@@ -151,7 +171,7 @@ Compute Shader 파이프라인 인프라 구축이 선행 조건이다.
 
 ---
 
-### Phase 32 — Skeletal Animation
+### Phase 33 — Skeletal Animation
 
 glTF Node Transform 애니메이션(키프레임)과 Skeletal Animation(본/스킨) 구현.
 
@@ -176,6 +196,22 @@ glTF Node Transform 애니메이션(키프레임)과 Skeletal Animation(본/스�
 
 ---
 
+### Phase 34 — RRScenePreprocessor 확장 (Skeletal Animation 지원)
+
+Phase 33 완료 후 `.rrscene` 포맷을 v2로 버전 업하여 Skeleton/Skin/Animation 데이터를 통합.
+애니메이션 씬도 고속 로딩 경로를 사용할 수 있도록 전처리기와 렌더러 양쪽을 확장한다.
+
+| 작업 | 설명 |
+|------|------|
+| `.rrscene` v2 포맷 확장 | `RRSceneFormat.h`: version=2, Skeleton Section + Animation Section 추가, 스킨 Vertex에 joints/weights 필드 |
+| 전처리기: Skeleton 직렬화 | `aiMesh::mBones` → Bone/Skin 직렬화, per-vertex joint/weight 기록 |
+| 전처리기: Animation 직렬화 | `aiAnimation` → AnimationClip TRS 키프레임 + Interpolation 직렬화 |
+| 렌더러 고속 경로 확장 | v2 로딩: Skeleton/Skin → 객체 생성, Animation → AnimationController 등록 + 자동 재생 |
+| 하위 호환 | v1 파일(`version == 1`): Skeleton/Animation 섹션 없음 → 비애니메이션으로 정상 로딩 |
+| 버전 감지 | Header.version으로 분기, 구버전 파일도 경고 없이 처리 |
+
+---
+
 ## 권장 구현 순서
 
 ```
@@ -191,24 +227,33 @@ Phase 27    GPU 메모리 최적화
     │
 Phase 28    통합 & 벤치마크 (Sponza 60fps 목표)
     │
-Phase 29    코드 리뷰 + CalcShadow X4000 재검토 + ARCHITECTURE.md
+Phase 29    RRScenePreprocessor (.rrscene 오프라인 전처리 도구)
+    │           Assimp 파싱·이미지 디코딩·LOD·Mip chain 오프라인 처리
+    │           렌더러 이중 로딩 경로 (고속/.rrscene + 표준/Assimp)
+    │           → Sponza 로딩 시간 ~90% 단축
     │
-Phase 30    Occlusion Culling (Hi-Z GPU)
+Phase 30    코드 리뷰 + CalcShadow X4000 재검토 + ARCHITECTURE.md
+    │
+Phase 31    Occlusion Culling (Hi-Z GPU)
     │           CPU Readback 단계 없이 바로 Hi-Z GPU 구현
     │           Compute Shader 파이프라인 + Optimization 메뉴 항목 포함
     │
-Phase 31    Point Light Cube Map Shadowing
+Phase 32    Point Light Cube Map Shadowing
     │           Omnidirectional Shadow Map (TextureCube, 6-pass depth)
     │
-Phase 32    Skeletal Animation
-            Part A: Node Transform Animation (TRS 키프레임)
-            Part B: Skeletal Animation (본/스킨, GPU Skinning)
+Phase 33    Skeletal Animation
+    │           Part A: Node Transform Animation (TRS 키프레임)
+    │           Part B: Skeletal Animation (본/스킨, GPU Skinning)
+    │
+Phase 34    RRScenePreprocessor 확장 (Skeletal Animation 지원)
+            .rrscene v2: Skeleton/Skin/Animation 섹션 추가
+            하위 호환 (v1 파일도 계속 로딩 가능)
 ```
 
 ---
 
 ## 기타 메모
 
-- **PBR.hlsl CalcShadow X4000 경고**: FXC 컴파일러 한계 — 비교 샘플러(`SamplerComparisonState`)와 동적 cbuffer 인덱스 조합에서 발생하는 고유 quirk. `SampleShadowMap`을 `if/else-if` 체인 + 명시적 초기화로 변경하여 SampleShadowMap 경고는 제거했지만 CalcShadow 경고 1건 잔존. Phase 29에서 `Texture2DArray` 방식으로 리팩터링 검토.
-- **Occlusion Culling Optimization 메뉴 항목**: Phase 30 구현 시 `ID_OPTIM_OCCLUSION_CULL = 8004` 추가 (Phase 23.5 별도 구현 없이 Phase 30에서 통합)
-- **Shadow Map SRV 누수**: `RecreateShadowMaps()` 호출 시 persistent descriptor heap에 이전 SRV 8개가 남음 (최대 1024개 중). 개발 엔진 용량 내 허용 범위이나 Phase 29에서 정리 권장.
+- **PBR.hlsl CalcShadow X4000 경고**: FXC 컴파일러 한계 — 비교 샘플러(`SamplerComparisonState`)와 동적 cbuffer 인덱스 조합에서 발생하는 고유 quirk. `SampleShadowMap`을 `if/else-if` 체인 + 명시적 초기화로 변경하여 SampleShadowMap 경고는 제거했지만 CalcShadow 경고 1건 잔존. Phase 30에서 `Texture2DArray` 방식으로 리팩터링 검토.
+- **Occlusion Culling Optimization 메뉴 항목**: Phase 31 구현 시 `ID_OPTIM_OCCLUSION_CULL = 8004` 추가 (Phase 23.5 별도 구현 없이 Phase 31에서 통합)
+- **Shadow Map SRV 누수**: `RecreateShadowMaps()` 호출 시 persistent descriptor heap에 이전 SRV 8개가 남음 (최대 1024개 중). 개발 엔진 용량 내 허용 범위이나 Phase 30에서 정리 권장.
