@@ -852,8 +852,9 @@ tests/
 
 ---
 
-### Phase 30: Occlusion Culling P1 — Hi-Z GPU
-**목표**: CPU Readback 방식(Phase 23.5)을 대체하는 GPU Hi-Z Occlusion Culling 구현.
+### Phase 30: Occlusion Culling — Hi-Z GPU
+**목표**: 현재 P0 스텁(항상 false)인 `OcclusionCuller`를 GPU Hi-Z 방식으로 완전 구현.
+CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 현재 엔진에 Compute Shader 인프라가 없으므로, 먼저 인프라를 구축한 뒤 Hi-Z를 구현한다.
 
 1. **Compute Shader 인프라 구축**:
@@ -872,12 +873,12 @@ tests/
    - Hi-Z Mip 샘플링 후 AABB 근거리 Z와 비교 → occluded 여부 판정
    - 판정 결과를 GPU Buffer → CPU readback (1프레임 레이턴시)
 
-4. **OcclusionCuller 교체**:
-   - CPU readback(Phase 23.5) 방식 제거 또는 플래그로 선택적 전환
-   - Hi-Z 결과를 `OcclusionCuller::IsOccluded()` 경로에 통합
-   - `occlusionCulledNodes` 통계 유지, DebugHUD 표시
+4. **OcclusionCuller P0 스텁 교체**:
+   - `OcclusionCuller::IsOccluded()`를 Hi-Z GPU 결과 버퍼 반환으로 교체
+   - `occlusionCulledNodes` 통계 CullStats 반영, DebugHUD 표시
+   - Optimization 메뉴 항목 추가: `ID_OPTIM_OCCLUSION_CULL = 8004`
 
-**완료 기준**: Sponza에서 Hi-Z Occlusion Culling 활성화 시 CPU readback 방식 대비 GPU stall 감소, 드로우콜 절감 수치 DebugHUD 확인
+**완료 기준**: Sponza에서 Occlusion Culling 활성화 시 드로우콜 절감 수치 DebugHUD 확인, GPU stall 없이 1프레임 레이턴시로 동작
 
 ---
 

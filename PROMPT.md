@@ -1850,11 +1850,12 @@ ARCHITECTURE.md가 프로젝트 루트에 생성되었는지 확인하라.
 
 ---
 
-## Prompt 30: Occlusion Culling P1 — Hi-Z GPU
+## Prompt 30: Occlusion Culling — Hi-Z GPU
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 30 섹션을 참조하여 Phase 30을 구현하라.
-이 단계는 CPU Readback 방식(Phase 23.5)을 GPU Hi-Z Occlusion Culling으로 대체한다.
+이 단계는 현재 P0 스텁(항상 false)인 OcclusionCuller를 GPU Hi-Z 방식으로 완전 구현한다.
+CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 현재 엔진에 Compute Shader 인프라가 없으므로, 먼저 인프라를 구축한다.
 
 1. Compute Shader 인프라를 구축한다.
@@ -1884,12 +1885,14 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 30 섹션을 참조하여 Phase 30을 구현
      e. AABB 근거리 Z와 비교 → RWByteAddressBuffer에 결과(0/1) 기록
    - 출력 결과를 Readback Buffer로 복사, 1프레임 레이턴시로 CPU에서 읽는다.
 
-4. OcclusionCuller를 Hi-Z 방식으로 교체한다.
+4. OcclusionCuller P0 스텁을 Hi-Z 방식으로 교체한다.
    - src/Renderer/OcclusionCuller.h/.cpp를 수정한다.
-   - 기존 CPU readback 방식을 Hi-Z GPU 방식으로 대체하거나,
-     bool m_useHiZ 플래그로 두 방식 선택적 전환이 가능하도록 한다.
-   - IsOccluded()가 GPU 결과 버퍼의 값을 반환하도록 구현한다.
+   - IsOccluded()가 GPU Hi-Z 결과 버퍼의 값을 반환하도록 구현한다.
    - occlusionCulledNodes 통계를 CullStats에 반영하고 DebugHUD에 표시한다.
+   - Optimization 메뉴 항목을 추가한다:
+     · Win32Menu에 ID_OPTIM_OCCLUSION_CULL = 8004 추가
+     · "Occlusion Culling" 체크 토글 항목 (Optimization 메뉴)
+     · Engine 콜백 → Renderer::SetOcclusionCullingEnabled(bool) 연결
 
 5. 성능을 검증한다.
    - Sponza 씬에서 Hi-Z Occlusion Culling 활성화 시 드로우콜 수 감소 확인

@@ -637,8 +637,8 @@ struct Light {
 #### Occlusion Culling
 
 - **목적**: Frustum 안에 있지만 다른 오브젝트에 완전히 가려진 오브젝트의 CB 갱신 + 드로우콜을 모두 스킵
-- **Hi-Z 기반 (Phase 30)**: 이전 프레임의 depth buffer를 축소 Mip chain으로 생성 → 오브젝트 AABB를 해당 Mip에서 depth 비교
-- **간이 방식 (Phase 23.5)**: 이전 프레임의 depth buffer를 CPU로 readback하여 AABB의 screen-space 영역 depth 비교
+- **Hi-Z 기반 (Phase 30)**: 이전 프레임의 depth buffer를 축소 Mip chain으로 생성 → Compute Shader에서 AABB를 해당 Mip에서 depth 비교 → 결과를 Readback Buffer로 CPU에 전달 (1프레임 레이턴시). CPU Readback 간이 방식 없이 바로 Hi-Z로 구현.
+- **현재 상태**: P0 스텁 (항상 false 반환, 실제 컬링 없음) — Phase 30에서 완전 구현 예정
 - **Occluded 판정 시**: Constant Buffer 갱신, 텍스처 바인딩, DrawCall 모두 스킵
 - **보수적 판정**: 경계 케이스에서는 visible로 판정 (과도한 popping 방지)
 - 구현 위치: `src/Renderer/OcclusionCuller.h/.cpp`
