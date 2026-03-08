@@ -162,8 +162,8 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | G-07 | Material이 참조하는 텍스처(albedo, normal, roughness, metallic 등)를 비동기로 로드하여 엔진 전용 GPU 리소스(Texture 객체)로 변환·저장한다 | P0 |
 | G-07a | 비동기 텍스처 로딩 중에도 렌더링이 중단되지 않는다 (폴백 텍스처 또는 factor 값으로 렌더링) | P0 |
 | G-07b | embedded(glTF 내장) 및 external(외부 파일) 텍스처 이미지를 모두 지원한다 (PNG, JPEG 등) | P0 |
-| G-08 | Node transform 애니메이션(translation, rotation, scale 키프레임)을 로딩한다 | Phase 32 |
-| G-09 | Skeletal animation(bone/skin)을 로딩한다 | Phase 32 |
+| G-08 | Node transform 애니메이션(translation, rotation, scale 키프레임)을 로딩한다 | Phase 35 |
+| G-09 | Skeletal animation(bone/skin)을 로딩한다 | Phase 35 |
 | G-10 | 대형 씬(Sponza, Bistro 등)을 로딩하여 렌더링할 수 있다 | P0 |
 | G-11 | "File" 메뉴의 "Open Scene..." 항목을 선택하면 파일 다이얼로그(GetOpenFileName)가 열린다 | P0 |
 | G-12 | 파일 다이얼로그에서 glTF/GLB 파일을 선택하면 해당 씬을 로드하여 화면에 렌더링한다 | P0 |
@@ -363,7 +363,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | OPT-46 | Constant Buffer 슬롯 할당 시 D3D12 하드웨어 정렬 요구사항(256바이트 경계)을 준수한다. CBPool의 `Allocate()` 호출마다 반환 오프셋이 256의 배수임을 보장한다 | P0 |
 | OPT-47 | CB 데이터 크기가 256바이트 미만이더라도 다음 슬롯까지 256바이트 단위로 패딩한다 (`alignedSize = (size + 255) & ~255`) | P0 |
 
-### 3.20 렌더링 모드 선택 (Render Mode)
+### 3.21 렌더링 모드 선택 (Render Mode)
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
 | RM-01 | "Render" 메뉴에서 렌더링 모드를 선택하여 단계별로 렌더링 복잡도를 전환할 수 있다 | P0 |

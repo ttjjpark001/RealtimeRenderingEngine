@@ -29,9 +29,10 @@ vcpkg integrate install
 
 ```
 RealtimeRenderingEngine.sln
-├── RREngine (src/)              — 엔진 (Windows Application, SubSystem: Windows)
-├── RREngineTests (tests/)       — 테스트 (Console Application, SubSystem: Console)
-└── docs (가상 폴더)             — PRD.md, PLAN.md, PROMPT.md, CLAUDE.md
+├── RREngine (src/)                  — 엔진 (Windows Application, SubSystem: Windows)
+├── RREngineTests (tests/)           — 테스트 (Console Application, SubSystem: Console)
+├── RRScenePreprocessor (src/Tools/) — 오프라인 씬 전처리 CLI 도구 (Console Application) [Phase 31]
+└── docs (가상 폴더)                 — PRD.md, PLAN.md, PROMPT.md, CLAUDE.md
 ```
 
 ## 디렉토리 구조
@@ -147,6 +148,12 @@ tests/
   - `lightDir = { -cosElev·cos(θ),  -sinElev,  -cosElev·sin(θ) }` — 이미 단위 벡터
   - 항상 원점(씬 중심)을 향하며, 카메라 위치·방향에 무관하게 동작
   - Directional이므로 position 불필요, `castShadow=true`로 Shadow Depth Pass 1회 실행
+- **Sponza 전용 태양 방향 토글 — L 키** (Phase 24): Sponza 씬 로드 시에만 활성화
+  - `m_isSponzaScene = true`, `m_sponzaSunKeyIndex` = sun(Key) Directional 광원 인덱스
+  - L 키 에지 감지 시 `m_sponzaSunAltMode` 토글 → 두 방향 프리셋 전환:
+    - 기본: `normalize(-0.3, -1.0, 0.5)` — 앙각 ≈ 60° (오후 태양)
+    - Alt:  `normalize(-0.3, -1.5, 0.3)` — 앙각 ≈ 74° (1층까지 더 깊이 조명)
+  - Bistro 씬에서는 Orbit Light 비활성화 (`m_orbitLightIndex = SIZE_MAX`) — Phase 26
 
 ### 카메라 (Camera)
 - Scene/Camera.h/.cpp에 위치
@@ -832,6 +839,26 @@ struct PerMaterialCB {
 10. **Opaque Front-to-Back 정렬** → Early-Z rejection 극대화
 11. **Shadow Depth Pass** → 그림자 생성 광원별 depth-only 렌더링
 12. **Main Pass** → Opaque (인스턴싱 적용) → Alpha Mask → Alpha Blend (back-to-front)
+
+### RRScenePreprocessor — 오프라인 씬 전처리 도구 (Phase 31)
+
+glTF/GLB/FBX 씬을 엔진 전용 바이너리(`.rrscene`)로 변환하여 이후 로딩 시 Assimp 파싱 없이 GPU 업로드만 수행한다. 두 가지 진입점을 제공한다.
+
+**아키텍처:**
+- `src/Asset/ScenePreprocessor.h/.cpp` — 전처리 파이프라인 (CLI와 엔진이 공유)
+  - `Generate(sourcePath, outputPath)`: 동기 전처리 (CLI 도구용)
+  - `GenerateAsync(sourcePath)`: `std::async`로 백그라운드 실행, `std::future<bool>` 반환 (엔진 내 자동 생성용)
+  - 내부 파이프라인: Assimp 파싱 → Vertex/Index + Tangent → 프리미티브 분리 → Mesh AABB → Auto-LOD(QEM) → 이미지 디코딩 → Mip chain → 직렬화
+- `src/Asset/RRSceneFormat.h` — `.rrscene` 바이너리 포맷 정의 (엔진·CLI 공용 헤더)
+  - Header: magic("RRSC"), version, sourceHash(크기^수정시각), 섹션 오프셋 테이블
+  - Sections: Scene(노드 계층+AABB), Mesh(Vertex/Index+LOD), Material(PBR factor+텍스처 인덱스), Texture(Mip chain raw), Light
+  - 원자적 파일 쓰기: `.rrscene.tmp` 완성 후 rename (부분 파일 방지)
+- `RRScenePreprocessor` VS 프로젝트 (Console Application): `main(argc, argv)` → `Generate()` 호출, 출력: `bin/Debug/RRScenePreprocessor.exe`
+
+**렌더링 앱 이중 로딩 경로:**
+- **고속 경로**: 원본 파일과 동일 디렉토리에 동일 이름 `.rrscene` 존재 + sourceHash 일치 → 바이너리 직접 읽기 → GPU 업로드만 수행 (로딩 시간 1~3초)
+- **표준 경로**: `.rrscene` 없거나 해시 불일치 → Assimp 런타임 파싱 → 로딩 완료 후 `GenerateAsync()` 로 백그라운드 자동 생성
+- DebugHUD에 로딩 경로 표시: "Fast (.rrscene)" / "Standard (Assimp)", 전처리 진행 중: "Preprocessing scene..."
 
 ---
 
