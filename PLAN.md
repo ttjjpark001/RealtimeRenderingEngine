@@ -780,10 +780,10 @@ tests/
 
 **완료 기준**: `assets/test-models/Bistro/bistro.gltf` 준비 완료, SceneSettings.md Bistro 섹션 작성 완료
 
-### Phase 26: Bistro! 빠른 로드 메뉴 + 씬 전용 설정 + Shadow Map 시각적 튜닝
+### Phase 26: Bistro! 빠른 로드 메뉴 + 씬 전용 설정 + Shadow Map 시각적 튜닝 + Interior 조명 토글
 **목표**: File 메뉴에 "Bistro!" 항목을 추가하고, `Engine::LoadBistroScene()`에서 Phase 25에서
 정리한 카메라·광원 세팅을 자동 적용한다. Phase 24의 Sponza! 구현을 참조한다.
-Bistro 씬을 실제 렌더링하여 Shadow Map 해상도·DepthBias·SlopeScaledDepthBias 최적값을 시각적으로 결정한다.
+Bistro 씬을 실제 렌더링하여 Shadow Map 파라미터를 결정하고, L 키로 Exterior/Interior 조명을 전환한다.
 
 > `assets/test-models/Bistro/bistro.gltf` (3.6 GB) — Phase 25에서 이미 클론 완료.
 > bistro.gltf: Exterior + Interior 통합 씬, 메시 551개, 삼각형 1,753,630개, diagonal ≈ 166m.
@@ -795,13 +795,28 @@ Bistro 씬을 실제 렌더링하여 Shadow Map 해상도·DepthBias·SlopeScale
 2. **`Engine::LoadBistroScene()` 구현**:
    - 파일 열기 다이얼로그(bistro.gltf 선택) → `LoadScene()` 호출 (표준 로딩)
    - 카메라: SceneSettings.md Bistro 프리셋 (Position, LookAt, FOV)
-   - `m_lightManager->Clear()` 후 Bistro 전용 광원 배치:
-     - Directional "Evening Sun" (warm `{1.0, 0.85, 0.6}`, intensity≈6, castShadow=true)
-     - Point "Street Lamp" × N (주황 가로등 `{1.0, 0.9, 0.6}`, 거리 감쇠)
-     - Point "Café Fill" (실내 누출광 `{0.9, 0.8, 0.5}`)
+   - `m_lightManager->Clear()` 후 **Exterior 기본 조명** 배치 (SceneSettings.md 기준):
+     - Directional "Evening Sun" (warm `{1.0, 0.85, 0.6}`, intensity=8, castShadow=true)
+     - Point Fill (sky ambient `{0.4, 0.5, 0.7}`, intensity=2, Kl=0.007, Kq=0.0002)
    - `m_orbitLightIndex = SIZE_MAX` — Bistro에서 Orbit 조명 비활성
+   - `m_isBistroScene = true`, `m_bistroInteriorMode = false`
 3. **`Engine::Initialize()`**: `m_menu->SetFileBistroCallback([this](){ LoadBistroScene(); })` 연결
-4. **Shadow Map 자동 설정 확인 및 시각적 튜닝**:
+4. **Bistro 조명 토글 — L 키 (Exterior ↔ Interior)**:
+   - `Engine.h` 멤버 추가: `m_isBistroScene`, `m_bistroInteriorMode`, `m_bistroLightKeyWasDown`
+   - `Engine::LoadScene()`: `m_isBistroScene = false` (일반 씬 로드 시 토글 비활성)
+   - `Engine::Update()`: `m_isBistroScene && L 키 에지` 감지 → `m_bistroInteriorMode` 토글 → `ApplyBistroLighting()` 호출
+   - `Engine::ApplyBistroLighting()` 구현:
+     - `m_lightManager->Clear()`로 전체 리셋 후 모드에 따라 광원 재배치
+     - **Exterior 모드** (`m_bistroInteriorMode == false`) — SceneSettings.md Exterior 기준:
+       - Directional "Evening Sun" (warm `{1.0, 0.85, 0.6}`, intensity=8, castShadow=true)
+       - Point Fill (sky ambient `{0.4, 0.5, 0.7}`, intensity=2)
+     - **Interior 모드** (`m_bistroInteriorMode == true`) — SceneSettings.md Interior 기준:
+       - Directional "Evening Sun" (동일, intensity=3 으로 감쇠 — 창문 통과 간접광)
+       - Point 천장 펜던트 × 3 (warm `{1.0, 0.85, 0.55}`, intensity=5, Kl=0.7, Kq=0.9)
+       - Point 바 카운터 × 1 (amber `{1.0, 0.75, 0.40}`, intensity=4, Kl=0.35, Kq=0.12)
+       - Point 앰비언트 필 × 1 (cool `{0.7, 0.65, 0.90}`, intensity=0.8, Kl=0.022, Kq=0.0019)
+   - Bistro! 메뉴로 로드된 경우에만 동작, 일반 `LoadScene()`으로 열면 비활성
+5. **Shadow Map 자동 설정 확인 및 시각적 튜닝**:
    - diagonal≈166m → 자동 선택: 4096×4096 (RTX 3060+) / 2048×2048 (UHD 630 VRAM 제약)
    - 다음 영역을 렌더링하며 파라미터 결정:
 
@@ -819,6 +834,7 @@ Bistro 씬을 실제 렌더링하여 Shadow Map 해상도·DepthBias·SlopeScale
    - 결정된 값을 `SceneSettings.md` Bistro 섹션에 기록하고 `D3D12Context` 기본값에 반영.
 
 **완료 기준**: "File > Bistro!" 메뉴로 bistro.gltf 로드, 카메라·광원 자동 적용,
+L 키로 Exterior(2개) ↔ Interior(6개) 조명 토글 (Bistro 전용, 일반 LoadScene 시 비활성),
 Shadow Map 해상도·DepthBias·SlopeScaledDepthBias 시각적 확인 후 최적값 SceneSettings.md에 기록
 
 ### Phase 27: Texture Streaming + Mip-Mapping

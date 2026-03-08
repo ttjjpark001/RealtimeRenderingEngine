@@ -68,19 +68,28 @@ CLI 도구와 렌더링 앱 내 백그라운드 자동 생성의 두 진입점�
 
 ---
 
-### Phase 26 — Bistro! 빠른 로드 메뉴 + 씬 전용 설정 + Shadow Map 시각적 튜닝
+### Phase 26 — Bistro! 빠른 로드 메뉴 + 씬 전용 설정 + Interior 조명 토글 + Shadow Map 시각적 튜닝
 
 Phase 24 Sponza! 구현과 동일한 패턴으로 Bistro 씬 전용 메뉴·카메라·광원 자동 설정을 구현하고,
-실제 렌더링을 통해 Shadow Map 파라미터 최적값을 시각적으로 결정한다.
+L 키로 Exterior/Interior 조명을 전환하며, 실제 렌더링을 통해 Shadow Map 파라미터를 결정한다.
 
 | 작업 | 현재 상태 | 설명 |
 |------|-----------|------|
 | `niagara_bistro` clone | ✅ 완료 | `assets/test-models/Bistro/` 배치 완료 (Phase 25에서 수행) |
 | Win32Menu: "Bistro!" 메뉴 항목 | 없음 | `ID_FILE_BISTRO = 6003`, "File > Sponza!" 아래 추가 |
-| `Engine::LoadBistroScene()` | 없음 | 직접 경로 로딩 + 카메라·광원 세팅 + Orbit 비활성 |
+| `Engine::LoadBistroScene()` | 없음 | 파일 다이얼로그 + 카메라·광원 세팅 + Orbit 비활성 |
+| `Engine::ApplyBistroLighting()` | 없음 | `m_bistroInteriorMode`에 따라 Exterior(2개) / Interior(6개) 배치 |
+| L 키 Exterior ↔ Interior 토글 | 없음 | `m_isBistroScene && L 키 에지` → `m_bistroInteriorMode` 전환 |
 | Shadow Map 자동 설정 확인 | 없음 | diagonal≈166m → 4096×4096 (RTX) / 2048×2048 (UHD 630) 자동 선택 |
 | Shadow Map 시각적 튜닝 | 없음 | 외부 바닥, 기둥, 계단, 원거리 경계 등 5개 영역 순서별 확인 |
 | SceneSettings.md 기록 | 없음 | 최종 DepthBias, SlopeScaledDepthBias, 해상도 값 기록 |
+
+**L 키 조명 토글 모드**
+
+| 모드 | 광원 구성 | 총 광원 수 |
+|------|-----------|-----------|
+| **Exterior** (기본) | Directional Evening Sun (intensity=8) + Point Fill | 2개 |
+| **Interior** (L 키) | Directional Evening Sun (intensity=3, 감쇠) + 천장 펜던트×3 + 바 카운터×1 + 앰비언트 필×1 | 6개 |
 
 **Shadow Map 시각적 튜닝 판단 기준**
 
@@ -94,7 +103,7 @@ Phase 24 Sponza! 구현과 동일한 패턴으로 Bistro 씬 전용 메뉴·카�
 **확인 영역 우선순위**: 외부 바닥 → 기둥 접촉면 → 계단/경사 지붕 → 원거리 가로등 경계 → 실내외 개구부
 
 **완료 기준**: "File > Bistro!" 메뉴로 bistro.gltf 로드, 카메라·광원 자동 적용,
-Shadow Map 해상도·DepthBias·SlopeScaledDepthBias 최적값 SceneSettings.md에 기록, 빌드 성공
+L 키 Exterior↔Interior 조명 토글 (Bistro 전용), Shadow Map 최적값 SceneSettings.md에 기록, 빌드 성공
 
 ---
 
@@ -476,8 +485,9 @@ Phase 25   완료 ✅  Bistro 씬 분석 + glTF 에셋 준비
     │           niagara_bistro 실측값 문서화 (diagonal=166m, 삼각형 1.75M)
     │           assets/test-models/Bistro/ 클론 완료 (3.6 GB, .gitignore 제외)
     │
-Phase 26    Bistro! 빠른 로드 메뉴 + 씬 전용 설정 + Shadow Map 시각적 튜닝
-    │           File 메뉴 "Bistro!" + LoadBistroScene() + 카메라·광원 자동 설정
+Phase 26    Bistro! 빠른 로드 메뉴 + Interior 조명 토글 + Shadow Map 시각적 튜닝
+    │           File 메뉴 "Bistro!" + LoadBistroScene() + ApplyBistroLighting()
+    │           L 키: Exterior(2개) ↔ Interior(6개) 조명 토글 (Bistro 전용)
     │           실제 렌더링 후 DepthBias/SlopeScaledDepthBias/해상도 최적값 결정
     │
 Phase 27    Texture Streaming + Mip-Mapping
