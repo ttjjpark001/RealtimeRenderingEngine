@@ -111,6 +111,33 @@ positions:
 > `bistro.gltf` + `bistro.bin` + `textures/` (PNG) 단일 통합 파일 구성.
 > `bistrox.gltf`는 별도 변형 버전. Exterior + Interior가 하나의 파일로 통합됨.
 
+### bistro.gltf vs bistrox.gltf 비교
+
+두 파일은 **동일한 씬(Exterior + Interior 통합)** 을 담고 있으며, 지오메트리·머티리얼이 완전히 같다.
+별도 Exterior-only / Interior-only 파일은 존재하지 않는다.
+
+| 항목 | bistro.gltf | bistrox.gltf |
+|------|-------------|--------------|
+| **생성 도구** | FBX2glTF v0.9.7 (직접 변환) | glTF-Transform v4.0.8 (후처리 정제) |
+| 삼각형 수 | 1,753,630 | 1,753,630 (동일) |
+| 메시 수 | 551 | 551 (동일) |
+| 머티리얼 수 | 254 | 254 (동일) |
+| 텍스처 수 | 343 | 331 (-12, 중복 제거) |
+| 이미지 파일 수 | 686 | 679 (-7, 중복 제거) |
+| 노드 수 | 5,910 | 5,927 (+17 orphaned 노드) |
+| `MSFT_texture_dds` 확장 | **있음** (DDS 참조 잔존) | **없음** |
+| `KHR_materials_ior` | 없음 | 선언만 있음 (실제 사용 0개) |
+| `KHR_lights_punctual` (Sun) | intensity=6830, color=[1,1,1] | intensity=6830, color=null |
+| 카메라 노드 | 동일 | 동일 |
+
+**orphaned 노드(bistrox 전용)**: `Vespa`, `Vespa.001` 계층 총 17개가 씬 루트에 미포함된 채로 존재.
+씬에 참조되지 않으므로 렌더링에 영향 없음.
+
+**권장 로딩 파일: `bistro.gltf`**
+- 원본 변환본으로 레퍼런스 명확
+- `MSFT_texture_dds`는 Assimp에서 무시되므로 실제 로딩 오류 없음
+- bistrox의 orphaned 노드 문제 없음
+
 ### 씬 스케일 (bistro.gltf 실측값)
 
 | 항목 | 값 |
@@ -194,6 +221,63 @@ Shadow Map 해상도와 Ortho 범위는 `m_sceneDiagonal`을 기준으로 자동
 > **주의**: Bistro는 씬 규모(diagonal ~166m)와 복잡한 건물 구조(처마, 기둥 등)로
 > Shadow Acne가 발생하기 쉽다. DepthBias와 SlopeScaledDepthBias를 씬 로드 후 시각적으로 튜닝하는 것을 권장한다.
 > Shadow ortho 249m 범위는 전체 씬 커버용이며, 탐색 구역에 따라 수동 축소 가능.
+
+### Shadow Map VRAM 분석
+
+#### Shadow Map 해상도별 VRAM 소비 (D32_FLOAT, 장당)
+
+| 해상도 | 크기 계산 | VRAM |
+|--------|----------|------|
+| 1024×1024 | 1024 × 1024 × 4 B | **4 MB** |
+| 2048×2048 | 2048 × 2048 × 4 B | **16 MB** |
+| **4096×4096** | 4096 × 4096 × 4 B | **64 MB** |
+
+> Bistro 기준 shadow-casting 광원: Key Light (Directional) 1개 → 4096×4096 1장 = 64 MB.
+
+#### 현재 개발 PC (Intel UHD 630) VRAM 예산 분석
+
+UHD 630은 전용 VRAM 128 MB, 시스템 공유 포함 최대 ~1 GB를 사용할 수 있다.
+Bistro 씬 로딩 시 GPU 메모리 소비 예측:
+
+| 항목 | 추정 VRAM | 비고 |
+|------|----------|------|
+| OS + 드라이버 오버헤드 | ~200 MB | |
+| 백버퍼 × 2 (960×540 RGBA8) | ~4 MB | 기본 창 크기 기준 |
+| Depth Buffer (960×540 D24S8) | ~2 MB | |
+| Vertex Buffer (Bistro, ~2M 정점 × 40B) | ~80 MB | |
+| Index Buffer (~5.3M 인덱스 × 4B) | ~21 MB | |
+| 텍스처 (343장, 평균 512×512 RGBA8 + MIP) | **~460 MB** | MIP 포함 ×4/3 |
+| **Shadow Map 4096×4096 D32** | **64 MB** | 자동 결정값 |
+| **Shadow Map 2048×2048 D32** | **16 MB** | 수동 강제 시 |
+| **합계 (4096 기준)** | **~831 MB** | 1 GB 한계에 근접 |
+| **합계 (2048 기준)** | **~783 MB** | 1 GB 내 수용 |
+
+> 텍스처 추정: 343장 × 평균 512×512 RGBA8 (= 1 MB/장) × MIP 배율(4/3) ≈ 457 MB.
+> 실제 텍스처 중 일부는 1024×1024(4 MB/장)이므로 실측 시 이보다 클 수 있음.
+
+#### 결론: 4096×4096 Shadow Map 적합성 평가
+
+| GPU | VRAM | 4096 Shadow (64 MB) | 판정 | 권장 해상도 |
+|-----|------|--------------------|----|------------|
+| **Intel UHD 630 (현재 PC)** | ~1 GB 공유 | 831 MB 예상 → 한계 초과 가능성 | ⚠️ **비권장** | **2048** |
+| GTX 1060 6 GB | 6 GB | 64 MB는 전체의 1% | ✅ 여유 | 4096 가능 |
+| RTX 3060 12 GB | 12 GB | 64 MB는 전체의 0.5% | ✅ 여유 | 4096 권장 |
+| Mac Mini M4 (16 GB Unified) | 16 GB | 64 MB는 전체의 0.4% | ✅ 여유 | 4096 권장 |
+
+**UHD 630에서 Bistro 실행 시 실용 권장값:**
+```
+Shadow Map 해상도: 2048×2048  (D3D12Context.h: SHADOW_MAP_SIZE = 2048)
+orthoSize:        249m         (엔진 자동 결정값 유지)
+// 4096은 텍스처 메모리와 합산 시 ~1 GB 초과 위험
+// → 페이징(시스템 RAM 스왑) 발생 → 프레임 타임 급등
+```
+
+**Shadow 텍셀 크기 (ortho=249m 기준):**
+| 해상도 | 텍셀 크기 | 품질 |
+|--------|----------|------|
+| 4096 | 0.061 m/texel | 고품질 |
+| **2048** | **0.122 m/texel** | 야외 씬에서 충분 |
+| 1024 | 0.243 m/texel | Shadow Acne 심화 |
 
 ---
 
