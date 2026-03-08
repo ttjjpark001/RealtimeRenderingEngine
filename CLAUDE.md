@@ -843,11 +843,11 @@ Phase 02 완료 코드 위에 GPU-Driven 컬링, 고급 섀도잉, 스켈레탈 
 지연 렌더링(Deferred Shading), 포스트 프로세싱, 레이 트레이싱, 신경망 업스케일링 등
 최신 실시간 렌더링 기법을 단계적으로 추가한다.
 
-**포함 Phase**: Phase 33 (Occlusion Culling Hi-Z) ~ Phase 48 (Neural Upscaling + Denoising)
+**포함 Phase**: Phase 33 (Phase 02 Backup + Occlusion Culling Hi-Z) ~ Phase 49 (코드 리뷰 + 아키텍처 문서화)
 
 | 소구분 Phase | 주요 내용 |
 |-------------|----------|
-| Phase 33 | Occlusion Culling — Hi-Z GPU (Compute Shader 인프라 구축 포함) |
+| Phase 33 | **Phase 02 Backup 생성** + Occlusion Culling — Hi-Z GPU (Compute Shader 인프라 포함) |
 | Phase 34 | Point Light Cube Map Shadowing (Omnidirectional Shadow) |
 | Phase 35 | Skeletal Animation (Node TRS + Skin/Bone GPU Skinning) |
 | Phase 36 | RRScenePreprocessor 확장 — Skeletal Animation 지원 (.rrscene v2) |
@@ -863,6 +863,11 @@ Phase 02 완료 코드 위에 GPU-Driven 컬링, 고급 섀도잉, 스켈레탈 
 | Phase 46 | DXR Hybrid Ray Tracing (BLAS/TLAS, RT Shadow, RT Reflection) |
 | Phase 47 | Nanite-style Virtual Geometry (Meshlet, Mesh Shader, GPU-Driven IndirectDraw) |
 | Phase 48 | Neural Upscaling (FSR 3 / DLSS 3) + Neural Denoising (NRD SDK) |
+| Phase 49 | 코드 리뷰 + 성능 최적화 + 버그 수정 + ARCHITECTURE.md 완성 |
+
+> **Phase 02 Backup 정책**: Phase 33 구현 시작 전 최초 1회만 수행.
+> `Phase 02 Backup/` 폴더에 src/, tests/, assets/, shaders/ 전체 복사.
+> `Phase 01 Backup/` 및 빌드 산출물(bin/, .git/, *.user 등)은 제외.
 
 ### Deferred Rendering 파이프라인 (Phase 37~)
 

@@ -946,7 +946,7 @@ tests/
 > 지연 렌더링(Deferred Shading), 포스트 프로세싱, 레이 트레이싱, 신경망 업스케일링 등
 > 최신 실시간 렌더링 기법을 단계적으로 추가한다.
 
-**포함 Phase**: Phase 33 ~ Phase 48
+**포함 Phase**: Phase 33 ~ Phase 49
 
 ---
 
@@ -954,6 +954,12 @@ tests/
 **목표**: 현재 P0 스텁(항상 false)인 `OcclusionCuller`를 GPU Hi-Z 방식으로 완전 구현.
 CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 현재 엔진에 Compute Shader 인프라가 없으므로, 먼저 인프라를 구축한 뒤 Hi-Z를 구현한다.
+
+0. **Phase 02 Backup 생성** *(Phase 33 구현 시작 전 최초 1회)*:
+   - 프로젝트 루트에 `Phase 02 Backup/` 폴더를 생성하고, 루트의 전체 소스(`src/`, `tests/`, `assets/`, `shaders/` 등)를 복사한다.
+   - `Phase 01 Backup/` 폴더는 복사 대상에서 제외한다 (이중 백업 방지).
+   - `bin/`, `.git/`, `*.user`, `*.suo`, `ipch/` 등 빌드 산출물 및 IDE 캐시는 제외한다.
+   - 백업 완료 후 `Phase 02 Backup/README.md`에 백업 일시, Phase 02 최종 완료 상태를 기록한다.
 
 1. **Compute Shader 인프라 구축**:
    - `D3D12ComputePipeline.h/.cpp`: CS 전용 Root Signature + ID3D12PipelineState(CS)
@@ -1279,6 +1285,54 @@ Rasterization과 Ray Tracing을 Hybrid 방식으로 결합, PCF Shadow/SSR 대�
 
 ---
 
+### Phase 49: Phase 03 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
+**목표**: Phase 33~48에서 추가된 모든 고급 렌더링 기법의 코드 품질 점검, 성능 최적화,
+버그 수정, 그리고 전체 엔진 아키텍처를 반영한 최종 문서(`ARCHITECTURE.md`) 완성.
+
+1. **코드 리뷰**:
+   - Dead code 제거, include 순서 정리, 네이밍 일관성 (PascalCase/camelCase) 검증
+   - G-Buffer / Deferred 파이프라인 코드 리뷰: MRT 바인딩 순서, 포맷 일관성
+   - DXR ShaderTable 빌드 로직, BLAS/TLAS 갱신 주기 코드 리뷰
+   - Mesh Shader / Amplification Shader 코드 리뷰 (Meshlet 분할 경계 조건)
+   - Neural Upscaling SDK 연동 코드 리뷰 (FSR / DLSS / NRD 초기화 순서)
+   - D3D12 Debug Layer 경고 0건 목표 (리소스 상태 전이 누락, lifetime 위반 등)
+
+2. **성능 최적화**:
+   - PIX for Windows 또는 D3D12 Timestamp Query로 각 렌더 패스 비용 측정
+   - G-Buffer 포맷 최적화 (RT1을 R10G10B10A2로 축소 검토)
+   - SSAO 샘플 수 / TAA 블렌딩 계수 / Bloom 피라미드 단계 수 튜닝
+   - Hi-Z Mip chain 생성 비용 측정 및 다운샘플 단계 최적화
+   - DXR TLAS Refit (정적 오브젝트 BLAS 재사용, 동적만 Rebuild)
+   - Nanite Meshlet 크기 및 LOD 전환 Projected Error 임계값 튜닝
+   - Denoiser Temporal 수렴 속도 vs 고스팅 트레이드오프 조정
+
+3. **버그 수정**:
+   - 렌더 패스 간 리소스 상태 전이 누락 수정 (D3D12_RESOURCE_STATE_*)
+   - TAA 고스팅 엣지 케이스 (씬 전환 직후 History Buffer 초기화)
+   - SSR 화면 경계 아티팩트 (경계 Fade 파라미터 튜닝)
+   - DDGI Probe 갱신 시 Irradiance 튀는 현상 (Hysteresis 파라미터 조정)
+   - DXR AnyHit 셰이더에서 투명 오브젝트 투과율 잘못 계산되는 케이스
+   - FSR/DLSS Motion Vector 스케일 불일치 수정
+
+4. **아키텍처 문서화** (`ARCHITECTURE.md` 완성):
+   - 전체 렌더 파이프라인 다이어그램 (Phase 01 ~ Phase 48 누적 아키텍처)
+   - 렌더 패스 순서 및 리소스 의존성 (Shadow → G-Buffer → Lighting → Post → TAA → Upscale)
+   - 주요 모듈 간 의존성 (Engine / Renderer / SceneGraph / RHI / Asset / Lighting)
+   - G-Buffer 레이아웃, Descriptor Heap 구조, Root Signature 레지스터 맵
+   - DXR 가속 구조 (BLAS/TLAS) 업데이트 주기 및 ShaderTable 구성
+   - Meshlet / GPU-Driven 렌더링 흐름 (Compute → DrawArgs → ExecuteIndirect)
+   - Neural Upscaling 렌더 해상도 관리 흐름
+   - 스레딩 모델: 메인 렌더 스레드 / Compute Queue / Copy Queue / Worker Thread 관계
+
+5. **최종 벤치마크**:
+   - Sponza + Bistro: Full Phase 03 파이프라인(Deferred + SSAO + Bloom + TAA + SSR + DDGI) 60fps 목표
+   - DXR 활성 시 RT Shadow + RT Reflection 포함 성능 측정
+   - FSR 3 활성 시 (렌더 해상도 67%) 품질 vs 성능 비교
+
+**완료 기준**: D3D12 Debug Layer 경고 0건, 주요 패스 타임스탬프 측정 완료, ARCHITECTURE.md 작성 완료, Sponza+Bistro 벤치마크 결과 기록
+
+---
+
 ## Phase 03 의존성 그래프
 
 ```
@@ -1307,6 +1361,8 @@ Phase 32 (Phase 02 완료: 코드 리뷰 + ARCHITECTURE.md)
                                                     Phase 47 (Nanite: Virtual Geometry)
                                                                    │
                                                     Phase 48 (Neural Upscaling + Denoising)
+                                                                   │
+                                                    Phase 49 (코드 리뷰 + 최적화 + 버그 수정 + ARCHITECTURE.md)
 ```
 
 ## Phase 03 리스크 & 대응

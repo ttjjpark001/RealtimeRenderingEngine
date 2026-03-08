@@ -2018,10 +2018,18 @@ ARCHITECTURE.md가 프로젝트 루트에 생성되었는지 확인하라.
 ## Prompt 33: Occlusion Culling — Hi-Z GPU
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 31 섹션을 참조하여 Phase 31을 구현하라.
+PRD.md, PLAN.md(Phase 33), CLAUDE.md를 참조하여 Phase 33을 구현하라.
 이 단계는 현재 P0 스텁(항상 false)인 OcclusionCuller를 GPU Hi-Z 방식으로 완전 구현한다.
 CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 현재 엔진에 Compute Shader 인프라가 없으므로, 먼저 인프라를 구축한다.
+
+0. Phase 02 Backup을 생성한다 (구현 시작 전 최초 1회만 수행).
+   - 프로젝트 루트에 "Phase 02 Backup/" 폴더를 생성한다.
+   - src/, tests/, assets/, shaders/ 등 소스 파일 전체를 복사한다.
+   - "Phase 01 Backup/" 폴더는 복사 대상에서 반드시 제외한다 (이중 백업 방지).
+   - bin/, .git/, *.user, *.suo, ipch/, x64/ 등 빌드 산출물 및 IDE 캐시는 제외한다.
+   - 백업 완료 후 "Phase 02 Backup/README.md"를 생성하여 백업 일시와
+     Phase 02 최종 완료 상태(구현된 기능 목록)를 기록한다.
 
 1. Compute Shader 인프라를 구축한다.
    - src/RHI/D3D12/D3D12ComputePipeline.h/.cpp를 신규 생성한다.
@@ -2484,4 +2492,59 @@ PRD.md, PLAN.md(Phase 48), CLAUDE.md를 참조하여 Phase 48을 구현하라.
 4. DebugHUD: Upscaling 모드, 렌더/출력 해상도, Denoiser 종류
 
 빌드하여 FSR 업스케일, Quality Mode 전환, Denoiser를 확인하라.
+```
+
+---
+
+## Prompt 49: Phase 03 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
+
+```
+PRD.md, PLAN.md(Phase 49), CLAUDE.md를 참조하여 Phase 49를 수행하라.
+Phase 33~48에서 추가된 모든 고급 렌더링 기법의 코드 품질을 점검하고,
+성능을 최적화하며, 버그를 수정하고, ARCHITECTURE.md를 완성한다.
+
+1. 코드 리뷰를 수행한다.
+   - Dead code 제거, include 순서 정리, 네이밍 일관성 검증
+   - G-Buffer MRT 바인딩 순서 및 포맷 일관성 확인
+   - DXR ShaderTable 빌드 로직, BLAS/TLAS 갱신 주기 검토
+   - Mesh Shader / Amplification Shader 경계 조건 검토
+   - Neural Upscaling SDK 연동 초기화 순서 확인
+   - D3D12 Debug Layer 경고 0건 목표 (리소스 상태 전이, lifetime 위반 등)
+
+2. 성능 최적화를 수행한다.
+   - PIX for Windows 또는 D3D12 Timestamp Query로 각 렌더 패스 비용 측정
+   - G-Buffer 포맷 최적화 (RT1: R10G10B10A2 축소 검토)
+   - SSAO 샘플 수 / TAA 블렌딩 계수 / Bloom 피라미드 단계 수 튜닝
+   - Hi-Z Mip chain 생성 비용 측정 및 최적화
+   - DXR TLAS Refit (정적 BLAS 재사용, 동적만 Rebuild)
+   - Nanite Meshlet 크기 및 LOD Projected Error 임계값 튜닝
+   - Denoiser Temporal 수렴 속도 vs 고스팅 트레이드오프 조정
+
+3. 버그를 수정한다.
+   - 렌더 패스 간 리소스 상태 전이 누락 (D3D12_RESOURCE_STATE_*)
+   - TAA 씬 전환 직후 History Buffer 초기화 누락
+   - SSR 화면 경계 아티팩트 (Fade 파라미터 튜닝)
+   - DDGI Probe Irradiance 튀는 현상 (Hysteresis 파라미터)
+   - DXR AnyHit 투명 오브젝트 투과율 계산 오류
+   - FSR/DLSS Motion Vector 스케일 불일치
+
+4. ARCHITECTURE.md를 완성한다.
+   - 전체 렌더 파이프라인 다이어그램 (Phase 01~48 누적 아키텍처)
+   - 렌더 패스 순서 및 리소스 의존성 다이어그램
+     (Shadow → G-Buffer → Lighting → SSAO → SSR → Bloom → TAA → Tone Mapping → Upscale)
+   - 주요 모듈 간 의존성 (Engine / Renderer / SceneGraph / RHI / Asset / Lighting)
+   - G-Buffer 레이아웃, Descriptor Heap 구조, Root Signature 레지스터 맵
+   - DXR 가속 구조 (BLAS/TLAS) 업데이트 주기 및 ShaderTable 구성
+   - Meshlet / GPU-Driven 렌더링 흐름 (Compute → DrawArgs → ExecuteIndirect)
+   - Neural Upscaling 렌더 해상도 관리 흐름
+   - 스레딩 모델: 메인 렌더 스레드 / Compute Queue / Copy Queue / Worker Thread
+
+5. 최종 벤치마크를 수행한다.
+   - Sponza + Bistro: Full Phase 03 파이프라인(Deferred + SSAO + Bloom + TAA + SSR + DDGI) 60fps 목표
+   - DXR 활성 시 RT Shadow + RT Reflection 포함 성능 측정
+   - FSR 3 활성 시 (렌더 해상도 67%) 품질 vs 성능 비교
+   - 모든 유닛 테스트 + 스모크 테스트 통과 확인
+
+D3D12 Debug Layer 경고 0건, 주요 패스 타임스탬프 측정 완료,
+ARCHITECTURE.md 작성 완료, Sponza+Bistro 벤치마크 결과 기록 후 Phase 03 완료 선언.
 ```

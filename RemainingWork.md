@@ -174,6 +174,11 @@ Phase 27~29 완료 후 전체 파이프라인 연결 및 검증.
 
 ### Phase 33 — Occlusion Culling (Hi-Z GPU)
 
+> **Phase 33 시작 전**: Phase 02 Backup 생성 (1회)
+> - `Phase 02 Backup/` 폴더에 src/, tests/, assets/, shaders/ 복사
+> - `Phase 01 Backup/` 및 빌드 산출물(bin/, .git/, *.user 등) 제외
+> - `Phase 02 Backup/README.md`에 백업 일시 + Phase 02 완료 상태 기록
+
 현재 `OcclusionCuller::IsOccluded()`는 항상 `false`를 반환하는 스텁이다.
 CPU Readback 간이 방식을 거치지 않고 GPU Hi-Z 방식으로 바로 구현한다.
 Compute Shader 파이프라인 인프라 구축이 선행 조건이다.
@@ -386,6 +391,64 @@ Phase 36 완료 후 진행. G-Buffer / Post-Processing / Ray Tracing / Neural Re
 
 ---
 
+### Phase 49 — Phase 03 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
+
+Phase 33~48 완료 후 전체 Phase 03 코드 품질 점검 및 최종 문서화.
+
+**코드 리뷰**
+
+| 작업 | 설명 |
+|------|------|
+| Dead code 제거 + include 정리 | 네이밍 일관성(PascalCase/camelCase) 검증 |
+| G-Buffer MRT 코드 리뷰 | 바인딩 순서, 포맷 일관성 확인 |
+| DXR 코드 리뷰 | ShaderTable 빌드, BLAS/TLAS 갱신 주기 |
+| Mesh Shader 코드 리뷰 | Meshlet 분할 경계 조건, DispatchMesh 파라미터 |
+| Neural SDK 연동 코드 리뷰 | FSR/DLSS/NRD 초기화 순서, 리소스 lifetime |
+| D3D12 Debug Layer 경고 0건 | 리소스 상태 전이 누락, lifetime 위반 수정 |
+
+**성능 최적화**
+
+| 작업 | 설명 |
+|------|------|
+| 패스별 GPU 타임스탬프 측정 | PIX for Windows 또는 D3D12 Timestamp Query |
+| G-Buffer 포맷 최적화 | RT1: R10G10B10A2 축소 검토 |
+| SSAO/TAA/Bloom 파라미터 튜닝 | 샘플 수, 블렌딩 계수, 피라미드 단계 |
+| DXR TLAS Refit | 정적 BLAS 재사용, 동적만 Rebuild |
+| Denoiser 수렴 속도 조정 | Hysteresis 파라미터, 고스팅 트레이드오프 |
+
+**버그 수정**
+
+| 작업 | 설명 |
+|------|------|
+| 리소스 상태 전이 누락 | D3D12_RESOURCE_STATE_* 바리어 보완 |
+| TAA History 초기화 | 씬 전환 직후 History Buffer 리셋 |
+| SSR 경계 아티팩트 | 화면 경계 Fade 파라미터 튜닝 |
+| DDGI Probe 튀는 현상 | Irradiance Hysteresis 파라미터 조정 |
+| FSR/DLSS Motion Vector 스케일 불일치 | 렌더/출력 해상도 비율 보정 |
+
+**아키텍처 문서화**
+
+| 작업 | 설명 |
+|------|------|
+| `ARCHITECTURE.md` 완성 | 전체 렌더 파이프라인 다이어그램 (Phase 01~48) |
+| 렌더 패스 의존성 다이어그램 | Shadow→G-Buffer→Lighting→Post→TAA→Upscale |
+| 모듈 의존성 | Engine/Renderer/SceneGraph/RHI/Asset/Lighting 관계도 |
+| G-Buffer 레이아웃 + 레지스터 맵 | Descriptor Heap 구조, Root Signature |
+| DXR 가속 구조 | BLAS/TLAS 업데이트 주기, ShaderTable 구성 |
+| GPU-Driven 렌더링 흐름 | Compute→DrawArgs→ExecuteIndirect |
+| 스레딩 모델 | 메인/Compute Queue/Copy Queue/Worker Thread 관계 |
+
+**최종 벤치마크**
+
+| 씬 | 목표 |
+|----|------|
+| Sponza (Full Phase 03) | Deferred+SSAO+Bloom+TAA+SSR+DDGI 60fps |
+| Bistro (Full Phase 03) | 동일 파이프라인 60fps |
+| DXR 활성 | RT Shadow+RT Reflection 포함 성능 측정 |
+| FSR 3 (67%) | 품질 vs 성능 비교 기록 |
+
+---
+
 ## 권장 구현 순서
 
 ```
@@ -457,6 +520,9 @@ Phase 46    DXR Hybrid Ray Tracing (BLAS/TLAS + RT Shadow + RT Reflection)
 Phase 47    Nanite-style Virtual Geometry (Meshlet + Mesh Shader + GPU-Driven)
     │
 Phase 48    Neural Upscaling (FSR 3 / DLSS 3) + Neural Denoising (NRD SDK)
+    │
+Phase 49    Phase 03 코드 리뷰 + 최적화 + 버그 수정 + ARCHITECTURE.md 완성
+            Sponza/Bistro Full Phase 03 벤치마크 (60fps 목표)
 ```
 
 ---
