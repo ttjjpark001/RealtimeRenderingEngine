@@ -832,3 +832,67 @@ struct PerMaterialCB {
 10. **Opaque Front-to-Back 정렬** → Early-Z rejection 극대화
 11. **Shadow Depth Pass** → 그림자 생성 광원별 depth-only 렌더링
 12. **Main Pass** → Opaque (인스턴싱 적용) → Alpha Mask → Alpha Blend (back-to-front)
+
+---
+
+## Phase 03: 고급 렌더링 기법
+
+### Phase 03 개요
+
+Phase 02 완료 코드 위에 GPU-Driven 컬링, 고급 섀도잉, 스켈레탈 애니메이션,
+지연 렌더링(Deferred Shading), 포스트 프로세싱, 레이 트레이싱, 신경망 업스케일링 등
+최신 실시간 렌더링 기법을 단계적으로 추가한다.
+
+**포함 Phase**: Phase 33 (Occlusion Culling Hi-Z) ~ Phase 48 (Neural Upscaling + Denoising)
+
+| 소구분 Phase | 주요 내용 |
+|-------------|----------|
+| Phase 33 | Occlusion Culling — Hi-Z GPU (Compute Shader 인프라 구축 포함) |
+| Phase 34 | Point Light Cube Map Shadowing (Omnidirectional Shadow) |
+| Phase 35 | Skeletal Animation (Node TRS + Skin/Bone GPU Skinning) |
+| Phase 36 | RRScenePreprocessor 확장 — Skeletal Animation 지원 (.rrscene v2) |
+| Phase 37 | Deferred Rendering — G-Buffer MRT (Albedo/Normal/MetalRough/Depth) |
+| Phase 38 | HDR Pipeline + Tone Mapping (ACES/Reinhard) + Auto-Exposure |
+| Phase 39 | SSAO (Hemisphere Kernel + Bilateral Blur + Lighting 통합) |
+| Phase 40 | Bloom + Post-Processing 파이프라인 (Ping-Pong Buffer, Dual Kawase Blur) |
+| Phase 41 | TAA (Halton Jitter + Variance Clipping + Velocity Buffer) |
+| Phase 42 | Motion Blur (Tile-based) + Depth of Field (Bokeh CoC) |
+| Phase 43 | SSR (Hi-Z Raymarching) + Refraction (IOR 기반) |
+| Phase 44 | Screen Space Subsurface Scattering (Separable 6-weight Gaussian, RGB 채널별) |
+| Phase 45 | Global Illumination — DDGI (Irradiance Probe 3D Grid, SH2 Sampling) |
+| Phase 46 | DXR Hybrid Ray Tracing (BLAS/TLAS, RT Shadow, RT Reflection) |
+| Phase 47 | Nanite-style Virtual Geometry (Meshlet, Mesh Shader, GPU-Driven IndirectDraw) |
+| Phase 48 | Neural Upscaling (FSR 3 / DLSS 3) + Neural Denoising (NRD SDK) |
+
+### Deferred Rendering 파이프라인 (Phase 37~)
+
+Phase 37에서 Forward Rendering을 Deferred Shading으로 전환한다.
+
+**G-Buffer 레이아웃:**
+- RT0: R8G8B8A8_UNORM_SRGB — Albedo(RGB) + Metallic(A)
+- RT1: R16G16B16A16_FLOAT — World Normal(XYZ) + Roughness(A)
+- RT2: R8G8B8A8_UNORM — Emissive(RGB) + AO(A)
+- Depth: D32_FLOAT (SRV 겸용)
+
+**렌더 패스 순서 (Phase 37 이후):**
+1. Shadow Depth Pass (광원별 depth-only)
+2. Geometry Pass (G-Buffer Fill: Opaque + Alpha Mask)
+3. Lighting Pass (Full-Screen Quad: G-Buffer → HDR RT, Cook-Torrance BRDF)
+4. SSAO Pass + Blur (Phase 39)
+5. SSR Pass (Phase 43)
+6. Bloom / Post-Processing (Phase 40)
+7. TAA Resolve (Phase 41)
+8. Tone Mapping + sRGB 출력 (Phase 38)
+9. Forward+ Alpha Blend Pass (Phase 37 ~ 유지)
+
+### DXR 하드웨어 폴백 정책
+
+- DXR Tier 1.1 지원: RT Shadow + RT Reflection + DXR-based DDGI Probe Update 활성
+- DXR 미지원: PCF Shadow Map / SSR (Phase 43) / DDGI Static Probe Fallback 유지
+- 런타임 감지: D3D12_FEATURE_D3D12_OPTIONS5로 Tier 확인
+
+### Neural Upscaling 렌더 해상도 관리
+
+- FSR 3 / DLSS 3 활성 시: 렌더 해상도를 출력 해상도의 50~75%로 낮춤
+- TAA Jitter와 Motion Vector를 Upscaler에 전달하여 Temporal 품질 유지
+- DebugHUD: 렌더 해상도 / 출력 해상도 / Upscaling 모드 표시

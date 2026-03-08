@@ -2278,3 +2278,210 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 34 섹션과 GoodToPreprocess.md를 참조�
 빌드하여 모든 테스트가 통과하고, CesiumMan.rrscene에서 스켈레탈 애니메이션이
 표준 로딩 경로와 동일하게 재생되는지 확인하라. v1 파일 하위 호환을 유지해야 한다.
 ```
+
+---
+
+## Prompt 37: Deferred Rendering — G-Buffer 기반 렌더링 파이프라인
+
+```
+PRD.md, PLAN.md(Phase 03), CLAUDE.md를 참조하여 Phase 37을 구현하라.
+기존 Forward Rendering 파이프라인을 Deferred Shading으로 전환한다.
+Alpha Blend 오브젝트는 Forward 패스를 유지하는 Hybrid 구조를 적용한다.
+
+1. G-Buffer MRT 생성 (D3D12Context):
+   - RT0: R8G8B8A8_UNORM_SRGB — Albedo(RGB) + Metallic(A)
+   - RT1: R16G16B16A16_FLOAT — World Normal(XYZ) + Roughness(A)
+   - RT2: R8G8B8A8_UNORM — Emissive(RGB) + AO(A)
+   - Depth: D32_FLOAT (SRV 겸용), OMSetRenderTargets MRT 바인딩
+
+2. Geometry Pass: Opaque → G-Buffer Fill, Shadow Pass 선행, Alpha Mask clip() 적용
+
+3. Lighting Pass: Full-Screen Quad, G-Buffer SRV + Shadow SRV 바인딩, Cook-Torrance BRDF, HDR RT 출력
+
+4. Forward+ 투명 패스: Alpha Blend 메시는 기존 Forward로 HDR RT 합성
+
+5. G-Buffer 디버그 뷰 (Render 메뉴): Albedo / Normal / MetalRoughness / Depth 시각화
+
+빌드하여 G-Buffer MRT, Deferred Lighting Pass, Alpha Blend 합성을 확인하라.
+```
+
+---
+
+## Prompt 38: HDR Pipeline + Tone Mapping
+
+```
+PRD.md, PLAN.md(Phase 38), CLAUDE.md를 참조하여 Phase 38을 구현하라.
+
+1. HDR Render Target: DXGI_FORMAT_R16G16B16A16_FLOAT (Lighting Pass 출력)
+2. Tone Mapping Pass: Reinhard 또는 ACES Filmic — Render 메뉴 선택
+3. Auto-Exposure: Compute Shader로 평균 Luminance → EV 자동 조절
+4. sRGB 출력: R8G8B8A8_UNORM_SRGB SwapChain
+5. DebugHUD: Tone Mapping 모드, Luminance, EV 표시
+
+빌드하여 HDR RT, Tonemapping 전환, Auto-Exposure를 확인하라.
+```
+
+---
+
+## Prompt 39: SSAO (Screen Space Ambient Occlusion)
+
+```
+PRD.md, PLAN.md(Phase 39), CLAUDE.md를 참조하여 Phase 39를 구현하라.
+
+1. SSAO Buffer: R8_UNORM 렌더 타겟
+2. SSAO Pass: Hemisphere Sample Kernel(16~64개) + 노이즈 텍스처 랜덤화
+   - Depth → View-Space Position, G-Buffer Normal → View-Space
+   - 반구형 샘플로 주변 깊이 비교 → Raw AO
+3. Blur Pass: Bilateral Blur (Depth/Normal 경계 보존), 수평→수직 2패스
+4. Lighting Pass 통합: AO × Ambient Light
+5. Optimization 메뉴: SSAO on/off, AO Buffer 시각화
+
+빌드하여 SSAO Buffer, Blur, Lighting 통합, on/off 비교를 확인하라.
+```
+
+---
+
+## Prompt 40: Bloom + Post-Processing 파이프라인
+
+```
+PRD.md, PLAN.md(Phase 40), CLAUDE.md를 참조하여 Phase 40을 구현하라.
+
+1. Ping-Pong Buffer 프레임워크: PostProcessor 클래스, HDR RT 2개 교대
+2. Bright Pass: Luminance 임계값 이상 픽셀 추출
+3. Gaussian Blur Pyramid: 6단계 다운샘플→업샘플 (Dual Kawase Blur)
+4. Bloom Composite: Additive Blend
+5. 파이프라인 순서: Lighting → SSAO → Bloom → Tone Mapping → TAA → sRGB
+6. 메뉴: Bloom on/off, Threshold, Intensity
+
+빌드하여 Bloom 효과, Post-Processing 프레임워크를 확인하라.
+```
+
+---
+
+## Prompt 41: TAA (Temporal Anti-Aliasing)
+
+```
+PRD.md, PLAN.md(Phase 41), CLAUDE.md를 참조하여 Phase 41을 구현하라.
+
+1. Jitter Matrix: 8~16프레임 Halton Sequence로 투영 행렬 서브픽셀 오프셋
+2. Motion Vector Buffer: R16G16_FLOAT, 정적(카메라)/동적(WorldMatrix) Reprojection
+3. History Buffer: 이전 프레임 TAA 출력 SRV
+4. TAA Resolve: Current + History 블렌딩(α≈0.1~0.15)
+   - Variance Clipping(3×3 AABB clip), Velocity 기반 가중치 감소
+5. 메뉴: TAA / MSAA / None
+
+빌드하여 TAA on/off, 고스팅 억제, 정적 씬 품질을 확인하라.
+```
+
+---
+
+## Prompt 42: Motion Blur + Depth of Field
+
+```
+PRD.md, PLAN.md(Phase 42), CLAUDE.md를 참조하여 Phase 42를 구현하라.
+
+1. Motion Blur: Tile-based Max Velocity (Compute) → 속도 방향 N샘플 평균, 셔터 속도 스케일
+2. Depth of Field:
+   - CoC: Depth → CoC 반경 (Focus Distance, F-Number)
+   - Bokeh Blur: Separable Gaussian 또는 Hexagonal Bokeh, Near/Far 분리
+3. Camera 메뉴: F-Number, Focal Length, Focus Distance, Motion Blur/DoF on/off
+
+빌드하여 Motion Blur per-object, DoF CoC 블러, 메뉴 파라미터를 확인하라.
+```
+
+---
+
+## Prompt 43: SSR (Screen Space Reflections) + Refraction
+
+```
+PRD.md, PLAN.md(Phase 43), CLAUDE.md를 참조하여 Phase 43을 구현하라.
+
+1. SSR: G-Buffer Normal+Depth → 반사 Ray, Hi-Z Raymarching, Fresnel, Roughness 블러, Envmap Fallback
+2. Refraction: Alpha Blend 오브젝트에 IOR 기반 UV 오프셋, Depth 비교로 penetration 방지
+3. Material: IOR 파라미터 추가
+4. Optimization 메뉴: SSR on/off
+
+빌드하여 SSR 반사, Roughness 블러, Fresnel, Refraction을 확인하라.
+```
+
+---
+
+## Prompt 44: Screen Space Subsurface Scattering (SSSSS)
+
+```
+PRD.md, PLAN.md(Phase 44), CLAUDE.md를 참조하여 Phase 44를 구현하라.
+
+1. Material 확장: subsurfaceColor(XMFLOAT3) + scatterWidth(float)
+2. SSS Pass: Stencil 마스크, 6-weight Gaussian × 3채널(R>G>B 확산 폭), 수평→수직 2패스
+3. Lighting Pass 통합: SSS 결과를 Diffuse에 합성
+4. Optimization 메뉴: SSSSS on/off, scatterWidth 조정
+
+빌드하여 SSS on/off, RGB 채널 확산 폭, Stencil 마스크를 확인하라.
+```
+
+---
+
+## Prompt 45: Global Illumination — DDGI (Dynamic Diffuse GI)
+
+```
+PRD.md, PLAN.md(Phase 45), CLAUDE.md를 참조하여 Phase 45를 구현하라.
+
+1. Probe Grid: 씬 AABB 내 3D Grid (8×4×8=256 Probe), Octahedral Map 텍스처
+2. Probe Update: DXR 가능 시 Radiance Ray, 미지원 시 정적 Reflection Capture Fallback
+3. Probe Sampling: 삼선형 보간, SH2 Irradiance 샘플링
+4. Lighting Pass: Indirect Diffuse += Probe Irradiance × Albedo / π
+5. 디버그 뷰: Probe 위치·Irradiance 시각화
+
+빌드하여 Probe 배치, 간접광 표현, 디버그 시각화를 확인하라.
+```
+
+---
+
+## Prompt 46: DXR Hybrid Ray Tracing
+
+```
+PRD.md, PLAN.md(Phase 46), CLAUDE.md를 참조하여 Phase 46을 구현하라.
+DXR Tier 1.1 미지원 시 PCF Shadow/SSR로 자동 폴백해야 한다.
+
+1. DXR 인프라: Feature 감지, DXR PSO(RayGen/ClosestHit/Miss/AnyHit), BLAS(정적/동적), TLAS(매 프레임), ShaderTable
+2. Ray-Traced Shadow: 광원별 Shadow Ray, Alpha AnyHit, PCF 대체 (메뉴 토글)
+3. Ray-Traced Reflection: Normal+Roughness → Cone Sampling, 재귀 1~2레벨
+4. GI 연동: DDGI Probe Update에 DXR Ray 활용
+5. Denoiser 연동: Phase 48 Denoiser 또는 Temporal Accumulation
+6. 폴백: DXR 미지원 시 PCF/SSR/DDGI Static
+
+빌드하여 TLAS/BLAS, RT Shadow, RT Reflection, Hybrid 전환을 확인하라.
+```
+
+---
+
+## Prompt 47: Nanite-style Virtual Geometry
+
+```
+PRD.md, PLAN.md(Phase 47), CLAUDE.md를 참조하여 Phase 47을 구현하라.
+Mesh Shader 미지원 시 기존 DrawIndexedInstanced + LODSelector로 폴백해야 한다.
+
+1. Meshlet 분할: ~128 삼각형, 바운딩 스피어 + 노말 Cone
+2. Mesh Shader 파이프라인: Amplification(Frustum/Back-face Culling) + Mesh Shader(삼각형 출력)
+3. Cluster LOD Hierarchy: 심플리피케이션으로 LOD 트리, GPU Projected Error 기준 전환
+4. GPU-Driven: Compute → DrawArgs Buffer → ExecuteIndirect()
+5. 디버그 뷰: Meshlet 색상, LOD 레벨 시각화
+6. 폴백: Mesh Shader 미지원 시 기존 DrawIndexedInstanced
+
+빌드하여 Meshlet 시각화, Amplification+Mesh Shader, GPU-Driven IndirectDraw를 확인하라.
+```
+
+---
+
+## Prompt 48: Neural Upscaling (DLSS/FSR) + Neural Denoising
+
+```
+PRD.md, PLAN.md(Phase 48), CLAUDE.md를 참조하여 Phase 48을 구현하라.
+
+1. FSR 3: FidelityFX SDK 연동, Color+Depth+MotionVector → 업스케일, Quality Mode 메뉴
+2. DLSS 3 (선택): Streamline SDK, RTX 감지, 미지원 시 FSR 폴백
+3. Neural Denoising: NRD SDK 또는 자체 Temporal Accumulation Denoiser
+4. DebugHUD: Upscaling 모드, 렌더/출력 해상도, Denoiser 종류
+
+빌드하여 FSR 업스케일, Quality Mode 전환, Denoiser를 확인하라.
+```

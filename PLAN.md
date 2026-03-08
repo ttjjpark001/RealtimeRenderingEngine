@@ -940,6 +940,16 @@ tests/
 
 ---
 
+## Phase 03: 고급 렌더링 기법
+
+> Phase 02 완료 코드 위에 GPU-Driven 컬링, 고급 섀도잉, 스켈레탈 애니메이션,
+> 지연 렌더링(Deferred Shading), 포스트 프로세싱, 레이 트레이싱, 신경망 업스케일링 등
+> 최신 실시간 렌더링 기법을 단계적으로 추가한다.
+
+**포함 Phase**: Phase 33 ~ Phase 48
+
+---
+
 ### Phase 33: Occlusion Culling — Hi-Z GPU
 **목표**: 현재 P0 스텁(항상 false)인 `OcclusionCuller`를 GPU Hi-Z 방식으로 완전 구현.
 CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
@@ -1074,6 +1084,244 @@ Part A가 Part B의 전제 조건이므로 순서대로 구현한다.
 
 ---
 
+### Phase 37: Deferred Rendering — G-Buffer 기반 렌더링 파이프라인
+**목표**: 기존 Forward Rendering 파이프라인을 Deferred Shading으로 전환.
+G-Buffer에 기하학 정보를 저장하고 Lighting Pass에서 화면 공간 라이팅을 수행.
+다수 Point Light의 라이팅 비용을 O(픽셀 × 광원)에서 O(픽셀)로 분리한다.
+
+1. **G-Buffer MRT 생성** (`D3D12Context`):
+   - RT0: `R8G8B8A8_UNORM_SRGB` — Albedo(RGB) + Metallic(A)
+   - RT1: `R16G16B16A16_FLOAT` — World Normal(XYZ) + Roughness(A)
+   - RT2: `R8G8B8A8_UNORM` — Emissive(RGB) + AO(A)
+   - Depth: `D32_FLOAT` (기존 Depth Buffer 재사용, SRV 겸용)
+2. **Geometry Pass**: Opaque 메시 → G-Buffer Fill, Alpha Mask(clip 적용)
+3. **Lighting Pass**: Full-Screen Quad, G-Buffer SRV + Shadow Map SRV 바인딩, Cook-Torrance BRDF, HDR RT 출력
+4. **Forward+ 투명 패스**: Alpha Blend 메시는 기존 Forward 방식으로 HDR RT에 합성
+5. **G-Buffer 디버그 뷰**: Albedo/Normal/Metallic-Roughness/Depth 시각화 뷰 모드 ("Render" 메뉴 확장)
+
+**완료 기준**: G-Buffer MRT 생성·시각화, Deferred Lighting Pass 동작, Alpha Blend Forward 합성, 기존 PBR 품질 유지
+
+---
+
+### Phase 38: HDR Pipeline + Tone Mapping
+**목표**: 16-bit HDR 렌더 파이프라인 구축 및 Tone Mapping, Auto-Exposure 적용.
+
+1. **HDR Render Target**: `DXGI_FORMAT_R16G16B16A16_FLOAT` (Lighting Pass 출력, Bloom 입력)
+2. **Tone Mapping Pass** — 선택 가능한 알고리즘:
+   - Reinhard: `L_out = L_in / (1 + L_in)`
+   - ACES Filmic: 시네마틱 색조 (Hill 근사)
+3. **Auto-Exposure**: Compute Shader로 평균 Luminance 계산 → EV 노출값 자동 조절 (+ Manual EV offset)
+4. **sRGB 출력**: Tone Map 결과 → `R8G8B8A8_UNORM_SRGB` SwapChain 출력
+5. **DebugHUD**: Tone Mapping 모드, Average Luminance, EV 노출값 표시
+
+**완료 기준**: HDR 렌더 타겟, Reinhard/ACES Tonemapping 메뉴 전환, Auto-Exposure 동작
+
+---
+
+### Phase 39: SSAO (Screen Space Ambient Occlusion)
+**목표**: G-Buffer Depth/Normal 활용 화면 공간 주변 차폐 계산. 접촉 그림자와 크레비스 음영으로 장면 깊이감 향상.
+
+1. **SSAO Buffer**: `R8_UNORM` 별도 렌더 타겟
+2. **SSAO Pass**: Hemisphere Sample Kernel(16~64개) + 노이즈 텍스처 기반 랜덤화
+   - Depth → View-Space Position 재구성, G-Buffer Normal → View-Space 변환
+   - 반구형 샘플 오프셋으로 주변 깊이 비교 → Raw AO 계산
+3. **Blur Pass**: Bilateral Blur (Depth/Normal 경계 보존), 수평→수직 2패스 분리
+4. **Lighting Pass 통합**: AO를 Ambient Light에 곱하여 자연스러운 차폐 표현
+5. **메뉴/HUD**: SSAO on/off 토글, AO Buffer 시각화 뷰 모드
+
+**완료 기준**: SSAO Buffer + Blur 적용, Lighting Pass 통합, AO on/off 비교 가능
+
+---
+
+### Phase 40: Bloom + Post-Processing 파이프라인
+**목표**: Bloom 효과 구현 및 Ping-Pong Buffer 기반 Post-Processing 프레임워크 구축.
+
+1. **Ping-Pong Buffer 프레임워크**: HDR RT 2개 교대 사용, `PostProcessor::AddPass(shader)` 패스 등록
+2. **Bright Pass**: Luminance 임계값(기본 1.0) 이상 픽셀 추출
+3. **Gaussian Blur Pyramid**: 6단계 다운샘플 → 업샘플 합성 (Dual Kawase Blur 활용)
+4. **Bloom Composite**: Bloom 레이어를 HDR RT에 Additive Blend
+5. **파이프라인 순서 확정**: Bloom → Tone Mapping → TAA → sRGB 출력
+6. **메뉴/HUD**: Bloom on/off, 임계값·Intensity 조정
+
+**완료 기준**: Bloom 효과 동작, Post-Processing 프레임워크 완성
+
+---
+
+### Phase 41: TAA (Temporal Anti-Aliasing)
+**목표**: Halton Sequence 지터링 + History Buffer 블렌딩 + Variance Clipping으로 AA 및 서브픽셀 디테일 개선.
+
+1. **Jitter Matrix**: 8~16프레임 Halton Sequence(base 2, 3)로 투영 행렬 서브픽셀 오프셋
+2. **Motion Vector Buffer**: Velocity Buffer(G-Buffer RT 추가 또는 별도)
+   - 정적: 카메라 움직임으로 계산, 동적(Skeletal): 이전 프레임 WorldMatrix → Reprojection
+3. **History Buffer**: 이전 프레임 TAA 출력 SRV 보관
+4. **TAA Resolve Pass**: Current + Reprojected History 블렌딩(α≈0.1~0.15)
+   - Variance Clipping: 3×3 이웃 통계로 History AABB clip → 고스팅 억제
+   - Velocity 크기에 따른 블렌딩 가중치 감소
+5. **메뉴**: TAA/MSAA/None 전환
+
+**완료 기준**: TAA on/off 비교, 고스팅 억제 동작, 정적 씬 SSAA 수준 품질
+
+---
+
+### Phase 42: Motion Blur + Depth of Field
+**목표**: Per-Object Motion Blur와 Bokeh DoF로 영화적 품질 향상.
+
+1. **Motion Blur** (Phase 41 Velocity Buffer 활용):
+   - Tile-based Max Velocity: N×N 타일 내 최대 속도 계산
+   - 속도 방향으로 N샘플 평균, Soft-Edge 처리, 셔터 속도 시뮬레이션
+2. **Depth of Field**:
+   - CoC(Circle of Confusion): Depth → CoC 반경 계산(Focus Distance, F-Number 파라미터)
+   - Bokeh Blur: CoC 가변 반경 Gather Blur (기본: Separable Gaussian, 품질: Hexagonal Bokeh)
+   - Near/Far Field 분리 처리
+   - F-Number, Focal Length 메뉴 조정
+
+**완료 기준**: Motion Blur per-object 동작, DoF CoC 기반 블러, 메뉴 파라미터 조정
+
+---
+
+### Phase 43: SSR (Screen Space Reflections) + Refraction
+**목표**: G-Buffer Depth/Normal 기반 화면 공간 반사 및 굴절 구현.
+
+1. **SSR (Screen Space Reflections)**:
+   - G-Buffer Normal+Depth에서 반사 Ray Direction 계산
+   - Hi-Z Raymarching: 계층적 Depth로 빠른 교차 검사
+   - 교차점 화면 UV → SSR Color 샘플링
+   - Fresnel 강도 (metallic/roughness 반영), Roughness 기반 블러
+   - 화면 경계/낮은 각도 → Envmap Cubemap 폴백
+2. **Refraction**: Alpha Blend 오브젝트(유리)에 IOR 기반 UV 오프셋 적용, Depth 비교로 penetration 방지
+3. **Environment Map Fallback**: SSR miss 시 Skybox Cubemap 또는 Reflection Capture 사용
+
+**완료 기준**: SSR 반사 동작, Roughness 기반 블러, Fresnel 강도, Refraction 오프셋 적용
+
+---
+
+### Phase 44: Screen Space Subsurface Scattering (SSSSS)
+**목표**: 피부·밀랍·대리석 등 반투명 재질의 광 산란 효과.
+
+1. **Subsurface Material**: `subsurfaceColor`(XMFLOAT3) + `scatterWidth`(float) 파라미터 추가
+2. **SSS Pass (Separable)**:
+   - Stencil 마스크로 SSS/비-SSS 픽셀 분리
+   - 6-weight Gaussian Kernel × 3채널(R > G > B 확산 폭): 수평→수직 2패스 분리
+   - R 채널 가장 넓게 산란 (붉은 피부 효과)
+3. **참고 모델**: 피부 재질 테스트 모델 또는 ProceduralSphere + SSS 재질
+
+**완료 기준**: SSS on/off 비교, RGB 채널별 확산 폭 조절, Stencil 마스크 동작
+
+---
+
+### Phase 45: Global Illumination — DDGI (Dynamic Diffuse GI)
+**목표**: 씬 전역 동적 간접광 시뮬레이션. Irradiance Probe 기반 DDGI 구현.
+
+1. **Probe Grid**: 씬 AABB 내 3D Grid(예: 8×4×8 = 256 Probe) 배치
+2. **Probe Update**:
+   - DXR 사용 가능 시: 각 Probe에서 구면 방향으로 Radiance Ray 발사 (Phase 46 연동)
+   - DXR 미지원 시: 정적 Reflection Capture Probe로 폴백
+   - Irradiance(L0) + Visibility(Depth) → Probe Texture(Octahedral Map) 저장
+3. **Probe Sampling**: 픽셀 위치 → 3D Grid → 8코너 Probe 삼선형 보간, SH2/SH3 Irradiance 샘플링
+4. **Lighting Pass 통합**: Indirect Diffuse += Probe Irradiance × Albedo (기존 Fill Light 대체/보완)
+5. **디버그 뷰**: Probe 위치·Irradiance 시각화
+
+**완료 기준**: Probe Grid 배치, Irradiance 업데이트, 씬 간접광 표현, 디버그 시각화
+
+---
+
+### Phase 46: DXR Hybrid Ray Tracing
+**목표**: DirectX 12 Raytracing(DXR) API로 Ray-Traced Shadow·Reflection·GI 구현.
+Rasterization과 Ray Tracing을 Hybrid 방식으로 결합, PCF Shadow/SSR 대비 최고 품질 달성.
+
+1. **DXR 인프라**:
+   - `ID3D12Device5::CreateStateObject()` — DXR PSO (RayGen/ClosestHit/Miss/AnyHit 셰이더)
+   - BLAS: 메시별 생성 및 GPU 빌드 (정적/동적 BLAS 분리)
+   - TLAS: 씬 전체 인스턴스 행렬 기반 매 프레임 갱신
+   - ShaderTable: RayGen/Miss/HitGroup 테이블 빌드 및 업로드
+2. **Ray-Traced Shadow**: Directional/Point/Spot 광원별 Shadow Ray, 반투명 AnyHit, PCF 대체
+3. **Ray-Traced Reflection**: G-Buffer Normal+Roughness → 반사 Ray, Cone Sampling, 재귀 1~2레벨
+4. **GI 연동**: Phase 45 DDGI Probe Update에 DXR Ray 활용
+5. **Denoiser 연동**: Phase 48 Neural Denoiser 또는 Temporal Accumulation Denoiser
+6. **하드웨어 감지 및 폴백**: DXR Tier 1.1 미지원 시 PCF Shadow/SSR로 자동 폴백
+
+**완료 기준**: TLAS/BLAS 빌드, RT Shadow 동작, RT Reflection 동작, DXR/Raster Hybrid 전환
+
+---
+
+### Phase 47: Nanite-style Virtual Geometry
+**목표**: Cluster 기반 GPU-Driven LOD 시스템. Meshlet 렌더링으로 극단적 폴리곤 밀도 처리.
+
+1. **Meshlet 분할**: ~128삼각형 단위 Meshlet 생성 (DirectX MeshShader 활용)
+   - Meshlet당 바운딩 스피어 + 노말 Cone(back-face culling용) 계산
+2. **Mesh Shader 파이프라인**: VS/IA 대신 Amplification Shader + Mesh Shader 사용
+   - Amplification Shader: Meshlet Frustum/Back-face Culling → 가시 Meshlet 목록 생성
+   - Mesh Shader: 가시 Meshlet 삼각형 출력
+3. **Cluster LOD Hierarchy**: 메시 심플리피케이션으로 Cluster 계층 트리 구축
+   - GPU에서 Projected Error 기준 LOD 전환 경계 결정 (기존 LODSelector 교체 또는 병행)
+4. **GPU-Driven Indirect Rendering**: `ExecuteIndirect()` — Compute Shader가 DrawArgs Buffer 생성 → GPU 실행
+5. **디버그 뷰**: Meshlet 색상 시각화, LOD 레벨 시각화
+
+**완료 기준**: Meshlet 분할·시각화, Amplification+Mesh Shader 파이프라인 동작, GPU-Driven IndirectDraw
+
+---
+
+### Phase 48: Neural Upscaling (DLSS/FSR) + Neural Denoising
+**목표**: AI/ML 기반 업스케일링으로 저해상도 렌더링 + 고품질 출력. Ray-Traced 노이즈 제거.
+
+1. **FSR 3 (AMD FidelityFX Super Resolution)**:
+   - FidelityFX SDK 연동: Color Buffer + Depth + Motion Vector → FSR3 업스케일 출력
+   - Quality Mode 메뉴: Quality / Balanced / Performance / Ultra Performance
+   - 렌더 해상도: 출력 해상도의 50%/67%/75%로 설정 가능
+2. **DLSS 3 (NVIDIA DLSS) — 선택적**:
+   - NVIDIA Streamline SDK 연동 (RTX 하드웨어 전용), 미지원 시 FSR로 자동 폴백
+3. **Neural Denoising**:
+   - 옵션 A: NRD (NVIDIA Real-time Denoising) SDK 연동 (Relax/Reblur 알고리즘)
+   - 옵션 B: 자체 Temporal Accumulation Denoiser (모멘트 기반 분산 추정 + Bilateral Filter)
+4. **DebugHUD**: Upscaling 모드, 렌더/출력 해상도, Denoiser 종류 표시
+
+**완료 기준**: FSR 3 업스케일 동작, Quality Mode 전환, Denoiser 적용 (RT 결과 또는 독립 노이즈 입력)
+
+---
+
+## Phase 03 의존성 그래프
+
+```
+Phase 32 (Phase 02 완료: 코드 리뷰 + ARCHITECTURE.md)
+    │
+    ├── Phase 33 (Occlusion Culling: Hi-Z GPU + Compute 인프라) ──┐
+    ├── Phase 34 (Point Light Cube Map Shadowing) ─────────────────┤
+    ├── Phase 35 (Skeletal Animation) ───────────────────────────────┤
+    │       └── Phase 36 (RRScenePreprocessor 확장: Skeletal 지원) ──┤
+    │                                                               │
+    └──────────────────────────────────── Phase 37 (Deferred Rendering) ─┘
+                                                         │
+                                          Phase 38 (HDR Pipeline + Tone Mapping)
+                                                         │
+                                ┌───────── Phase 39 (SSAO) ──────────────────┐
+                                │         Phase 40 (Bloom + PP 파이프라인)    │
+                                │         Phase 41 (TAA) ─────────────────────┤
+                                │         Phase 42 (Motion Blur + DoF) ───────┤
+                                │         Phase 43 (SSR + Refraction) ─────────┤
+                                │         Phase 44 (SSSSS) ────────────────────┤
+                                │                                              │
+                                └──────────────────────── Phase 45 (DDGI/GI) ──┤
+                                                                   │           │
+                                                    Phase 46 (DXR Hybrid RT) ──┘
+                                                                   │
+                                                    Phase 47 (Nanite: Virtual Geometry)
+                                                                   │
+                                                    Phase 48 (Neural Upscaling + Denoising)
+```
+
+## Phase 03 리스크 & 대응
+
+| 리스크 | 대응 |
+|--------|------|
+| Deferred Rendering으로 전환 시 Alpha Blend 호환 | Hybrid Forward+: Alpha Blend 오브젝트는 기존 Forward 패스 유지 |
+| G-Buffer VRAM 오버헤드 | RT0~RT2 + Depth = ~30MB (1080p 기준), VRAM 예산 확인 후 포맷 최적화 |
+| TAA 고스팅 (Ghost Artifact) | Variance Clipping + Velocity 가중치로 억제, 움직임 큰 씬에서 블렌딩 감소 |
+| DXR 미지원 하드웨어 (no RTX) | 런타임 DXR Tier 감지, PCF Shadow/SSR/DDGI Static Probe로 자동 폴백 |
+| DDGI Probe Ray 비용 (256 Probe × 256 Ray) | 비동기 Compute Queue에서 Probe 부분 업데이트 (매 프레임 일부만 갱신) |
+| Nanite Mesh Shader 미지원 (구형 GPU) | Feature Level 확인, 미지원 시 기존 LODSelector + DrawIndexedInstanced 폴백 |
+| FSR/DLSS SDK 버전 관리 | vcpkg 또는 서브모듈로 SDK 버전 고정, 업데이트 시 통합 테스트 |
+| Neural Denoiser latency (1프레임 딜레이) | Temporal Denoiser는 1프레임 레이턴시 허용 (RT Shadow/Reflection 결과에는 용인 범위) |
+
 ## Phase 02 의존성 그래프
 
 ```
@@ -1106,14 +1354,8 @@ Phase 11 (Phase 01 완료)
                                                             Phase 31 (RRScenePreprocessor: .rrscene 전처리 도구) ─┘
                                                                              │
                                                             Phase 32 (코드 리뷰 + ARCHITECTURE.md)
-                                                                             │
-                                                            Phase 33 (Occlusion Culling: Hi-Z GPU)
-                                                                             │
-                                                            Phase 34 (Point Light Cube Map Shadowing)
-                                                                             │
-                                                            Phase 35 (Skeletal Animation)
-                                                                             │
-                                                            Phase 36 (RRScenePreprocessor 확장: Skeletal 지원)
+                                                                             ↓
+                                                                     Phase 03 시작 (Phase 33~48)
 ```
 
 ## Phase 02 리스크 & 대응

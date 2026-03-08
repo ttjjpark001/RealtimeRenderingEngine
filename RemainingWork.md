@@ -1,6 +1,6 @@
 # 잔여 구현 항목 정리
 
-> 최종 업데이트: 2026-03-07 (Phase 25/26 Bistro 분석+구현 삽입, 기존 25~34 → 27~36 재번호)
+> 최종 업데이트: 2026-03-07 (Phase 03 신설 + Phase 37~48 고급 렌더링 기법 추가)
 > Phase 24까지 구현된 내용을 바탕으로, 이후 필요한 작업을 정리한다.
 
 ---
@@ -245,6 +245,147 @@ Phase 33 완료 후 `.rrscene` 포맷을 v2로 버전 업하여 Skeleton/Skin/An
 
 ---
 
+## Phase 03: 고급 렌더링 기법 (Phase 37~48)
+
+Phase 36 완료 후 진행. G-Buffer / Post-Processing / Ray Tracing / Neural Rendering 단계.
+
+---
+
+### Phase 37 — Deferred Rendering
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| G-Buffer MRT 생성 | 없음 | RT0(Albedo+Metallic) / RT1(Normal+Roughness) / RT2(Emissive+AO) / Depth SRV |
+| Geometry Pass PSO | 없음 | Opaque G-Buffer Fill PSO, Alpha Mask clip() |
+| Lighting Pass | 없음 | Full-Screen Quad, G-Buffer SRV → HDR RT, Cook-Torrance BRDF |
+| Forward+ Alpha | 없음 | Alpha Blend 오브젝트 기존 Forward 유지 |
+| G-Buffer 디버그 뷰 | 없음 | Render 메뉴: Albedo/Normal/MetalRoughness/Depth 시각화 |
+
+---
+
+### Phase 38 — HDR Pipeline + Tone Mapping
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| HDR Render Target | 없음 | R16G16B16A16_FLOAT, Lighting Pass 출력 |
+| Tone Mapping Pass | 없음 | Reinhard / ACES Filmic, Render 메뉴 선택 |
+| Auto-Exposure | 없음 | Compute Shader 평균 Luminance → EV 자동 조절 |
+| sRGB 출력 | 없음 | Tone Map → R8G8B8A8_UNORM_SRGB SwapChain |
+
+---
+
+### Phase 39 — SSAO
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| SSAO Buffer | 없음 | R8_UNORM 렌더 타겟 |
+| SSAO Pass | 없음 | Hemisphere Kernel(16~64), 노이즈 텍스처 |
+| Bilateral Blur | 없음 | Depth/Normal 경계 보존, 2패스 분리 |
+| Lighting 통합 | 없음 | AO × Ambient Light |
+| 메뉴 토글 | 없음 | ID_OPTIM_SSAO, AO Buffer 시각화 |
+
+---
+
+### Phase 40 — Bloom + Post-Processing 파이프라인
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| PostProcessor 클래스 | 없음 | Ping-Pong HDR RT, AddPass() 프레임워크 |
+| Bright Pass | 없음 | Luminance 임계값 필터 |
+| Blur Pyramid | 없음 | 6단계 다운샘플→업샘플, Dual Kawase Blur |
+| Composite | 없음 | Bloom Additive Blend |
+
+---
+
+### Phase 41 — TAA
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| Halton Jitter | 없음 | 8~16프레임 서브픽셀 오프셋 |
+| Velocity Buffer | 없음 | R16G16_FLOAT, 카메라/오브젝트 속도 |
+| History Buffer | 없음 | 이전 프레임 TAA 출력 SRV |
+| TAA Resolve | 없음 | Variance Clipping + 블렌딩 |
+| 메뉴 | 없음 | TAA / MSAA / None 전환 |
+
+---
+
+### Phase 42 — Motion Blur + Depth of Field
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| Tile-based Max Velocity | 없음 | Compute Shader, N×N 타일 최대 속도 |
+| Motion Blur | 없음 | 속도 방향 N샘플 평균, 셔터 속도 스케일 |
+| CoC 계산 | 없음 | Depth → CoC 반경 (F-Number, Focus Distance) |
+| Bokeh Blur | 없음 | Separable Gaussian / Hexagonal Bokeh |
+
+---
+
+### Phase 43 — SSR + Refraction
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| Hi-Z Raymarching | 없음 | G-Buffer Depth 계층, 반사 Ray 교차 |
+| SSR Color 샘플링 | 없음 | Fresnel + Roughness 블러 |
+| Envmap Fallback | 없음 | 화면 경계/미스 → Skybox Cubemap |
+| Refraction | 없음 | IOR 기반 UV 오프셋, Depth 관통 방지 |
+
+---
+
+### Phase 44 — Screen Space Subsurface Scattering
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| Material 확장 | 없음 | subsurfaceColor + scatterWidth 파라미터 |
+| Stencil 마스크 | 없음 | SSS 픽셀 분리 |
+| Separable SSS | 없음 | 6-weight Gaussian × RGB 채널, 2패스 분리 |
+
+---
+
+### Phase 45 — Global Illumination (DDGI)
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| Probe Grid | 없음 | 3D Grid (8×4×8=256), Octahedral Map 텍스처 |
+| Probe Update | 없음 | DXR Ray (Phase 46 연동) / Static Fallback |
+| Probe Sampling | 없음 | 삼선형 보간, SH2 Irradiance |
+| Lighting 통합 | 없음 | Indirect Diffuse += Probe × Albedo / π |
+
+---
+
+### Phase 46 — DXR Hybrid Ray Tracing
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| DXR 인프라 | 없음 | Feature 감지, DXR PSO, BLAS/TLAS, ShaderTable |
+| RT Shadow | 없음 | Shadow Ray per 광원, AnyHit 투과, PCF 대체 |
+| RT Reflection | 없음 | Cone Sampling, 재귀 1~2레벨 |
+| 폴백 | 없음 | DXR 미지원 시 PCF/SSR/DDGI Static 유지 |
+
+---
+
+### Phase 47 — Nanite-style Virtual Geometry
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| Meshlet 분할 | 없음 | ~128 삼각형, 바운딩 스피어 + 노말 Cone |
+| Mesh Shader PSO | 없음 | Amplification + Mesh Shader |
+| Cluster LOD | 없음 | Projected Error 기준 GPU-side LOD 전환 |
+| GPU-Driven Indirect | 없음 | Compute → DrawArgs → ExecuteIndirect() |
+| 폴백 | 없음 | Mesh Shader 미지원 시 기존 DrawIndexedInstanced |
+
+---
+
+### Phase 48 — Neural Upscaling + Neural Denoising
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| FSR 3 통합 | 없음 | FidelityFX SDK, Quality Mode 메뉴 |
+| DLSS 3 통합 (선택) | 없음 | Streamline SDK, RTX 감지, FSR 폴백 |
+| Neural Denoising | 없음 | NRD SDK 또는 자체 Temporal Accumulation Denoiser |
+| 렌더 해상도 관리 | 없음 | 출력 해상도 50~75%, TAA Jitter 연동 |
+
+---
+
 ## 권장 구현 순서
 
 ```
@@ -286,8 +427,36 @@ Phase 35    Skeletal Animation
     │           Part B: Skeletal Animation (본/스킨, GPU Skinning)
     │
 Phase 36    RRScenePreprocessor 확장 (Skeletal Animation 지원)
-            .rrscene v2: Skeleton/Skin/Animation 섹션 추가
-            하위 호환 (v1 파일도 계속 로딩 가능)
+    │           .rrscene v2: Skeleton/Skin/Animation 섹션 추가
+    │           하위 호환 (v1 파일도 계속 로딩 가능)
+    │
+    │   ── Phase 03 시작 ──
+    │
+Phase 37    Deferred Rendering
+    │           G-Buffer MRT (Albedo/Normal/MetalRough/Depth)
+    │           Geometry Pass → Lighting Pass → Forward+ Alpha
+    │
+Phase 38    HDR Pipeline + Tone Mapping (ACES/Reinhard + Auto-Exposure)
+    │
+Phase 39    SSAO (Hemisphere Kernel + Bilateral Blur)
+    │
+Phase 40    Bloom + Post-Processing 파이프라인 (Ping-Pong Buffer)
+    │
+Phase 41    TAA (Halton Jitter + Variance Clipping + Velocity Buffer)
+    │
+Phase 42    Motion Blur (Tile-based) + Depth of Field (Bokeh CoC)
+    │
+Phase 43    SSR (Hi-Z Raymarching) + Refraction (IOR)
+    │
+Phase 44    Screen Space Subsurface Scattering (Separable 6-weight Gaussian)
+    │
+Phase 45    Global Illumination — DDGI (Irradiance Probe 3D Grid)
+    │
+Phase 46    DXR Hybrid Ray Tracing (BLAS/TLAS + RT Shadow + RT Reflection)
+    │
+Phase 47    Nanite-style Virtual Geometry (Meshlet + Mesh Shader + GPU-Driven)
+    │
+Phase 48    Neural Upscaling (FSR 3 / DLSS 3) + Neural Denoising (NRD SDK)
 ```
 
 ---
