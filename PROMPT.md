@@ -1604,7 +1604,69 @@ Phase 24는 이미 구현 완료(✅)이므로, 이 프롬프트는 재현·참�
 
 ---
 
-## Prompt 25: Texture Streaming + Mip-Mapping
+## Prompt 25: Bistro 씬 분석 + glTF 에셋 준비
+
+```
+PRD.md, PLAN.md, CLAUDE.md, SceneSettings.md를 참조하여 Phase 25를 수행하라.
+이 Phase는 구현 없이 에셋 준비 + 문서화만 수행한다.
+
+1. niagara_bistro (github.com/zeux/niagara_bistro) 레포지토리를 분석한다.
+   - Exterior + Interior 파일 목록, 폴리곤 수, 텍스처 개수 파악
+   - 씬 스케일(바운딩 박스), 좌표계, 단위(m/cm) 확인
+   - Exterior diagonal ≈ 50m 기준으로 SceneSettings.md 항목 작성
+
+2. Bistro 씬 SceneSettings.md 섹션 작성:
+   - 씬 스케일 표 (X×Y×Z, diagonal, 삼각형 수, glTF root scale)
+   - 카메라 세팅 추천 (Position, LookAt, FOV, MoveSpeedScale)
+   - 광원 세팅 추천:
+     · Key Light (Directional, 태양): direction, color, intensity, castShadow
+     · Fill Light (Point, 하늘빛): position, color, intensity, 감쇠 계수
+     · 추가 Point Light 여부 (Torch 등)
+   - Shadow Map 자동 설정:
+     · diagonal≈50m → 해상도 2048, orthoSize 75m, far 150m (자동 결정 공식 적용)
+     · DepthBias, SlopeScaledDepthBias 추천값
+
+3. assets/test-models/Bistro/ 경로 계획 문서화 (실제 다운로드는 Phase 26에서 수행)
+
+빌드는 수행하지 않는다. SceneSettings.md에 Bistro 섹션을 추가하고 PLAN.md 완료 기준과 일치하는지 확인하라.
+```
+
+---
+
+## Prompt 26: Bistro! 빠른 로드 메뉴 + 씬 전용 설정
+
+```
+PRD.md, PLAN.md, CLAUDE.md, SceneSettings.md(Bistro 섹션)를 참조하여 Phase 26을 구현하라.
+Phase 24의 Sponza! 구현(Engine.cpp LoadSponzaScene, Win32Menu Sponza 메뉴 항목)을 참조한다.
+
+1. niagara_bistro 레포지토리를 clone하여 assets/test-models/Bistro/ 에 배치한다.
+   - Exterior: bistro_exterior.gltf (또는 통합 bistro.gltf)
+   - Interior: bistro_interior.gltf (필요 시 별도 로드)
+   - 텍스처 파일 동반 (PNG)
+
+2. Win32Menu에 "Bistro!" 메뉴 항목 추가 (ID_FILE_BISTRO):
+   - "File" 메뉴에 "Sponza!" 아래 추가
+   - 메뉴 핸들러: Engine::LoadBistroScene() 호출
+
+3. Engine::LoadBistroScene() 구현:
+   - LoadScene(bistroPaths) 호출
+   - SceneSettings.md의 Bistro 카메라 세팅 적용 (Position, LookAt, FOV)
+   - SceneSettings.md의 Bistro 광원 세팅 적용 (Key Directional + Fill Point)
+   - m_isBistroScene = true 플래그 설정 (향후 씬 전용 토글용)
+   - LightManager에 광원 등록 후 m_sceneDiagonal 갱신 및 Shadow Map 재생성
+
+4. 빌드 및 동작 확인:
+   - "File > Bistro!" 메뉴로 bistro.gltf 로드
+   - 카메라가 추천 위치로 자동 배치
+   - Directional Key Light + Fill Point Light 자동 설정
+   - Shadow Map이 diagonal≈50m 기준으로 2048×2048 자동 선택
+
+빌드하여 Bistro 씬이 정상 로드되고 전용 카메라·광원 설정이 자동 적용되는지 확인하라.
+```
+
+---
+
+## Prompt 27: Texture Streaming + Mip-Mapping
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 25를 구현하라.
@@ -1642,7 +1704,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 25를 구현
 
 ---
 
-## Prompt 26: Instanced Rendering + 멀티스레드 로딩
+## Prompt 28: Instanced Rendering + 멀티스레드 로딩
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 26를 구현하라.
@@ -1678,7 +1740,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 26를 구현
 
 ---
 
-## Prompt 27: GPU 메모리 최적화
+## Prompt 29: GPU 메모리 최적화
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 27를 구현하라.
@@ -1723,7 +1785,7 @@ VRAM 사용량이 HUD에 표시되는지 확인하라.
 
 ---
 
-## Prompt 28: Phase 02 통합 & 최종 검증
+## Prompt 30: Phase 02 통합 & 최종 검증
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 28를 구현하라.
@@ -1776,7 +1838,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 28를 구현
 
 ---
 
-## Prompt 29: RRScenePreprocessor — 오프라인 씬 전처리 도구 + 백그라운드 자동 생성
+## Prompt 31: RRScenePreprocessor — 오프라인 씬 전처리 도구 + 백그라운드 자동 생성
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 29 섹션과 GoodToPreprocess.md를 참조하여 Phase 29를 구현하라.
@@ -1860,7 +1922,7 @@ CLI 도구와 렌더링 앱 내 백그라운드 자동 생성의 두 진입점�
 
 ---
 
-## Prompt 30: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
+## Prompt 32: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 30을 구현하라.
@@ -1953,7 +2015,7 @@ ARCHITECTURE.md가 프로젝트 루트에 생성되었는지 확인하라.
 
 ---
 
-## Prompt 31: Occlusion Culling — Hi-Z GPU
+## Prompt 33: Occlusion Culling — Hi-Z GPU
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 31 섹션을 참조하여 Phase 31을 구현하라.
@@ -2007,7 +2069,7 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 
 ---
 
-## Prompt 32: Point Light Cube Map Shadowing
+## Prompt 34: Point Light Cube Map Shadowing
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 32 섹션을 참조하여 Phase 32를 구현하라.
@@ -2064,7 +2126,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 32 섹션을 참조하여 Phase 32를 구현
 
 ---
 
-## Prompt 33: Skeletal Animation
+## Prompt 35: Skeletal Animation
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 33 섹션을 참조하여 Phase 33을 구현하라.
@@ -2162,7 +2224,7 @@ Part A(Node Transform Animation)를 먼저 완성한 뒤 Part B(Skeletal Animati
 
 ---
 
-## Prompt 34: RRScenePreprocessor 확장 — Skeletal Animation 지원
+## Prompt 36: RRScenePreprocessor 확장 — Skeletal Animation 지원
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 34 섹션과 GoodToPreprocess.md를 참조하여 Phase 34를 구현하라.

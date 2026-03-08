@@ -1,6 +1,6 @@
 # 잔여 구현 항목 정리
 
-> 최종 업데이트: 2026-03-06 (Phase 29 RRScenePreprocessor 삽입, Phase 34 추가, 기존 29~32 → 30~33 재번호)
+> 최종 업데이트: 2026-03-07 (Phase 25/26 Bistro 분석+구현 삽입, 기존 25~34 → 27~36 재번호)
 > Phase 24까지 구현된 내용을 바탕으로, 이후 필요한 작업을 정리한다.
 
 ---
@@ -28,7 +28,7 @@
 
 ## 잔여 구현 항목
 
-### Phase 29 — RRScenePreprocessor (오프라인 전처리 도구 + 백그라운드 자동 생성)
+### Phase 31 — RRScenePreprocessor (오프라인 전처리 도구 + 백그라운드 자동 생성)
 
 glTF/GLB/FBX 씬을 처리하여 엔진 전용 바이너리(`.rrscene`)로 저장하는 파이프라인.
 CLI 도구와 렌더링 앱 내 백그라운드 자동 생성의 두 진입점을 제공한다.
@@ -50,7 +50,38 @@ CLI 도구와 렌더링 앱 내 백그라운드 자동 생성의 두 진입점�
 
 ---
 
-### Phase 25 — Texture Streaming + Mip-Mapping
+### Phase 25 — Bistro 씬 분석 + glTF 에셋 준비
+
+`niagara_bistro` (github.com/zeux/niagara_bistro) glTF 변환본을 에셋으로 준비하고,
+씬 스케일·카메라·광원·Shadow Map 추천 세팅을 분석하여 SceneSettings.md에 문서화한다.
+(구현 없음, 설계·에셋 준비 단계)
+
+| 작업 | 설명 |
+|------|------|
+| niagara_bistro 분석 | Exterior/Interior 파일 목록, 폴리곤 수, 텍스처 수, 씬 스케일(diagonal≈50m) |
+| SceneSettings.md Bistro 섹션 | 씬 스케일 표, 카메라 추천, Key(Directional)/Fill(Point) 광원 추천, Shadow Map 자동 설정 |
+| assets/test-models/Bistro/ 경로 계획 | 실제 다운로드는 Phase 26에서 수행 |
+
+**완료 기준**: SceneSettings.md Bistro 섹션 작성 완료, 빌드 불필요
+
+---
+
+### Phase 26 — Bistro! 빠른 로드 메뉴 + 씬 전용 설정
+
+Phase 24 Sponza! 구현과 동일한 패턴으로 Bistro 씬 전용 메뉴·카메라·광원 자동 설정을 구현한다.
+
+| 작업 | 현재 상태 | 설명 |
+|------|-----------|------|
+| `niagara_bistro` clone | 미수행 | `assets/test-models/Bistro/` 에 배치 |
+| Win32Menu: "Bistro!" 메뉴 항목 | 없음 | `ID_FILE_BISTRO`, "File > Sponza!" 아래 추가 |
+| `Engine::LoadBistroScene()` | 없음 | LoadScene() + 카메라·광원 세팅 + m_isBistroScene 플래그 |
+| Shadow Map 자동 설정 확인 | 없음 | diagonal≈50m → 2048×2048 자동 선택 |
+
+**완료 기준**: "File > Bistro!" 메뉴로 bistro.gltf 로드, 카메라·광원 자동 적용, 빌드 성공
+
+---
+
+### Phase 27 — Texture Streaming + Mip-Mapping
 
 현재 모든 텍스처가 최고 해상도(단일 Mip)로 메인 스레드에서 한 번에 로드된다.
 
@@ -66,7 +97,7 @@ CLI 도구와 렌더링 앱 내 백그라운드 자동 생성의 두 진입점�
 
 ---
 
-### Phase 26 — Instanced Rendering + 멀티스레드 로딩
+### Phase 28 — Instanced Rendering + 멀티스레드 로딩
 
 **Instanced Rendering**
 
@@ -83,11 +114,11 @@ CLI 도구와 렌더링 앱 내 백그라운드 자동 생성의 두 진입점�
 |------|-----------|------|
 | `ThreadPool.h/.cpp` | 미존재 | CPU 코어 수 기반 워커 스레드 |
 | 텍스처 디코딩 병렬화 | 순차 실행 | 씬 로드 중 메인 스레드 프리즈 원인 |
-| Copy Queue | 없음 | Graphics Queue와 병렬 GPU 업로드 (Phase 26) |
+| Copy Queue | 없음 | Graphics Queue와 병렬 GPU 업로드 (Phase 28) |
 
 ---
 
-### Phase 27 — GPU 메모리 최적화
+### Phase 29 — GPU 메모리 최적화
 
 **CB 풀링**
 
@@ -115,9 +146,9 @@ CLI 도구와 렌더링 앱 내 백그라운드 자동 생성의 두 진입점�
 
 ---
 
-### Phase 28 — 통합 & 벤치마크
+### Phase 30 — 통합 & 벤치마크
 
-Phase 25~27 완료 후 전체 파이프라인 연결 및 검증.
+Phase 27~29 완료 후 전체 파이프라인 연결 및 검증.
 
 | 작업 | 설명 |
 |------|------|
@@ -129,7 +160,7 @@ Phase 25~27 완료 후 전체 파이프라인 연결 및 검증.
 
 ---
 
-### Phase 30 — 코드 리뷰 & 문서화
+### Phase 32 — 코드 리뷰 & 문서화
 
 | 작업 | 설명 |
 |------|------|
@@ -141,7 +172,7 @@ Phase 25~27 완료 후 전체 파이프라인 연결 및 검증.
 
 ---
 
-### Phase 31 — Occlusion Culling (Hi-Z GPU)
+### Phase 33 — Occlusion Culling (Hi-Z GPU)
 
 현재 `OcclusionCuller::IsOccluded()`는 항상 `false`를 반환하는 스텁이다.
 CPU Readback 간이 방식을 거치지 않고 GPU Hi-Z 방식으로 바로 구현한다.
@@ -158,7 +189,7 @@ Compute Shader 파이프라인 인프라 구축이 선행 조건이다.
 
 ---
 
-### Phase 32 — Point Light Cube Map Shadowing
+### Phase 34 — Point Light Cube Map Shadowing
 
 `castShadow = true`인 Point Light에 대해 6면 TextureCube 기반 Omnidirectional Shadow Map 구현.
 
@@ -173,7 +204,7 @@ Compute Shader 파이프라인 인프라 구축이 선행 조건이다.
 
 ---
 
-### Phase 33 — Skeletal Animation
+### Phase 35 — Skeletal Animation
 
 glTF Node Transform 애니메이션(키프레임)과 Skeletal Animation(본/스킨) 구현.
 
@@ -198,7 +229,7 @@ glTF Node Transform 애니메이션(키프레임)과 Skeletal Animation(본/스�
 
 ---
 
-### Phase 34 — RRScenePreprocessor 확장 (Skeletal Animation 지원)
+### Phase 36 — RRScenePreprocessor 확장 (Skeletal Animation 지원)
 
 Phase 33 완료 후 `.rrscene` 포맷을 v2로 버전 업하여 Skeleton/Skin/Animation 데이터를 통합.
 애니메이션 씬도 고속 로딩 경로를 사용할 수 있도록 전처리기와 렌더러 양쪽을 확장한다.
@@ -219,35 +250,42 @@ Phase 33 완료 후 `.rrscene` 포맷을 v2로 버전 업하여 Skeleton/Skin/An
 ```
 Phase 24   완료 ✅  (HLSL 경고 + Shadow Map 자동 크기 조정)
     │
-Phase 25    Texture Streaming + Mip-Mapping
+Phase 25    Bistro 씬 분석 + glTF 에셋 준비
+    │           niagara_bistro 스케일·카메라·광원·Shadow Map 추천 세팅 문서화
+    │           (구현 없음)
+    │
+Phase 26    Bistro! 빠른 로드 메뉴 + 씬 전용 설정
+    │           File 메뉴 "Bistro!" + LoadBistroScene() + 카메라·광원 자동 설정
+    │
+Phase 27    Texture Streaming + Mip-Mapping
     │           + Anisotropic Sampler 교체
     │
-Phase 26    Instanced Rendering + 멀티스레드 로딩
+Phase 28    Instanced Rendering + 멀티스레드 로딩
     │
-Phase 27    GPU 메모리 최적화
+Phase 29    GPU 메모리 최적화
     │           (CBPool + Dirty Flag + Front-to-Back + VRAM 모니터링)
     │
-Phase 28    통합 & 벤치마크 (Sponza 60fps 목표)
+Phase 30    통합 & 벤치마크 (Sponza/Bistro 60fps 목표)
     │
-Phase 29    RRScenePreprocessor (.rrscene 오프라인 전처리 도구)
+Phase 31    RRScenePreprocessor (.rrscene 오프라인 전처리 도구)
     │           Assimp 파싱·이미지 디코딩·LOD·Mip chain 오프라인 처리
     │           렌더러 이중 로딩 경로 (고속/.rrscene + 표준/Assimp)
-    │           → Sponza 로딩 시간 ~90% 단축
+    │           → Sponza/Bistro 로딩 시간 ~90% 단축
     │
-Phase 30    코드 리뷰 + CalcShadow X4000 재검토 + ARCHITECTURE.md
+Phase 32    코드 리뷰 + CalcShadow X4000 재검토 + ARCHITECTURE.md
     │
-Phase 31    Occlusion Culling (Hi-Z GPU)
+Phase 33    Occlusion Culling (Hi-Z GPU)
     │           CPU Readback 단계 없이 바로 Hi-Z GPU 구현
     │           Compute Shader 파이프라인 + Optimization 메뉴 항목 포함
     │
-Phase 32    Point Light Cube Map Shadowing
+Phase 34    Point Light Cube Map Shadowing
     │           Omnidirectional Shadow Map (TextureCube, 6-pass depth)
     │
-Phase 33    Skeletal Animation
+Phase 35    Skeletal Animation
     │           Part A: Node Transform Animation (TRS 키프레임)
     │           Part B: Skeletal Animation (본/스킨, GPU Skinning)
     │
-Phase 34    RRScenePreprocessor 확장 (Skeletal Animation 지원)
+Phase 36    RRScenePreprocessor 확장 (Skeletal Animation 지원)
             .rrscene v2: Skeleton/Skin/Animation 섹션 추가
             하위 호환 (v1 파일도 계속 로딩 가능)
 ```
@@ -256,6 +294,6 @@ Phase 34    RRScenePreprocessor 확장 (Skeletal Animation 지원)
 
 ## 기타 메모
 
-- **PBR.hlsl CalcShadow X4000 경고**: FXC 컴파일러 한계 — 비교 샘플러(`SamplerComparisonState`)와 동적 cbuffer 인덱스 조합에서 발생하는 고유 quirk. `SampleShadowMap`을 `if/else-if` 체인 + 명시적 초기화로 변경하여 SampleShadowMap 경고는 제거했지만 CalcShadow 경고 1건 잔존. Phase 30에서 `Texture2DArray` 방식으로 리팩터링 검토.
-- **Occlusion Culling Optimization 메뉴 항목**: Phase 31 구현 시 `ID_OPTIM_OCCLUSION_CULL = 8004` 추가 (Phase 23.5 별도 구현 없이 Phase 31에서 통합)
-- **Shadow Map SRV 누수**: `RecreateShadowMaps()` 호출 시 persistent descriptor heap에 이전 SRV 8개가 남음 (최대 1024개 중). 개발 엔진 용량 내 허용 범위이나 Phase 30에서 정리 권장.
+- **PBR.hlsl CalcShadow X4000 경고**: FXC 컴파일러 한계 — 비교 샘플러(`SamplerComparisonState`)와 동적 cbuffer 인덱스 조합에서 발생하는 고유 quirk. `SampleShadowMap`을 `if/else-if` 체인 + 명시적 초기화로 변경하여 SampleShadowMap 경고는 제거했지만 CalcShadow 경고 1건 잔존. Phase 32에서 `Texture2DArray` 방식으로 리팩터링 검토.
+- **Occlusion Culling Optimization 메뉴 항목**: Phase 33 구현 시 `ID_OPTIM_OCCLUSION_CULL = 8004` 추가 (Phase 23.5 별도 구현 없이 Phase 33에서 통합)
+- **Shadow Map SRV 누수**: `RecreateShadowMaps()` 호출 시 persistent descriptor heap에 이전 SRV 8개가 남음 (최대 1024개 중). 개발 엔진 용량 내 허용 범위이나 Phase 32에서 정리 권장.

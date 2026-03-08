@@ -102,6 +102,90 @@ positions:
 
 ---
 
+## Bistro (niagara_bistro glTF 변환본)
+
+출처: `github.com/zeux/niagara_bistro` (MIT 라이선스, DDS→PNG 변환, glTF 카메라 내장)
+경로: `assets/test-models/Bistro/`
+
+> **Amazon Lumberyard Bistro** 씬의 glTF 변환본. Vulkan niagara 렌더러로 검증된 버전.
+> Exterior와 Interior가 별도 파일로 제공될 수 있으며, 통합 로딩 또는 Exterior 우선 로딩을 사용한다.
+
+### 씬 스케일 (Exterior 기준)
+
+| 항목 | 값 |
+|------|-----|
+| 크기 (X×Y×Z) | ~35m × 15m × 28m (Exterior 거리 구역) |
+| Scene diagonal | ~50m |
+| 중심 | 원점 근처 (0, 0, 0) |
+| 삼각형 수 (Exterior) | ~2,832,120 (Exterior 단독) |
+| 삼각형 수 (Interior) | ~1,046,609 |
+| glTF root node scale | 1.0 (m 단위, 변환 시 스케일 적용 완료) |
+
+### 카메라 세팅 (추천)
+
+```
+Position:  (5.0, 3.0, -8.0)     // 거리 정면 보도, 지상 3m
+LookAt:    (0.0, 2.0, 0.0)      // 씬 중심 약간 상단
+FOV:       60°
+MoveSpeedScale: sceneDiagonal / 40.0   // ≈ 1.25 (diagonal≈50m)
+```
+
+> 참고: 건물 내부 탐색 — `Position (0.0, 2.0, -2.0)`, LookAt `(5.0, 2.0, 5.0)`
+
+### 광원 추천 세팅
+
+Bistro는 Exterior(야외 거리 + 건물 외관) + Interior(레스토랑 내부) 구조.
+야외 구역은 **Directional Light(태양광) 1개**가 핵심, 내부는 Point Light 추가.
+
+#### Key Light — Directional (태양) ★ 추천값
+
+```
+type:       Directional
+direction:  normalize(-0.5, -1.0, 0.3)   // 앙각 ≈ 60°, 좌측 전면 상단
+color:      (1.0, 0.95, 0.8)             // 따뜻한 태양광
+intensity:  8.0
+castShadow: true
+```
+
+#### Fill Light — 간접광 모사 (하늘빛) ★ 추천값
+
+```
+type:       Point
+position:   (0.0, 12.0, 0.0)            // 씬 중앙 상단
+color:      (0.4, 0.5, 0.7)             // 차가운 하늘빛
+intensity:  1.5
+Kc = 1.0,  Kl = 0.014,  Kq = 0.0007   // 유효 반경 ~20m (대형 씬 대응)
+castShadow: false
+```
+
+> **광원 수 합계**: Key + Fill = 2개 → MAX_PBR_LIGHTS(16) 여유 충분
+> Interior 탐색 시 Point Light 추가(식탁 조명, 천장 조명 등) 권장
+
+### Shadow Map 자동 설정 (현재 엔진 기준)
+
+Shadow Map 해상도와 Ortho 범위는 `m_sceneDiagonal`을 기준으로 자동 결정된다
+(`Engine::LoadScene()` → `SetSceneDiagonal()` + `RecreateShadowMaps()`).
+
+**Bistro Exterior diagonal ≈ 50m 기준 자동 적용값:**
+
+| 항목 | 자동 결정값 | 계산식 |
+|------|------------|--------|
+| Shadow Map 해상도 | **2048×2048** | diagonal ≤ 100m → 2048 |
+| Ortho 투영 범위 (width/height) | **75m × 75m** | diagonal × 1.5f |
+| Ortho Far | **150m** | diagonal × 3.0f |
+| Ortho Near | **25m** | diagonal × 0.5f |
+| Shadow Normal Bias (world-space) | **≈ 0.073m** | (diagonal × 1.5f) / 2048 × 2.0f |
+
+| 항목 | 추천 튜닝값 |
+|------|------------|
+| DepthBias | 1000~2000 |
+| SlopeScaledDepthBias | 1.0~2.0 |
+
+> **주의**: Bistro는 Sponza 대비 복잡한 건물 구조(처마, 기둥 등)로 Shadow Acne가 발생하기 쉽다.
+> DepthBias와 SlopeScaledDepthBias를 씬 로드 후 시각적으로 튜닝하는 것을 권장한다.
+
+---
+
 ## 기타 모델
 
 추후 씬 테스트 결과를 바탕으로 항목 추가.

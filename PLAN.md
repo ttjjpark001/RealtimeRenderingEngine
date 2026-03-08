@@ -707,7 +707,7 @@ tests/
    - `ShadowMap` X4000 경고 제거 (`result = 1.0f` 명시적 초기화)
    - `CalcShadow`: `shadowIdx = min(shadowIdx, MAX_SHADOW_MAPS - 1)` 인덱스 범위 보장
    - `shadow += saturate(SampleShadowMap(...))` — PCF 누적 값 범위 명시
-   - 잔존 X4000 경고 1건: FXC 컴파일러 고유 한계 (비교 샘플러 + 동적 cbuffer 인덱스 조합), Phase 29에서 재검토
+   - 잔존 X4000 경고 1건: FXC 컴파일러 고유 한계 (비교 샘플러 + 동적 cbuffer 인덱스 조합), Phase 32에서 재검토
 2. **PBR.hlsl — ShadowCB 확장**
    - `shadowTexelSize` 필드 추가 (b3): `1.0 / shadowMapResolution` (CPU에서 계산)
    - PCF 루프의 하드코딩 `1.0f / 1024.0f` → `shadowTexelSize` cbuffer 값으로 교체
@@ -761,7 +761,46 @@ tests/
 
 **완료 기준**: Shadow Map 해상도가 씬 크기에 맞게 자동 선택됨, Shadow 카메라가 씬 전체 깊이 범위를 커버, nearPlane·spotNear·shadowNormalBiasWorld가 sceneDiagonal 기반으로 스케일링, ShadowTexelSize가 GPU로 동적 전달, Orbit Directional Light 회전 그림자 정상 렌더링, "File > Sponza!" 메뉴 항목에서 Sponza 씬 로드 및 전용 카메라/조명 자동 적용, L 키로 태양 방향 60°↔74° 토글 (Sponza 전용), 빌드 오류 0건 (경고 1건 잔존 — FXC 컴파일러 한계)
 
-### Phase 25: Texture Streaming + Mip-Mapping
+### Phase 25: Bistro 씬 분석 + glTF 에셋 준비
+**목표**: Bistro glTF 변환본(`niagara_bistro`)을 에셋으로 준비하고, 씬 스케일·카메라·광원·Shadow Map
+추천 세팅을 분석하여 SceneSettings.md에 문서화한다. (구현 없음, 설계·에셋 준비 단계)
+
+1. **glTF 변환본 선택 및 다운로드**: `niagara_bistro` (github.com/zeux/niagara_bistro, MIT)
+   - 포맷: `bistro.gltf` + `bistro.bin` + `textures/*.png` (DDS→PNG 변환 완료)
+   - NVIDIA ORCA Bistro 원본을 lightly edit, glTF 카메라 내장, Vulkan niagara 렌더러에서 검증
+   - `git clone https://github.com/zeux/niagara_bistro assets/test-models/Bistro`
+2. **씬 스케일 분석** → SceneSettings.md "Bistro Exterior" 섹션 추가:
+   - Exterior: ~2,832,120 삼각형 (NVIDIA ORCA 공식 수치)
+   - Interior: ~1,046,609 삼각형 (Interior with wine: ~1,293,691)
+   - Exterior 예상 크기: ~40m × 25m × 15m, diagonal ≈ 50m (glTF 단위: m)
+   - Assimp 로드 시 scale 변환 불필요 (glTF 기본 단위 m, Sponza의 0.008 factor 없음)
+3. **카메라 추천 세팅** → SceneSettings.md 기록 (정면 거리 기준)
+4. **광원 추천 세팅** → SceneSettings.md 기록 (저녁 Directional + 가로등 Point)
+5. **Shadow Map 자동 설정 예측** → diagonal ≈ 50m 기준, 현재 엔진 자동 계산값 기록
+
+**완료 기준**: `assets/test-models/Bistro/bistro.gltf` 준비 완료, SceneSettings.md Bistro 섹션 작성 완료
+
+### Phase 26: Bistro! 빠른 로드 메뉴 + 씬 전용 설정
+**목표**: File 메뉴에 "Bistro!" 항목을 추가하고, `Engine::LoadBistroScene()`에서 Phase 25에서
+정리한 카메라·광원 세팅을 자동 적용한다. Phase 24의 Sponza! 구현을 참조한다.
+
+1. **Win32Menu 확장**:
+   - `ID_FILE_OPEN_BISTRO = 6003`, File 메뉴에 "Bistro!" 항목 추가
+   - `WM_COMMAND → m_fileBistroCallback()` 처리
+   - `FileBistroCallback` + `SetFileBistroCallback()` 추가
+2. **`Engine::LoadBistroScene()` 구현**:
+   - 파일 열기 다이얼로그(bistro.gltf 선택) → `LoadScene()` 호출 (표준 로딩)
+   - 카메라: Bistro 전용 프리셋 (SceneSettings.md 기준)
+   - `m_lightManager->Clear()` 후 Bistro 전용 광원 배치:
+     - Directional "Evening Sun" (warm `{1.0, 0.85, 0.6}`, intensity≈6, castShadow=true)
+     - Point "Street Lamp" × N (주황 가로등 `{1.0, 0.9, 0.6}`, 거리 감쇠)
+     - Point "Café Fill" (실내 누출광 `{0.9, 0.8, 0.5}`)
+   - `m_orbitLightIndex = SIZE_MAX` — Bistro에서 Orbit 조명 비활성
+3. **`Engine::Initialize()`**: `m_menu->SetFileBistroCallback([this](){ LoadBistroScene(); })` 연결
+
+**완료 기준**: "File > Bistro!" 메뉴 항목으로 bistro.gltf 로드 및 전용 카메라·광원 자동 적용, Shadow Map 자동 설정(diagonal≈50m → 2048×2048) 정상 동작
+
+### Phase 27: Texture Streaming + Mip-Mapping
 **목표**: 필요 Mip만 GPU 로드, 가시성/거리 기반 우선순위
 
 1. `src/Asset/TextureStreamer.h/.cpp` — Mip 레벨 기반 스트리밍
@@ -773,7 +812,7 @@ tests/
 
 **완료 기준**: 카메라 거리에 따라 Mip 레벨 동적 로딩/해제, Anisotropic 필터링 적용
 
-### Phase 26: Instanced Rendering + 멀티스레드 로딩
+### Phase 28: Instanced Rendering + 멀티스레드 로딩
 **목표**: 동일 Mesh+Material 인스턴싱, 병렬 리소스 로딩
 
 1. `src/Renderer/InstanceBatcher.h/.cpp` — 동일 Mesh+Material 그룹핑
@@ -785,7 +824,7 @@ tests/
 
 **완료 기준**: 동일 메시 인스턴싱으로 드로우콜 감소, 멀티스레드 텍스처 디코딩
 
-### Phase 27: GPU 메모리 최적화
+### Phase 29: GPU 메모리 최적화
 **목표**: CB 풀링, VRAM 적응, Shared Material CB, Dirty Flag, Front-to-Back
 
 1. CBPool: Upload Heap 풀링, 256바이트 정렬, 링 버퍼
@@ -798,7 +837,7 @@ tests/
 
 **완료 기준**: CB 풀에서 슬롯 할당, VRAM 예산 초과 시 적응적 동작, Dirty Flag 갱신 스킵
 
-### Phase 28: Phase 02 통합 & 최종 검증
+### Phase 30: Phase 02 통합 & 최종 검증
 **목표**: 전체 Phase 02 기능 통합, 대형 씬 벤치마크
 
 1. 전체 렌더 파이프라인 통합 (12단계):
@@ -814,7 +853,7 @@ tests/
 
 **완료 기준**: Sponza급 씬을 PBR+Shadow+최적화로 60fps 이상 렌더링, 모든 테스트 통과
 
-### Phase 29: RRScenePreprocessor — 오프라인 씬 전처리 도구 + 백그라운드 자동 생성
+### Phase 31: RRScenePreprocessor — 오프라인 씬 전처리 도구 + 백그라운드 자동 생성
 **목표**: glTF/GLB/FBX 씬을 처리하여 엔진 전용 바이너리(`.rrscene`)로 저장하는 파이프라인을 구현한다.
 두 가지 진입점을 제공한다: ① 독립 CLI 도구(`RRScenePreprocessor.exe`), ② 표준 경로 로딩 완료 후
 렌더링 앱 내 백그라운드 자동 생성. 렌더링 앱은 `.rrscene`을 직접 로드하여 GPU 업로드만 수행한다.
@@ -855,7 +894,7 @@ tests/
 
 ---
 
-### Phase 30: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
+### Phase 32: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
 **목표**: 전체 코드 품질 점검, 성능 최적화, 버그 수정, ARCHITECTURE.md 작성
 
 1. **전체 코드 리뷰**:
@@ -901,7 +940,7 @@ tests/
 
 ---
 
-### Phase 31: Occlusion Culling — Hi-Z GPU
+### Phase 33: Occlusion Culling — Hi-Z GPU
 **목표**: 현재 P0 스텁(항상 false)인 `OcclusionCuller`를 GPU Hi-Z 방식으로 완전 구현.
 CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 현재 엔진에 Compute Shader 인프라가 없으므로, 먼저 인프라를 구축한 뒤 Hi-Z를 구현한다.
@@ -931,7 +970,7 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 
 ---
 
-### Phase 32: Point Light Cube Map Shadowing
+### Phase 34: Point Light Cube Map Shadowing
 **목표**: `castShadow = true`인 Point Light에 대해 6면 Cube Map 기반 Omnidirectional Shadow Map 구현.
 
 1. **TextureCube D3D12 리소스 생성**:
@@ -962,7 +1001,7 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 
 ---
 
-### Phase 33: Skeletal Animation
+### Phase 35: Skeletal Animation
 **목표**: glTF Node Transform 애니메이션(키프레임)과 Skeletal Animation(본/스킨) 구현.
 Part A가 Part B의 전제 조건이므로 순서대로 구현한다.
 
@@ -1005,7 +1044,7 @@ Part A가 Part B의 전제 조건이므로 순서대로 구현한다.
 
 ---
 
-### Phase 34: RRScenePreprocessor 확장 — Skeletal Animation 지원
+### Phase 36: RRScenePreprocessor 확장 — Skeletal Animation 지원
 **목표**: Phase 33에서 추가된 Skeleton/Skin/Animation 데이터를 `.rrscene` 포맷에 통합하여
 전처리기와 렌더러 양쪽을 확장한다. 애니메이션 씬도 고속 로딩 경로를 사용할 수 있게 된다.
 
@@ -1056,23 +1095,25 @@ Phase 11 (Phase 01 완료)
     ├── Phase 22 (프리미티브 분리+AABB) ────────────────────────────────────┤
     │       └── Phase 23 (Culling+LOD) ────────────────────────────────────┤
     │               └── Phase 24 (HLSL 경고+Shadow 자동 크기) ✅ ───────────┤
-    ├── Phase 25 (Texture Streaming) ────────────────────────────────────────┤
-    ├── Phase 26 (Instancing+멀티스레드) ────────────────────────────────────┤
-    ├── Phase 27 (GPU 메모리 최적화) ────────────────────────────────────────┤
+    ├── Phase 25 (Bistro 씬 분석+에셋 준비) ─────────────────────────────────┤
+    │       └── Phase 26 (Bistro! 메뉴+씬 전용 설정) ────────────────────────┤
+    ├── Phase 27 (Texture Streaming) ────────────────────────────────────────┤
+    ├── Phase 28 (Instancing+멀티스레드) ────────────────────────────────────┤
+    ├── Phase 29 (GPU 메모리 최적화) ────────────────────────────────────────┤
     │                                                                        │
-    └────────────────────────────────────────────────────── Phase 28 (통합) ─┘
+    └────────────────────────────────────────────────────── Phase 30 (통합) ─┘
                                                                              │
-                                                            Phase 29 (RRScenePreprocessor: .rrscene 전처리 도구) ─┘
+                                                            Phase 31 (RRScenePreprocessor: .rrscene 전처리 도구) ─┘
                                                                              │
-                                                            Phase 30 (코드 리뷰 + ARCHITECTURE.md)
+                                                            Phase 32 (코드 리뷰 + ARCHITECTURE.md)
                                                                              │
-                                                            Phase 31 (Occlusion Culling: Hi-Z GPU)
+                                                            Phase 33 (Occlusion Culling: Hi-Z GPU)
                                                                              │
-                                                            Phase 32 (Point Light Cube Map Shadowing)
+                                                            Phase 34 (Point Light Cube Map Shadowing)
                                                                              │
-                                                            Phase 33 (Skeletal Animation)
+                                                            Phase 35 (Skeletal Animation)
                                                                              │
-                                                            Phase 34 (RRScenePreprocessor 확장: Skeletal 지원)
+                                                            Phase 36 (RRScenePreprocessor 확장: Skeletal 지원)
 ```
 
 ## Phase 02 리스크 & 대응
