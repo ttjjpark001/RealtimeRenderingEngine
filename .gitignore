@@ -22,3 +22,6 @@ vcpkg_installed/
 *.tmp
 ~$*
 .claude/settings.local.json
+
+# Large test assets (too large for git, download separately)
+assets/test-models/Bistro/

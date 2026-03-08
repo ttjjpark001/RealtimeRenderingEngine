@@ -105,36 +105,44 @@ positions:
 ## Bistro (niagara_bistro glTF 변환본)
 
 출처: `github.com/zeux/niagara_bistro` (MIT 라이선스, DDS→PNG 변환, glTF 카메라 내장)
-경로: `assets/test-models/Bistro/`
+경로: `assets/test-models/Bistro/bistro.gltf`
 
 > **Amazon Lumberyard Bistro** 씬의 glTF 변환본. Vulkan niagara 렌더러로 검증된 버전.
-> Exterior와 Interior가 별도 파일로 제공될 수 있으며, 통합 로딩 또는 Exterior 우선 로딩을 사용한다.
+> `bistro.gltf` + `bistro.bin` + `textures/` (PNG) 단일 통합 파일 구성.
+> `bistrox.gltf`는 별도 변형 버전. Exterior + Interior가 하나의 파일로 통합됨.
 
-### 씬 스케일 (Exterior 기준)
+### 씬 스케일 (bistro.gltf 실측값)
 
 | 항목 | 값 |
 |------|-----|
-| 크기 (X×Y×Z) | ~35m × 15m × 28m (Exterior 거리 구역) |
-| Scene diagonal | ~50m |
-| 중심 | 원점 근처 (0, 0, 0) |
-| 삼각형 수 (Exterior) | ~2,832,120 (Exterior 단독) |
-| 삼각형 수 (Interior) | ~1,046,609 |
-| glTF root node scale | 1.0 (m 단위, 변환 시 스케일 적용 완료) |
+| 크기 (X×Y×Z) | ~111m × 32m × 119m (Exterior + Interior 통합 씬) |
+| Scene diagonal | ~166m |
+| 중심 (world) | (3.1, 11.2, 12.7) — glTF RH 기준 |
+| 삼각형 수 | ~1,753,630 (niagara_bistro 최적화 버전) |
+| 메시 수 | 551 |
+| 머티리얼 수 | 254 |
+| 텍스처 수 | 343 |
+| glTF root node scale | 100 (내부 cm 좌표 × 100 → 월드 m 변환 내장) |
 
-### 카메라 세팅 (추천)
+> **원본 NVIDIA ORCA vs niagara_bistro**: ORCA 원본 Exterior 2,832,120 / Interior 1,046,609 삼각형.
+> niagara_bistro는 최적화된 glTF 변환본으로 삼각형 수가 줄어들었으며, Exterior + Interior가 통합되어 있다.
+
+### 카메라 세팅 (glTF 내장 카메라 기준)
 
 ```
-Position:  (5.0, 3.0, -8.0)     // 거리 정면 보도, 지상 3m
-LookAt:    (0.0, 2.0, 0.0)      // 씬 중심 약간 상단
-FOV:       60°
-MoveSpeedScale: sceneDiagonal / 40.0   // ≈ 1.25 (diagonal≈50m)
+// glTF 카메라 노드 (aiProcess_ConvertToLeftHanded 적용 후 엔진 좌표)
+Position:  (-26.4, 3.2, -11.2)   // 씬 서쪽 보도, 지상 3.2m
+LookAt:    (-7.0,  2.6, -17.0)   // 거리 동쪽 방향, 약 20m 전방
+FOV:       60°                    // glTF yfov=0.628 rad ≈ 36° VFOV → 60° HFOV (16:9)
+MoveSpeedScale: sceneDiagonal / 40.0   // ≈ 4.15 (diagonal≈166m)
 ```
 
-> 참고: 건물 내부 탐색 — `Position (0.0, 2.0, -2.0)`, LookAt `(5.0, 2.0, 5.0)`
+> glTF 내장 카메라 노드 기준. 엔진 LoadBistroScene()에서 직접 적용.
+> 참고: 건물 내부 탐색 — `Position (-5.0, 2.0, 0.0)`, LookAt `(0.0, 2.0, 5.0)`
 
 ### 광원 추천 세팅
 
-Bistro는 Exterior(야외 거리 + 건물 외관) + Interior(레스토랑 내부) 구조.
+Bistro는 Exterior(야외 거리 + 건물 외관) + Interior(레스토랑 내부) 통합 구조.
 야외 구역은 **Directional Light(태양광) 1개**가 핵심, 내부는 Point Light 추가.
 
 #### Key Light — Directional (태양) ★ 추천값
@@ -147,14 +155,16 @@ intensity:  8.0
 castShadow: true
 ```
 
+> glTF Sun 노드 위치: (-12.3, -0.9, 15.4) — 씬 내 배치된 태양 방향 참조.
+
 #### Fill Light — 간접광 모사 (하늘빛) ★ 추천값
 
 ```
 type:       Point
-position:   (0.0, 12.0, 0.0)            // 씬 중앙 상단
+position:   (3.0, 30.0, -13.0)           // 씬 중앙 상단 (LH 엔진 좌표)
 color:      (0.4, 0.5, 0.7)             // 차가운 하늘빛
-intensity:  1.5
-Kc = 1.0,  Kl = 0.014,  Kq = 0.0007   // 유효 반경 ~20m (대형 씬 대응)
+intensity:  2.0
+Kc = 1.0,  Kl = 0.007,  Kq = 0.0002   // 유효 반경 ~50m (대형 씬 대응)
 castShadow: false
 ```
 
@@ -166,23 +176,24 @@ castShadow: false
 Shadow Map 해상도와 Ortho 범위는 `m_sceneDiagonal`을 기준으로 자동 결정된다
 (`Engine::LoadScene()` → `SetSceneDiagonal()` + `RecreateShadowMaps()`).
 
-**Bistro Exterior diagonal ≈ 50m 기준 자동 적용값:**
+**Bistro diagonal ≈ 166m 기준 자동 적용값:**
 
 | 항목 | 자동 결정값 | 계산식 |
 |------|------------|--------|
-| Shadow Map 해상도 | **2048×2048** | diagonal ≤ 100m → 2048 |
-| Ortho 투영 범위 (width/height) | **75m × 75m** | diagonal × 1.5f |
-| Ortho Far | **150m** | diagonal × 3.0f |
-| Ortho Near | **25m** | diagonal × 0.5f |
-| Shadow Normal Bias (world-space) | **≈ 0.073m** | (diagonal × 1.5f) / 2048 × 2.0f |
+| Shadow Map 해상도 | **4096×4096** | diagonal > 100m → 4096 |
+| Ortho 투영 범위 (width/height) | **249m × 249m** | diagonal × 1.5f |
+| Ortho Far | **498m** | diagonal × 3.0f |
+| Ortho Near | **83m** | diagonal × 0.5f |
+| Shadow Normal Bias (world-space) | **≈ 0.122m** | (249f / 4096) × 2.0f |
 
 | 항목 | 추천 튜닝값 |
 |------|------------|
-| DepthBias | 1000~2000 |
+| DepthBias | 1000~3000 |
 | SlopeScaledDepthBias | 1.0~2.0 |
 
-> **주의**: Bistro는 Sponza 대비 복잡한 건물 구조(처마, 기둥 등)로 Shadow Acne가 발생하기 쉽다.
-> DepthBias와 SlopeScaledDepthBias를 씬 로드 후 시각적으로 튜닝하는 것을 권장한다.
+> **주의**: Bistro는 씬 규모(diagonal ~166m)와 복잡한 건물 구조(처마, 기둥 등)로
+> Shadow Acne가 발생하기 쉽다. DepthBias와 SlopeScaledDepthBias를 씬 로드 후 시각적으로 튜닝하는 것을 권장한다.
+> Shadow ortho 249m 범위는 전체 씬 커버용이며, 탐색 구역에 따라 수동 축소 가능.
 
 ---
 
