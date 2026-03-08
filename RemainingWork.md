@@ -1,11 +1,11 @@
 # 잔여 구현 항목 정리
 
-> 최종 업데이트: 2026-03-07 (Phase 03 신설 + Phase 37~48 고급 렌더링 기법 추가)
-> Phase 24까지 구현된 내용을 바탕으로, 이후 필요한 작업을 정리한다.
+> 최종 업데이트: 2026-03-08 (Phase 25 완료 — Bistro 씬 분석 + glTF 에셋 준비)
+> Phase 25까지 구현된 내용을 바탕으로, 이후 필요한 작업을 정리한다.
 
 ---
 
-## 현재 구현 완료 범위 (Phase 24)
+## 현재 구현 완료 범위 (Phase 25)
 
 | 항목 | 상태 |
 |------|------|
@@ -23,6 +23,8 @@
 | shadowTexelSize GPU 동적 전달 | ✅ 완료 |
 | PBR.hlsl HLSL X4000 경고 최소화 시도 | ⚠️ 부분 완료 (CalcShadow 경고 1건 잔존) |
 | Orbit Light → Directional + castShadow=true | ✅ 완료 |
+| Bistro 씬 분석 + SceneSettings.md 문서화 | ✅ 완료 |
+| assets/test-models/Bistro/ 클론 (niagara_bistro, 3.6 GB) | ✅ 완료 |
 
 ---
 
@@ -50,34 +52,49 @@ CLI 도구와 렌더링 앱 내 백그라운드 자동 생성의 두 진입점�
 
 ---
 
-### Phase 25 — Bistro 씬 분석 + glTF 에셋 준비
+### Phase 25 — Bistro 씬 분석 + glTF 에셋 준비 ✅ 완료
 
 `niagara_bistro` (github.com/zeux/niagara_bistro) glTF 변환본을 에셋으로 준비하고,
 씬 스케일·카메라·광원·Shadow Map 추천 세팅을 분석하여 SceneSettings.md에 문서화한다.
 (구현 없음, 설계·에셋 준비 단계)
 
-| 작업 | 설명 |
-|------|------|
-| niagara_bistro 분석 | Exterior/Interior 파일 목록, 폴리곤 수, 텍스처 수, 씬 스케일(diagonal≈50m) |
-| SceneSettings.md Bistro 섹션 | 씬 스케일 표, 카메라 추천, Key(Directional)/Fill(Point) 광원 추천, Shadow Map 자동 설정 |
-| assets/test-models/Bistro/ 경로 계획 | 실제 다운로드는 Phase 26에서 수행 |
+| 작업 | 상태 | 설명 |
+|------|------|------|
+| niagara_bistro 실측 분석 | ✅ 완료 | Exterior+Interior 통합 파일, 삼각형 1,753,630개, diagonal ≈ 166m |
+| SceneSettings.md Bistro 섹션 | ✅ 완료 | bistro vs bistrox 비교, 씬 스케일, 카메라, Shadow Map 자동 설정, VRAM 분석 |
+| assets/test-models/Bistro/ 클론 | ✅ 완료 | `git clone --depth=1` 완료, 3.6 GB, .gitignore 제외 |
 
-**완료 기준**: SceneSettings.md Bistro 섹션 작성 완료, 빌드 불필요
+**완료 기준**: SceneSettings.md Bistro 섹션 작성 완료, 빌드 불필요 — **달성**
 
 ---
 
-### Phase 26 — Bistro! 빠른 로드 메뉴 + 씬 전용 설정
+### Phase 26 — Bistro! 빠른 로드 메뉴 + 씬 전용 설정 + Shadow Map 시각적 튜닝
 
-Phase 24 Sponza! 구현과 동일한 패턴으로 Bistro 씬 전용 메뉴·카메라·광원 자동 설정을 구현한다.
+Phase 24 Sponza! 구현과 동일한 패턴으로 Bistro 씬 전용 메뉴·카메라·광원 자동 설정을 구현하고,
+실제 렌더링을 통해 Shadow Map 파라미터 최적값을 시각적으로 결정한다.
 
 | 작업 | 현재 상태 | 설명 |
 |------|-----------|------|
-| `niagara_bistro` clone | 미수행 | `assets/test-models/Bistro/` 에 배치 |
-| Win32Menu: "Bistro!" 메뉴 항목 | 없음 | `ID_FILE_BISTRO`, "File > Sponza!" 아래 추가 |
-| `Engine::LoadBistroScene()` | 없음 | LoadScene() + 카메라·광원 세팅 + m_isBistroScene 플래그 |
-| Shadow Map 자동 설정 확인 | 없음 | diagonal≈50m → 2048×2048 자동 선택 |
+| `niagara_bistro` clone | ✅ 완료 | `assets/test-models/Bistro/` 배치 완료 (Phase 25에서 수행) |
+| Win32Menu: "Bistro!" 메뉴 항목 | 없음 | `ID_FILE_BISTRO = 6003`, "File > Sponza!" 아래 추가 |
+| `Engine::LoadBistroScene()` | 없음 | 직접 경로 로딩 + 카메라·광원 세팅 + Orbit 비활성 |
+| Shadow Map 자동 설정 확인 | 없음 | diagonal≈166m → 4096×4096 (RTX) / 2048×2048 (UHD 630) 자동 선택 |
+| Shadow Map 시각적 튜닝 | 없음 | 외부 바닥, 기둥, 계단, 원거리 경계 등 5개 영역 순서별 확인 |
+| SceneSettings.md 기록 | 없음 | 최종 DepthBias, SlopeScaledDepthBias, 해상도 값 기록 |
 
-**완료 기준**: "File > Bistro!" 메뉴로 bistro.gltf 로드, 카메라·광원 자동 적용, 빌드 성공
+**Shadow Map 시각적 튜닝 판단 기준**
+
+| 증상 | 원인 | 조치 |
+|------|------|------|
+| 바닥·벽에 계단형 줄무늬 (Shadow Acne) | DepthBias 부족 | `DepthBias` 증가 |
+| 오브젝트와 그림자 사이 공백 (Peter Panning) | DepthBias 과다 | `DepthBias` 감소 |
+| 경사면에만 Acne 잔존 | SlopeScaledDepthBias 부족 | `SlopeScaledDepthBias` 증가 |
+| 원거리 그림자 경계가 픽셀 블록으로 보임 | 해상도 부족 | 해상도 증가 또는 PCF 커널 확대 |
+
+**확인 영역 우선순위**: 외부 바닥 → 기둥 접촉면 → 계단/경사 지붕 → 원거리 가로등 경계 → 실내외 개구부
+
+**완료 기준**: "File > Bistro!" 메뉴로 bistro.gltf 로드, 카메라·광원 자동 적용,
+Shadow Map 해상도·DepthBias·SlopeScaledDepthBias 최적값 SceneSettings.md에 기록, 빌드 성공
 
 ---
 
@@ -455,12 +472,13 @@ Phase 33~48 완료 후 전체 Phase 03 코드 품질 점검 및 최종 문서화
 ```
 Phase 24   완료 ✅  (HLSL 경고 + Shadow Map 자동 크기 조정)
     │
-Phase 25    Bistro 씬 분석 + glTF 에셋 준비
-    │           niagara_bistro 스케일·카메라·광원·Shadow Map 추천 세팅 문서화
-    │           (구현 없음)
+Phase 25   완료 ✅  Bistro 씬 분석 + glTF 에셋 준비
+    │           niagara_bistro 실측값 문서화 (diagonal=166m, 삼각형 1.75M)
+    │           assets/test-models/Bistro/ 클론 완료 (3.6 GB, .gitignore 제외)
     │
-Phase 26    Bistro! 빠른 로드 메뉴 + 씬 전용 설정
+Phase 26    Bistro! 빠른 로드 메뉴 + 씬 전용 설정 + Shadow Map 시각적 튜닝
     │           File 메뉴 "Bistro!" + LoadBistroScene() + 카메라·광원 자동 설정
+    │           실제 렌더링 후 DepthBias/SlopeScaledDepthBias/해상도 최적값 결정
     │
 Phase 27    Texture Streaming + Mip-Mapping
     │           + Anisotropic Sampler 교체

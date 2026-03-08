@@ -780,25 +780,46 @@ tests/
 
 **완료 기준**: `assets/test-models/Bistro/bistro.gltf` 준비 완료, SceneSettings.md Bistro 섹션 작성 완료
 
-### Phase 26: Bistro! 빠른 로드 메뉴 + 씬 전용 설정
+### Phase 26: Bistro! 빠른 로드 메뉴 + 씬 전용 설정 + Shadow Map 시각적 튜닝
 **목표**: File 메뉴에 "Bistro!" 항목을 추가하고, `Engine::LoadBistroScene()`에서 Phase 25에서
 정리한 카메라·광원 세팅을 자동 적용한다. Phase 24의 Sponza! 구현을 참조한다.
+Bistro 씬을 실제 렌더링하여 Shadow Map 해상도·DepthBias·SlopeScaledDepthBias 최적값을 시각적으로 결정한다.
+
+> `assets/test-models/Bistro/bistro.gltf` (3.6 GB) — Phase 25에서 이미 클론 완료.
+> bistro.gltf: Exterior + Interior 통합 씬, 메시 551개, 삼각형 1,753,630개, diagonal ≈ 166m.
 
 1. **Win32Menu 확장**:
    - `ID_FILE_OPEN_BISTRO = 6003`, File 메뉴에 "Bistro!" 항목 추가
    - `WM_COMMAND → m_fileBistroCallback()` 처리
    - `FileBistroCallback` + `SetFileBistroCallback()` 추가
 2. **`Engine::LoadBistroScene()` 구현**:
-   - 파일 열기 다이얼로그(bistro.gltf 선택) → `LoadScene()` 호출 (표준 로딩)
-   - 카메라: Bistro 전용 프리셋 (SceneSettings.md 기준)
+   - 파일 다이얼로그 없이 `assets/test-models/Bistro/bistro.gltf` 직접 로딩
+   - 카메라: SceneSettings.md Bistro 프리셋 (Position, LookAt, FOV)
    - `m_lightManager->Clear()` 후 Bistro 전용 광원 배치:
      - Directional "Evening Sun" (warm `{1.0, 0.85, 0.6}`, intensity≈6, castShadow=true)
      - Point "Street Lamp" × N (주황 가로등 `{1.0, 0.9, 0.6}`, 거리 감쇠)
      - Point "Café Fill" (실내 누출광 `{0.9, 0.8, 0.5}`)
    - `m_orbitLightIndex = SIZE_MAX` — Bistro에서 Orbit 조명 비활성
 3. **`Engine::Initialize()`**: `m_menu->SetFileBistroCallback([this](){ LoadBistroScene(); })` 연결
+4. **Shadow Map 자동 설정 확인 및 시각적 튜닝**:
+   - diagonal≈166m → 자동 선택: 4096×4096 (RTX 3060+) / 2048×2048 (UHD 630 VRAM 제약)
+   - 다음 영역을 렌더링하며 파라미터 결정:
 
-**완료 기준**: "File > Bistro!" 메뉴 항목으로 bistro.gltf 로드 및 전용 카메라·광원 자동 적용, Shadow Map 자동 설정(diagonal≈50m → 2048×2048) 정상 동작
+   | 확인 영역 | 목적 | 파라미터 조정 방향 |
+   |-----------|------|---------------------|
+   | 외부 바닥 (Ground plane, 얕은 입사각) | Shadow Acne 확인 | Acne(줄무늬) → `DepthBias` 증가 |
+   | 기둥·아치 하단 접촉면 | Peter Panning 확인 | 그림자가 발밑에서 분리(뜨는 느낌) → `DepthBias` 감소 |
+   | 계단·경사 지붕 | SlopeScaledDepthBias 튜닝 | 경사면에만 Acne 잔존 → `SlopeScaledDepthBias` 증가 |
+   | 원거리 가로등·아치 그림자 경계 | 해상도 품질 | 경계가 픽셀 블록으로 보임 → 해상도 증가 or PCF 커널 확대 |
+   | 실내·실외 경계 개구부 (아치/창문) | PCF 소프트 경계 | 명암 전환 품질 시각 확인 |
+
+   - **Shadow Acne**: 평탄한 면에 자기 자신에 의한 계단형 줄무늬. 원인: Bias 부족.
+   - **Peter Panning**: 오브젝트와 그림자 사이 공백. 원인: Bias 과다.
+   - **해상도 부족**: 원거리 그림자 경계가 뭉개지거나 계단형 블록. 원인: texel 크기 > 픽셀 크기.
+   - 결정된 값을 `SceneSettings.md` Bistro 섹션에 기록하고 `D3D12Context` 기본값에 반영.
+
+**완료 기준**: "File > Bistro!" 메뉴로 bistro.gltf 로드, 카메라·광원 자동 적용,
+Shadow Map 해상도·DepthBias·SlopeScaledDepthBias 시각적 확인 후 최적값 SceneSettings.md에 기록
 
 ### Phase 27: Texture Streaming + Mip-Mapping
 **목표**: 필요 Mip만 GPU 로드, 가시성/거리 기반 우선순위

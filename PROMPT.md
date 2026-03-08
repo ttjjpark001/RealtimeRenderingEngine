@@ -1633,35 +1633,71 @@ PRD.md, PLAN.md, CLAUDE.md, SceneSettings.md를 참조하여 Phase 25를 수행�
 
 ---
 
-## Prompt 26: Bistro! 빠른 로드 메뉴 + 씬 전용 설정
+## Prompt 26: Bistro! 빠른 로드 메뉴 + 씬 전용 설정 + Shadow Map 시각적 튜닝
 
 ```
 PRD.md, PLAN.md, CLAUDE.md, SceneSettings.md(Bistro 섹션)를 참조하여 Phase 26을 구현하라.
 Phase 24의 Sponza! 구현(Engine.cpp LoadSponzaScene, Win32Menu Sponza 메뉴 항목)을 참조한다.
 
-1. niagara_bistro 레포지토리를 clone하여 assets/test-models/Bistro/ 에 배치한다.
-   - Exterior: bistro_exterior.gltf (또는 통합 bistro.gltf)
-   - Interior: bistro_interior.gltf (필요 시 별도 로드)
-   - 텍스처 파일 동반 (PNG)
+> assets/test-models/Bistro/bistro.gltf (3.6 GB) — Phase 25에서 이미 클론 완료.
+> bistro.gltf: Exterior + Interior 통합 씬 (메시 551개, 삼각형 1,753,630개, diagonal ≈ 166m).
 
-2. Win32Menu에 "Bistro!" 메뉴 항목 추가 (ID_FILE_BISTRO):
+1. Win32Menu에 "Bistro!" 메뉴 항목 추가 (ID_FILE_BISTRO = 6003):
    - "File" 메뉴에 "Sponza!" 아래 추가
    - 메뉴 핸들러: Engine::LoadBistroScene() 호출
 
-3. Engine::LoadBistroScene() 구현:
-   - LoadScene(bistroPaths) 호출
+2. Engine::LoadBistroScene() 구현:
+   - 파일 다이얼로그 없이 "assets/test-models/Bistro/bistro.gltf" 직접 로딩
    - SceneSettings.md의 Bistro 카메라 세팅 적용 (Position, LookAt, FOV)
-   - SceneSettings.md의 Bistro 광원 세팅 적용 (Key Directional + Fill Point)
-   - m_isBistroScene = true 플래그 설정 (향후 씬 전용 토글용)
-   - LightManager에 광원 등록 후 m_sceneDiagonal 갱신 및 Shadow Map 재생성
+   - m_lightManager->Clear() 후 Bistro 전용 광원 배치:
+     - Directional "Evening Sun" (warm {1.0, 0.85, 0.6}, intensity≈6, castShadow=true)
+     - Point "Street Lamp" × N (주황 가로등 {1.0, 0.9, 0.6}, 거리 감쇠)
+     - Point "Café Fill" (실내 누출광 {0.9, 0.8, 0.5})
+   - m_orbitLightIndex = SIZE_MAX (Orbit 조명 비활성)
 
-4. 빌드 및 동작 확인:
+3. 빌드 및 기본 동작 확인:
    - "File > Bistro!" 메뉴로 bistro.gltf 로드
-   - 카메라가 추천 위치로 자동 배치
+   - 카메라가 SceneSettings.md 추천 위치로 자동 배치
    - Directional Key Light + Fill Point Light 자동 설정
-   - Shadow Map이 diagonal≈50m 기준으로 2048×2048 자동 선택
+   - Shadow Map 자동 선택 확인: diagonal≈166m → 4096×4096 (RTX 3060) 또는 2048×2048 (UHD 630)
 
-빌드하여 Bistro 씬이 정상 로드되고 전용 카메라·광원 설정이 자동 적용되는지 확인하라.
+4. Shadow Map 시각적 튜닝 (해상도 / DepthBias / SlopeScaledDepthBias 결정):
+
+   다음 씬 영역을 직접 렌더링하며 아래 순서로 파라미터를 조정한다.
+
+   [확인 순서 및 판단 기준]
+
+   a) 외부 바닥 (Ground plane, 태양광 얕은 입사각):
+      - Shadow Acne(바닥에 줄무늬·계단형 패턴)가 보이면 → DepthBias 증가
+      - 기둥·벽 하단 그림자가 발밑에서 분리(Peter Panning)되면 → DepthBias 감소
+      - 현재 기본값: DepthBias=1000, SlopeScaledDepthBias=1.0
+
+   b) 기둥·아치 주변 접촉면:
+      - 기둥이 바닥에 닿는 경계의 그림자 품질 → 전반적 Bias 밸런스 재확인
+
+   c) 계단 / 경사 지붕 표면:
+      - 경사면에서만 Acne가 잔존하면 → SlopeScaledDepthBias 증가
+      - (경사면은 깊이 기울기가 커서 DepthBias만으로 부족할 수 있음)
+
+   d) 원거리 가로등·아치 그림자 경계:
+      - 경계가 블록(계단형 픽셀)으로 보이면 → 해상도 4096으로 증가 또는 PCF 커널 확대
+      - 4096과 2048을 런타임 전환하며 품질 비교
+
+   e) 실내·실외 경계 개구부 (아치 / 창문):
+      - 명암 전환 구역에서 PCF 소프트 경계 품질 시각 확인
+      - Bistro Interior 창문 빛 누출 품질 확인
+
+   [판단 기준 요약]
+   - Shadow Acne   : 바닥·벽에 자기 자신에 의한 계단형 줄무늬 → Bias 부족
+   - Peter Panning : 오브젝트와 그림자 사이 공백(뜨는 느낌) → Bias 과다
+   - 해상도 부족   : 원거리 그림자 경계가 픽셀 블록으로 보임 → 해상도 증가 또는 PCF 커널 확대
+   - SlopeScaledDepthBias: 경사면에만 Acne → SlopeScaledDepthBias 특별히 증가
+
+5. 결정된 값 기록:
+   - SceneSettings.md Bistro 섹션에 최종 Shadow Map 해상도, DepthBias, SlopeScaledDepthBias 기록
+   - D3D12Context 기본값 업데이트 또는 씬 로드 시 SetShadowBias() 호출로 반영
+
+빌드하여 Bistro 씬이 정상 로드되고, Shadow Map 파라미터가 시각적으로 만족스러운지 확인하라.
 ```
 
 ---
