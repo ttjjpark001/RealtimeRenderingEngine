@@ -195,8 +195,58 @@ Kc = 1.0,  Kl = 0.007,  Kq = 0.0002   // 유효 반경 ~50m (대형 씬 대응)
 castShadow: false
 ```
 
-> **광원 수 합계**: Key + Fill = 2개 → MAX_PBR_LIGHTS(16) 여유 충분
-> Interior 탐색 시 Point Light 추가(식탁 조명, 천장 조명 등) 권장
+#### Interior Point Lights — 식당 내부 탐색용 ★ 추천값
+
+Bistro Interior는 **레스토랑 메인 홀(테이블 구역) + 바 카운터** 구조.
+야외 Key Directional Light 단독으로는 실내가 지나치게 어둡기 때문에 아래 광원을 추가한다.
+
+> **좌표 기준**: `aiProcess_ConvertToLeftHanded` 적용 후 LH 엔진 월드 좌표. 추정값이므로
+> 씬 로드 후 실제 천장·벽 구조를 확인하며 조정 필요.
+> Interior 탐색 시작 카메라: `Position (-5.0, 2.0, 0.0)`, LookAt `(0.0, 2.0, 5.0)`
+
+**홀 천장 펜던트 조명 — 3개 (메인 다이닝 구역)**
+```
+type:       Point
+color:      (1.0, 0.85, 0.55)   // 따뜻한 백열등 (~2700K)
+intensity:  5.0
+Kc=1.0, Kl=0.7, Kq=0.9         // 유효 반경 ~4m (좁고 집중된 테이블 조명)
+castShadow: false
+
+positions (LH 엔진 좌표, 추정값):
+  { -2.0, 3.5,  3.0 }   // 홀 전방 테이블 위
+  { -2.0, 3.5,  7.0 }   // 홀 중앙 테이블 위
+  { -2.0, 3.5, 11.0 }   // 홀 후방 테이블 위
+```
+
+**바 카운터 조명 — 1개**
+```
+type:       Point
+color:      (1.0, 0.75, 0.40)   // 따뜻한 호박색 (~2200K, 바 분위기)
+intensity:  4.0
+Kc=1.0, Kl=0.35, Kq=0.12       // 유효 반경 ~6m (바 전체 커버)
+castShadow: false
+
+position (LH 엔진 좌표, 추정값):
+  { 2.0, 3.0, 5.0 }   // 바 카운터 위
+```
+
+**인테리어 앰비언트 필 — 1개 (완전 암흑 방지)**
+```
+type:       Point
+color:      (0.7, 0.65, 0.90)   // 차가운 창문 반사광 (sky ambient)
+intensity:  0.8
+Kc=1.0, Kl=0.022, Kq=0.0019    // 유효 반경 ~30m (인테리어 전체 커버)
+castShadow: false
+
+position (LH 엔진 좌표, 추정값):
+  { 0.0, 8.0, 6.0 }   // 인테리어 중앙 상단
+```
+
+> **Interior 전용 렌더링 시**: Key Directional(Evening Sun) intensity를 3.0 으로 낮추거나
+> direction을 창문 입사 방향으로 조정하면 실내 분위기가 더 사실적으로 연출된다.
+
+> **광원 수 합계 (Exterior 기본)**: Key + Fill = **2개**
+> **광원 수 합계 (Interior 추가 시)**: Key + Fill + Pendant(3) + Bar(1) + Ambient(1) = **7개** → MAX_PBR_LIGHTS(16) 여유 충분
 
 ### Shadow Map 자동 설정 (현재 엔진 기준)
 
