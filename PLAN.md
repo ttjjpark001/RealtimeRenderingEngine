@@ -960,6 +960,7 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
    - `Phase 01 Backup/` 폴더는 복사 대상에서 제외한다 (이중 백업 방지).
    - `bin/`, `.git/`, `*.user`, `*.suo`, `ipch/` 등 빌드 산출물 및 IDE 캐시는 제외한다.
    - 백업 완료 후 `Phase 02 Backup/README.md`에 백업 일시, Phase 02 최종 완료 상태를 기록한다.
+   - **`Phase 02 Backup/` 폴더 안의 파일은 백업 후 절대 수정하지 않는다. 이후 어떠한 Phase 구현에서도 이 폴더를 참조만 하고 절대 건드리지 않는다.**
 
 1. **Compute Shader 인프라 구축**:
    - `D3D12ComputePipeline.h/.cpp`: CS 전용 Root Signature + ID3D12PipelineState(CS)

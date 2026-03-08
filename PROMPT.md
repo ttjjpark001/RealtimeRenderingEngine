@@ -998,7 +998,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 19를 구현
    - 대각선 길이 기반 적절한 카메라 거리 산출
    - "Camera" 메뉴에 "Fit to Scene" 항목으로 수동 호출 가능
 
-4. 드래그 앤 드롭을 구현한다. (→ Phase 29에서 구현 예정)
+4. 드래그 앤 드롭을 구현한다. (→ Phase 32에서 구현 예정)
    - DragAcceptFiles(hwnd, TRUE) 호출
    - WM_DROPFILES → DragQueryFile로 파일 경로 추출 → 위 2와 동일 흐름
 
@@ -1007,7 +1007,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 19를 구현
      마우스 이동량 → Yaw/Pitch 회전 (FPS 스타일)
    - 마우스 휠 (WM_MOUSEWHEEL):
      전진/후진 (돌리 줌)
-   - 중클릭 드래그 (WM_MBUTTONDOWN + WM_MOUSEMOVE): (→ Phase 29에서 구현 예정)
+   - 중클릭 드래그 (WM_MBUTTONDOWN + WM_MOUSEMOVE): (→ Phase 32에서 구현 예정)
      상하좌우 패닝
    - 이동 속도 자동 조절: 씬 바운딩 박스 크기에 비례
 
@@ -1100,7 +1100,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 20를 구현
      FullPBR: PBR PSO, 모든 텍스처 활성, Shadow Pass 스킵
      FullPBRShadows: Shadow Depth Pass + PBR PSO + Shadow Map 바인딩
 
-8. DebugHUD에 현재 렌더링 모드 이름을 표시한다. (→ Phase 28에서 구현 예정)
+8. DebugHUD에 현재 렌더링 모드 이름을 표시한다. (→ Phase 29에서 구현 예정)
    - "Render: Full PBR + Shadows" 등
 
 === Part C: PBR 라이팅 버그 수정 ===
@@ -1418,7 +1418,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 23를 구현
    - IsVisible(const BoundingBox& aabb) → bool (m_frustum.Intersects(aabb))
    - BoundingBox vs Frustum 6-plane 교차 검사 (BoundingBox::Intersects)
    - Scene Graph 순회 시 culled 노드는 DrawPrimitives 스킵
-   - Shadow Depth Pass에도 적용 (광원 시점 frustum) — Phase 28에서 구현 예정
+   - Shadow Depth Pass에도 적용 (광원 시점 frustum) — Phase 30에서 구현 예정
 
 2. src/Renderer/OcclusionCuller.h/.cpp를 만든다.
    - P0 스텁: IsOccluded() 항상 false 반환 (보수적 판정, popping 방지)
@@ -1669,7 +1669,7 @@ Phase 24의 Sponza! 구현(Engine.cpp LoadSponzaScene, Win32Menu Sponza 메뉴 �
 ## Prompt 27: Texture Streaming + Mip-Mapping
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 25를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 27를 구현하라.
 
 1. src/Asset/TextureStreamer.h/.cpp를 만든다.
    - 텍스처별 요구 Mip 레벨 관리
@@ -1707,7 +1707,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 25를 구현
 ## Prompt 28: Instanced Rendering + 멀티스레드 로딩
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 26를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 28를 구현하라.
 
 1. src/Renderer/InstanceBatcher.h/.cpp를 만든다.
    - Scene Graph에서 동일 Mesh+Material 조합을 그룹핑
@@ -1743,7 +1743,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 26를 구현
 ## Prompt 29: GPU 메모리 최적화
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 27를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 29를 구현하라.
 
 1. CBPool을 Renderer에 통합한다.
    - 매 프레임 ResetFrame(frameIndex) 호출
@@ -1788,7 +1788,7 @@ VRAM 사용량이 HUD에 표시되는지 확인하라.
 ## Prompt 30: Phase 02 통합 & 최종 검증
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 28를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 30를 구현하라.
 
 1. 전체 렌더 파이프라인을 12단계로 통합한다.
    ① Scene Graph 순회 → AABB + 월드 행렬 수집
@@ -1841,7 +1841,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 28를 구현
 ## Prompt 31: RRScenePreprocessor — 오프라인 씬 전처리 도구 + 백그라운드 자동 생성
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 29 섹션과 GoodToPreprocess.md를 참조하여 Phase 29를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 31 섹션과 GoodToPreprocess.md를 참조하여 Phase 31를 구현하라.
 이 단계는 .rrscene 전처리 파이프라인을 공용 클래스로 구현하고,
 CLI 도구와 렌더링 앱 내 백그라운드 자동 생성의 두 진입점을 제공한다.
 
@@ -1925,7 +1925,7 @@ CLI 도구와 렌더링 앱 내 백그라운드 자동 생성의 두 진입점�
 ## Prompt 32: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 30을 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 32를 구현하라.
 이 단계는 Phase 02의 마지막 단계로, UX 개선 2건을 구현하고 전체 코드 품질을 점검하며 ARCHITECTURE.md를 작성한다.
 
 1. UX 개선 항목을 구현한다.
@@ -2030,6 +2030,8 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
    - bin/, .git/, *.user, *.suo, ipch/, x64/ 등 빌드 산출물 및 IDE 캐시는 제외한다.
    - 백업 완료 후 "Phase 02 Backup/README.md"를 생성하여 백업 일시와
      Phase 02 최종 완료 상태(구현된 기능 목록)를 기록한다.
+   - **백업 완료 후 "Phase 02 Backup/" 폴더 안의 파일은 절대 수정하지 않는다.
+     이후 어떠한 Phase 구현에서도 이 폴더를 참조만 하고 절대 건드리지 않는다.**
 
 1. Compute Shader 인프라를 구축한다.
    - src/RHI/D3D12/D3D12ComputePipeline.h/.cpp를 신규 생성한다.
@@ -2080,7 +2082,7 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 ## Prompt 34: Point Light Cube Map Shadowing
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 32 섹션을 참조하여 Phase 32를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 34 섹션을 참조하여 Phase 34를 구현하라.
 이 단계는 castShadow = true인 Point Light에 대해 Omnidirectional Shadow Map(TextureCube)을 구현한다.
 
 1. TextureCube D3D12 리소스를 생성한다.
@@ -2137,7 +2139,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 32 섹션을 참조하여 Phase 32를 구현
 ## Prompt 35: Skeletal Animation
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 33 섹션을 참조하여 Phase 33을 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 35 섹션을 참조하여 Phase 35를 구현하라.
 Part A(Node Transform Animation)를 먼저 완성한 뒤 Part B(Skeletal Animation)를 구현한다.
 
 === Part A: Node Transform Animation (G-08) ===
@@ -2235,7 +2237,7 @@ Part A(Node Transform Animation)를 먼저 완성한 뒤 Part B(Skeletal Animati
 ## Prompt 36: RRScenePreprocessor 확장 — Skeletal Animation 지원
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 34 섹션과 GoodToPreprocess.md를 참조하여 Phase 34를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 36 섹션과 GoodToPreprocess.md를 참조하여 Phase 36를 구현하라.
 이 단계는 Phase 33에서 추가된 Skeleton/Skin/Animation 데이터를 .rrscene 포맷에 통합하여
 전처리기와 렌더링 앱 고속 로딩 경로를 모두 확장한다.
 

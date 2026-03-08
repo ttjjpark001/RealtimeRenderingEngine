@@ -868,6 +868,7 @@ Phase 02 완료 코드 위에 GPU-Driven 컬링, 고급 섀도잉, 스켈레탈 
 > **Phase 02 Backup 정책**: Phase 33 구현 시작 전 최초 1회만 수행.
 > `Phase 02 Backup/` 폴더에 src/, tests/, assets/, shaders/ 전체 복사.
 > `Phase 01 Backup/` 및 빌드 산출물(bin/, .git/, *.user 등)은 제외.
+> **백업 완료 후 `Phase 02 Backup/` 폴더 안의 파일은 절대 수정하지 않는다. 이후 어떠한 Phase 구현에서도 이 폴더를 참조만 하고 절대 건드리지 않는다.**
 
 ### Deferred Rendering 파이프라인 (Phase 37~)
 

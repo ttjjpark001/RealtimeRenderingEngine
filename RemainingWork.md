@@ -178,6 +178,7 @@ Phase 27~29 완료 후 전체 파이프라인 연결 및 검증.
 > - `Phase 02 Backup/` 폴더에 src/, tests/, assets/, shaders/ 복사
 > - `Phase 01 Backup/` 및 빌드 산출물(bin/, .git/, *.user 등) 제외
 > - `Phase 02 Backup/README.md`에 백업 일시 + Phase 02 완료 상태 기록
+> - **백업 완료 후 `Phase 02 Backup/` 폴더 안의 파일은 절대 수정하지 않는다. 이후 어떠한 Phase 구현에서도 이 폴더를 참조만 하고 절대 건드리지 않는다.**
 
 현재 `OcclusionCuller::IsOccluded()`는 항상 `false`를 반환하는 스텁이다.
 CPU Readback 간이 방식을 거치지 않고 GPU Hi-Z 방식으로 바로 구현한다.
