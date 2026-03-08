@@ -793,7 +793,7 @@ Bistro 씬을 실제 렌더링하여 Shadow Map 해상도·DepthBias·SlopeScale
    - `WM_COMMAND → m_fileBistroCallback()` 처리
    - `FileBistroCallback` + `SetFileBistroCallback()` 추가
 2. **`Engine::LoadBistroScene()` 구현**:
-   - 파일 다이얼로그 없이 `assets/test-models/Bistro/bistro.gltf` 직접 로딩
+   - 파일 열기 다이얼로그(bistro.gltf 선택) → `LoadScene()` 호출 (표준 로딩)
    - 카메라: SceneSettings.md Bistro 프리셋 (Position, LookAt, FOV)
    - `m_lightManager->Clear()` 후 Bistro 전용 광원 배치:
      - Directional "Evening Sun" (warm `{1.0, 0.85, 0.6}`, intensity≈6, castShadow=true)

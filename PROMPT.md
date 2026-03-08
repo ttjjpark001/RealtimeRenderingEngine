@@ -1647,7 +1647,7 @@ Phase 24의 Sponza! 구현(Engine.cpp LoadSponzaScene, Win32Menu Sponza 메뉴 �
    - 메뉴 핸들러: Engine::LoadBistroScene() 호출
 
 2. Engine::LoadBistroScene() 구현:
-   - 파일 다이얼로그 없이 "assets/test-models/Bistro/bistro.gltf" 직접 로딩
+   - 파일 열기 다이얼로그(bistro.gltf 선택) → LoadScene() 호출 (표준 로딩)
    - SceneSettings.md의 Bistro 카메라 세팅 적용 (Position, LookAt, FOV)
    - m_lightManager->Clear() 후 Bistro 전용 광원 배치:
      - Directional "Evening Sun" (warm {1.0, 0.85, 0.6}, intensity≈6, castShadow=true)
