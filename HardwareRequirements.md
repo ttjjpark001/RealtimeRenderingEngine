@@ -79,33 +79,117 @@ Phase 01 ~ Phase 49 전 구간을 구현·실행하기 위한 하드웨어 요�
 
 ---
 
-## Mac Mini M4 분석
+## Mac Mini M4 분석 (Metal 재작성 시나리오)
+
+> **전제**: 현재 코드베이스(Win32 + DirectX 12 + HLSL)를 macOS(AppKit + Metal + MSL)로 전면 재작성하는 경우의 하드웨어 가능성 분석.
+> 현재 코드베이스 그대로는 macOS에서 실행 불가 (Win32 / DirectX 12 / HLSL 미존재, Boot Camp도 Apple Silicon 미지원).
 
 ### 사양
 
-| 항목 | 값 |
-|------|-----|
-| SoC | Apple M4 |
-| CPU | 10-core (4 Performance + 6 Efficiency) |
-| GPU | 10-core Apple GPU |
-| Unified Memory | 16 GB 또는 24 GB (CPU/GPU 공유) |
-| GPU 메모리 대역폭 | ~120 GB/s |
-| DirectX | ❌ **미지원** (macOS는 Metal API 사용) |
-| DXR | ❌ (Metal RT API만 지원) |
-| Boot Camp | ❌ Apple Silicon에서 미지원 (Intel Mac 전용) |
+| 항목 | Mac Mini M4 (기본형) | Mac Mini M4 Pro |
+|------|---------------------|-----------------|
+| SoC | Apple M4 | Apple M4 Pro |
+| CPU | 10-core (4P + 6E) | 14-core (10P + 4E) |
+| GPU | 10-core Apple GPU | 20-core Apple GPU |
+| Unified Memory | 16 GB 또는 24 GB | 24 GB 또는 64 GB |
+| GPU 메모리 대역폭 | ~120 GB/s | ~273 GB/s |
+| Metal Ray Tracing | ✅ 하드웨어 가속 | ✅ 하드웨어 가속 |
+| Metal Mesh Shaders | ✅ (Metal 3, M3 세대부터) | ✅ |
+| MetalFX Upscaling | ✅ (FSR 2 기반 Spatial + Temporal) | ✅ |
+| DLSS 3 | ❌ NVIDIA 전용 | ❌ NVIDIA 전용 |
+| GPU 성능 (게임 래스터) | ≈ **GTX 1650** 수준 | ≈ **RTX 3060** 수준 |
 
-### 결론: 현재 코드베이스로 실행 불가
+> M4 기본형 GPU 성능 참고: [NotebookCheck M4 GPU 벤치마크](https://www.notebookcheck.net/Apple-M4-10-core-GPU-Benchmarks-and-Specs.835807.0.html)
 
-이 프로젝트는 **Win32 API + DirectX 12 + HLSL**로 전면 구성되어 있으며, macOS에는 이 중 어느 것도 존재하지 않습니다.
+### DirectX → Metal API 대응표
 
-| 방법 | 가능 여부 | 비고 |
-|------|----------|------|
-| 네이티브 실행 | ❌ | DirectX 12 / Win32 비존재 |
-| Boot Camp | ❌ | Apple Silicon 미지원 |
-| Parallels Desktop 20 | ⚠️ 극히 제한적 | DX12 에뮬레이션 지원하나 성능 매우 낮음, DXR·Mesh Shader 불가 |
-| Metal 재작성 | 🔧 가능하나 대규모 작업 | RHI 레이어 전체를 Metal로 교체해야 함 |
+Metal 재작성 시 각 DirectX/Win32 컴포넌트를 macOS 대응 API로 교체해야 한다.
 
-> **참고**: M4 10-core GPU의 하드웨어 성능 자체는 RTX 3050~3060 수준으로 Phase 01-45 정도를 구동할 역량이 있지만, **운영체제·API 불호환으로 현재 코드베이스 그대로는 아무것도 실행할 수 없습니다.**
+| DirectX / Win32 | macOS / Metal 대체 | 비고 |
+|-----------------|-------------------|------|
+| Win32 API (HWND, WndProc, WM_*) | AppKit (NSWindow, NSView, NSApplication) | 플랫폼 레이어 전면 교체 |
+| DirectX 12 (ID3D12Device 등) | Metal (MTLDevice, MTLCommandQueue 등) | RHI D3D12 → RHI Metal |
+| HLSL (.hlsl → .cso) | MSL (Metal Shading Language, .metal) | 셰이더 전부 재작성 |
+| DXR (BLAS/TLAS, ID3D12StateObject) | Metal Acceleration Structure (MTLAccelerationStructure) | Ray Tracing API 재작성 |
+| Mesh Shaders (DirectX) | Metal Mesh Shaders (Metal 3) | API는 다르지만 동일 기능 |
+| D3D11On12 + D2D1 + DirectWrite (HUD) | Core Text + Core Graphics | HUD 텍스트 렌더링 교체 |
+| DXGI_FORMAT (픽셀 포맷) | MTLPixelFormat | 포맷 매핑 필요 |
+| NVIDIA Streamline SDK (DLSS) | MetalFX Upscaling | MetalFX는 FSR 2 기반 |
+| Assimp (glTF 파싱) | Assimp ✅ macOS 지원 | 교체 불필요 |
+| DirectXMath | simd (Apple SIMD 라이브러리) 또는 GLM | 수학 라이브러리 교체 |
+
+### Phase별 구현 가능성 (Metal 재작성 기준)
+
+#### M4 기본형 (10-core GPU ≈ GTX 1650)
+
+| Phase 범위 | 구현 가능 | 성능 | 비고 |
+|-----------|----------|------|------|
+| Phase 01-22 (기본 엔진) | ✅ 완전 구현 | 충분 | Metal compute, MSL 셰이더 |
+| Phase 23-26 (최적화 + Bistro) | ✅ 완전 구현 | 충분 | Unified 16 GB로 Bistro VRAM 여유 |
+| Phase 27-36 (Hi-Z, CubeMap, 애니) | ✅ 완전 구현 | 보통 | Metal Compute Kernel, TextureCube 지원 |
+| Phase 37-44 (Deferred + 포스트) | ✅ 완전 구현 | ⚠️ 1080p 30~60 fps | G-Buffer ~56 MB — Unified 16 GB로 여유 |
+| Phase 45 (DDGI) | ✅ 완전 구현 | ⚠️ 보통 | Texture2DArray / 3D Texture Metal 지원 |
+| Phase 46 (Ray Tracing) | ✅ 하드웨어 검증 가능 | ⚠️ 느림 | Metal Acceleration Structure로 구현. RT 전용 코어 없어 RTX 대비 느림 |
+| Phase 47 (Mesh Shader) | ✅ 하드웨어 검증 가능 | 충분 | Metal 3 Mesh Shaders 하드웨어 지원 |
+| Phase 48 (Upscaling) | ⚠️ 부분 구현 | 보통 | MetalFX(FSR 2 기반) 사용. **DLSS 3 불가** — MetalFX로 대체 |
+| Phase 49 (코드 리뷰) | ✅ | — | — |
+
+> **M4 기본형 한계**: Phase 46 레이 트레이싱은 하드웨어가 지원하나, 전용 RT 코어가 없어 RTX 대비 성능이 낮다. 1080p Full RT는 실용적이지 않을 수 있다. Phase 37-44 Deferred Shading은 1080p에서 30~60 fps 수준.
+
+#### M4 Pro (20-core GPU ≈ RTX 3060)
+
+| Phase 범위 | 구현 가능 | 성능 | 비고 |
+|-----------|----------|------|------|
+| Phase 01-45 | ✅ 완전 구현 | 충분~여유 | 273 GB/s 대역폭, 24~64 GB Unified Memory |
+| Phase 46 (Ray Tracing) | ✅ 완전 검증 | 보통~충분 | RT 성능이 M4 기본형 대비 2배, 실용적 RT 품질 달성 가능 |
+| Phase 47 (Mesh Shader) | ✅ 완전 검증 | 충분 | Metal 3 Mesh Shaders |
+| Phase 48 (Upscaling) | ⚠️ 부분 구현 | 충분 | MetalFX(FSR 2 기반). DLSS 3 불가 |
+| Phase 49 | ✅ | 충분 | — |
+
+### Phase 48 업스케일링 대체 방안
+
+DLSS 3은 NVIDIA RTX 전용으로 macOS에서 사용 불가. 대체 방안:
+
+| 기능 | Windows (DirectX) | macOS (Metal) |
+|------|------------------|---------------|
+| 공간 업스케일 | FSR 3 Spatial | MetalFX Spatial Upscaling ✅ |
+| 시간적 업스케일 | FSR 3 / DLSS | MetalFX Temporal Upscaling ✅ (FSR 2 기반) |
+| 프레임 생성 | FSR 3 Frame Gen / DLSS 3 | ❌ MetalFX 미지원 (FSR 3 오픈소스화로 향후 가능성 있음) |
+| 신경망 디노이징 | NRD SDK (NVIDIA) | ❌ NRD 미지원 — 대안 디노이저 직접 구현 필요 |
+
+> MetalFX는 AMD FSR 기술 기반으로 구현되었다. ([Tom's Hardware 기사](https://www.tomshardware.com/pc-components/gpus/amd-fsr-is-the-building-block-for-apples-metalfx-upscaling-tech-the-apps-legal-info-references-the-usage-of-amd-fsr))
+> AMD가 FSR 3를 오픈소스(MIT)로 공개했으므로, 향후 MetalFX에 Frame Generation이 통합될 가능성이 있다.
+
+### VRAM(Unified Memory) 여유도
+
+Unified Memory는 CPU와 GPU가 공유하지만 16 GB / 24 GB 전체를 GPU가 사용할 수 있어, 전용 VRAM 기준 PC GPU 대비 여유가 크다.
+
+| Phase 범위 | 필요 GPU 메모리 | M4 16 GB | M4 24 GB |
+|-----------|----------------|----------|----------|
+| Phase 01-36 | 1 ~ 2 GB | ✅ 여유 | ✅ 여유 |
+| Phase 37-44 (G-Buffer 포함) | 4 ~ 6 GB | ✅ 여유 | ✅ 여유 |
+| Phase 45 (DDGI) | 5 ~ 7 GB | ✅ 여유 | ✅ 여유 |
+| Phase 46 (Ray Tracing AS) | 6 ~ 8 GB | ⚠️ 빠듯함 | ✅ 여유 |
+| Phase 47-48 (Meshlet + 업스케일) | 7 ~ 9 GB | ⚠️ 빠듯함 | ✅ 여유 |
+
+> M4 기본형(16 GB)은 Phase 46-48에서 메모리가 빠듯할 수 있다. OS 시스템 점유분(~4~6 GB)을 고려하면 실질 GPU 가용 메모리는 10~12 GB 수준. **24 GB 이상 권장.**
+
+### 결론
+
+| 항목 | M4 기본형 (10-core GPU) | M4 Pro (20-core GPU) |
+|------|------------------------|----------------------|
+| Phase 01-45 전 기능 구현 | ✅ 가능 | ✅ 가능 |
+| Phase 46 Ray Tracing 검증 | ⚠️ 가능하나 성능 제한 | ✅ 실용적 성능 |
+| Phase 47 Mesh Shader 검증 | ✅ 가능 | ✅ 가능 |
+| Phase 48 DLSS 3 | ❌ 불가 (MetalFX 대체) | ❌ 불가 (MetalFX 대체) |
+| Phase 49 | ✅ | ✅ |
+| 권장 메모리 | 24 GB | 24 GB 이상 |
+| 재작성 규모 | **대규모** (플랫폼 + RHI + 셰이더 전면 교체) | 동일 |
+
+> **결론**: Metal로 재작성하면 M4 기본형도 Phase 47까지 전 기능을 구현하고 하드웨어 검증할 수 있다.
+> Phase 48에서 DLSS 3만 MetalFX로 대체하면 실질적으로 Phase 49 전 기능 구현 가능.
+> 단, **재작성 규모가 매우 크다** — 플랫폼 레이어(Win32→AppKit), RHI 전체(D3D12→Metal), 셰이더 전부(HLSL→MSL), HUD 텍스트 레이어(D2D1→Core Text) 교체가 필요하다.
+> 성능 측면에서 Phase 46 RT는 M4 Pro 이상을 권장한다.
 
 ---
 
