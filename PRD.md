@@ -377,6 +377,160 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | RM-09 | DebugHUD에 현재 렌더링 모드 이름을 표시한다 | P1 |
 | RM-10 | 기본 렌더링 모드는 "Full PBR + Shadows"이다 | P0 |
 
+---
+
+## Phase 03: 고급 렌더링 기법
+
+> Phase 02 완료 코드 위에 GPU-Driven 컬링, 고급 섀도잉, 스켈레탈 애니메이션,
+> 지연 렌더링(Deferred Shading), 포스트 프로세싱, 레이 트레이싱, 신경망 업스케일링 등
+> 최신 실시간 렌더링 기법을 단계적으로 추가한다.
+
+### 3.22 Occlusion Culling — Hi-Z GPU (Phase 33)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| HC-01 | Compute Shader 인프라(D3D12ComputePipeline, Dispatch, UAV)를 구축한다 | P0 |
+| HC-02 | 이전 프레임 Depth Buffer를 R32_FLOAT SRV로 복사하고 Compute Shader로 Hi-Z Mip chain을 생성한다 | P0 |
+| HC-03 | GPU Compute Shader에서 SceneNode AABB → NDC → 최적 Mip 레벨 선택 → Hi-Z depth 비교로 가려짐 여부를 판정한다 | P0 |
+| HC-04 | 판정 결과를 GPU Buffer로부터 CPU로 Readback하여 (1프레임 레이턴시로) OcclusionCuller에 반영한다 | P0 |
+| HC-05 | Phase 02 스텁(항상 false 반환)을 Hi-Z GPU 결과로 교체한다 | P0 |
+| HC-06 | DebugHUD에 `occlusionCulledNodes` 수를 표시한다 | P0 |
+| HC-07 | "Optimization" 메뉴에 Occlusion Culling on/off 토글 항목을 추가한다 (ID_OPTIM_OCCLUSION_CULL) | P0 |
+
+### 3.23 Point Light Cube Map Shadowing (Phase 34)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| CS-01 | `castShadow = true`인 Point Light에 대해 TextureCube(TEXTURE2D_ARRAY, ArraySize=6) 기반 Omnidirectional Shadow Map을 생성한다 | P0 |
+| CS-02 | 광원 1개당 ±X/±Y/±Z 방향으로 6회 Shadow Depth Pass를 수행한다 (Perspective 투영, FOV=90°) | P0 |
+| CS-03 | PBR 셰이더에서 TextureCube Shadow Map을 `lightToPixel` 방향 벡터로 샘플링하여 Point Light 그림자를 판정한다 | P0 |
+| CS-04 | 최대 4개의 Point Light shadow를 동시에 지원한다 (MAX_POINT_SHADOW_LIGHTS = 4) | P0 |
+| CS-05 | LightCuller와 연동하여 shadow casting Point Light에도 거리 기반 컬링을 적용한다 | P1 |
+| CS-06 | DebugHUD에 Cube Shadow Pass 수를 표시한다 | P1 |
+
+### 3.24 Skeletal Animation (Phase 35)
+
+> G-08/G-09 요구사항(3.13 절)은 Phase 35에서 구현되며, 아래는 세부 요구사항이다.
+
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| SA-01 | glTF Node Transform 애니메이션(TRS 키프레임, LINEAR/STEP/CUBICSPLINE 보간)을 로딩하고 재생한다 | P0 |
+| SA-02 | AnimationController가 재생 시간을 추적하고 각 채널의 TRS를 보간하여 SceneNode Transform을 매 프레임 갱신한다 | P0 |
+| SA-03 | glTF Skeletal Animation(bone/skin)을 로딩한다: Skeleton(Bone 계층), Skin(joint 인덱스 + inverseBindMatrix), per-vertex joint/weight | P0 |
+| SA-04 | GPU Skinning을 구현한다: Joint Matrix Palette CB(최대 128 bone) + PBR.hlsl 스킨드 버텍스 변환(position/normal/tangent) | P0 |
+| SA-05 | Vertex 구조체에 joints(XMUSHORT4), weights(XMFLOAT4)를 추가하고 D3D12 Input Layout을 갱신한다 | P0 |
+| SA-06 | "Animation" 메뉴에서 클립 선택 및 재생 속도 조절이 가능하다 | P1 |
+
+### 3.25 RRScenePreprocessor 스켈레탈 확장 (Phase 36)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| RP-01 | `.rrscene` 포맷을 v2로 확장하여 Skeleton Section(본 계층 + inverseBindMatrix)과 Animation Section(TRS 키프레임)을 추가한다 | P0 |
+| RP-02 | v1(비애니메이션) 파일과의 하위 호환성을 유지한다 | P0 |
+| RP-03 | RRScenePreprocessor가 glTF bone/skin/animation 데이터를 `.rrscene` v2로 직렬화한다 | P0 |
+| RP-04 | 렌더링 앱이 `.rrscene` v2에서 Skeleton/AnimationClip을 복원하고 즉시 애니메이션을 재생한다 | P0 |
+
+### 3.26 Deferred Rendering — G-Buffer (Phase 37)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| DR-01 | G-Buffer MRT 4개를 생성한다: RT0(Albedo+Metallic, R8G8B8A8_UNORM_SRGB), RT1(Normal+Roughness, R16G16B16A16_FLOAT), RT2(Emissive+AO, R8G8B8A8_UNORM), Depth(D32_FLOAT) | P0 |
+| DR-02 | Geometry Pass에서 Opaque/Alpha Mask 메시를 G-Buffer에 기록한다 | P0 |
+| DR-03 | Lighting Pass에서 Full-Screen Quad로 G-Buffer + Shadow Map을 참조하여 Cook-Torrance BRDF 라이팅을 수행하고 HDR RT에 출력한다 | P0 |
+| DR-04 | Alpha Blend 메시는 기존 Forward 방식으로 HDR RT에 합성한다 (Forward+ 투명 패스 유지) | P0 |
+| DR-05 | "Render" 메뉴에 G-Buffer 시각화 뷰 모드(Albedo/Normal/MetalRoughness/Depth)를 추가한다 | P1 |
+
+### 3.27 HDR Pipeline + Tone Mapping (Phase 38)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| HDR-01 | Lighting Pass 출력을 R16G16B16A16_FLOAT HDR 렌더 타겟에 기록한다 | P0 |
+| HDR-02 | Tone Mapping Pass를 구현한다: Reinhard 및 ACES Filmic 알고리즘을 메뉴에서 선택할 수 있다 | P0 |
+| HDR-03 | Compute Shader로 평균 Luminance를 계산하여 Auto-Exposure(자동 노출)를 적용한다 | P0 |
+| HDR-04 | Tone Mapping 결과를 SwapChain(R8G8B8A8_UNORM_SRGB)으로 출력한다 | P0 |
+| HDR-05 | DebugHUD에 Tone Mapping 모드, 평균 Luminance, EV 노출값을 표시한다 | P1 |
+
+### 3.28 SSAO (Screen Space Ambient Occlusion) (Phase 39)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| AO-01 | R8_UNORM SSAO Buffer를 생성하고 Hemisphere Sample Kernel(16~64개) + 노이즈 텍스처로 Raw AO를 계산한다 | P0 |
+| AO-02 | Bilateral Blur(Depth/Normal 경계 보존) 2패스(수평→수직)를 적용하여 블러된 AO를 생성한다 | P0 |
+| AO-03 | Lighting Pass에서 AO를 Ambient Light에 곱하여 적용한다 | P0 |
+| AO-04 | "Optimization" 메뉴에서 SSAO on/off 토글과 AO Buffer 시각화 뷰를 제공한다 | P1 |
+
+### 3.29 Bloom + Post-Processing (Phase 40)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| PP-01 | Ping-Pong Buffer(HDR RT 2개 교대 사용) 기반 Post-Processing 프레임워크를 구현한다 | P0 |
+| PP-02 | Bright Pass: Luminance 임계값(기본 1.0) 이상 픽셀을 추출한다 | P0 |
+| PP-03 | Dual Kawase Blur Pyramid(6단계 다운샘플→업샘플)로 Bloom 레이어를 생성하고 HDR RT에 Additive Blend로 합성한다 | P0 |
+| PP-04 | Bloom on/off, 임계값, Intensity를 메뉴에서 조정할 수 있다 | P1 |
+
+### 3.30 TAA (Temporal Anti-Aliasing) (Phase 41)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| TAA-01 | Halton Sequence(8~16프레임, base 2/3)로 투영 행렬에 서브픽셀 Jitter를 적용한다 | P0 |
+| TAA-02 | Velocity Buffer를 생성하고 정적(카메라 Reprojection) 및 동적(Skeletal 이전 프레임 WorldMatrix) Motion Vector를 기록한다 | P0 |
+| TAA-03 | TAA Resolve Pass에서 Current Frame + Reprojected History Buffer를 블렌딩하고 Variance Clipping으로 고스팅을 억제한다 | P0 |
+| TAA-04 | "Render" 메뉴에서 TAA/MSAA/None을 전환할 수 있다 | P1 |
+
+### 3.31 Motion Blur + Depth of Field (Phase 42)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| MB-01 | Tile-based Max Velocity를 계산하여 속도 방향으로 N샘플 평균하는 Per-Object Motion Blur를 구현한다 | P0 |
+| MB-02 | Depth → CoC(Circle of Confusion) 반경 계산 기반 Bokeh Depth of Field를 구현한다 | P0 |
+| MB-03 | Focus Distance, F-Number, Focal Length를 메뉴에서 조정할 수 있다 | P1 |
+
+### 3.32 SSR + Refraction (Phase 43)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| SSR-01 | G-Buffer Normal+Depth에서 반사 Ray Direction을 계산하고 Hi-Z Raymarching으로 교차점을 탐색한다 | P0 |
+| SSR-02 | Roughness 기반 블러와 Fresnel 강도(metallic/roughness)를 적용하여 반사를 합성한다 | P0 |
+| SSR-03 | SSR miss 시 Environment Map Cubemap으로 폴백한다 | P0 |
+| SSR-04 | Alpha Blend 오브젝트에 IOR 기반 UV 오프셋으로 Refraction을 적용한다 | P1 |
+
+### 3.33 Screen Space Subsurface Scattering (Phase 44)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| SSSSS-01 | Material에 `subsurfaceColor(float3)` + `scatterWidth(float)` 파라미터를 추가한다 | P0 |
+| SSSSS-02 | Stencil 마스크로 SSS/비-SSS 픽셀을 분리하고, 6-weight Gaussian Kernel × RGB 3채널로 Separable 2패스(수평→수직) SSS Pass를 구현한다 (R > G > B 확산 폭) | P0 |
+| SSSSS-03 | SSS on/off 토글 및 RGB 채널별 확산 폭 파라미터를 메뉴에서 조정할 수 있다 | P1 |
+
+### 3.34 Global Illumination — DDGI (Phase 45)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| GI-01 | 씬 AABB 내에 3D Grid 기반 Irradiance Probe(기본 8×4×8 = 256개)를 배치한다 | P0 |
+| GI-02 | DXR 사용 가능 시 각 Probe에서 구면 방향으로 Radiance Ray를 발사하여 Irradiance를 갱신한다. DXR 미지원 시 정적 Reflection Capture로 폴백한다 | P0 |
+| GI-03 | Probe당 Octahedral Map에 Irradiance(L0)와 Visibility(Depth)를 저장한다 | P0 |
+| GI-04 | 픽셀 위치에서 주변 8개 Probe를 삼선형 보간하여 Indirect Diffuse를 계산하고 Lighting Pass에 통합한다 | P0 |
+| GI-05 | 디버그 뷰에서 Probe 위치와 Irradiance를 시각화할 수 있다 | P1 |
+
+### 3.35 DXR Hybrid Ray Tracing (Phase 46)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| RT-01 | DXR PSO(RayGen/ClosestHit/Miss/AnyHit 셰이더), BLAS(메시별), TLAS(씬 전체 인스턴스)를 구성한다 | P0 |
+| RT-02 | Ray-Traced Shadow를 구현하여 PCF Shadow Map을 대체한다. 반투명 AnyHit 지원 | P0 |
+| RT-03 | Ray-Traced Reflection을 구현하여 G-Buffer Normal+Roughness 기반 반사 Ray를 발사하고 Cone Sampling으로 Roughness 블러를 적용한다 | P0 |
+| RT-04 | Phase 45 DDGI Probe Update에 DXR Ray를 활용한다 | P1 |
+| RT-05 | DXR Tier 1.1 미지원 시 PCF Shadow Map / SSR / 정적 DDGI Probe로 자동 폴백한다 | P0 |
+| RT-06 | 런타임에 D3D12_FEATURE_D3D12_OPTIONS5로 DXR Tier를 감지하고 DebugHUD에 표시한다 | P0 |
+
+### 3.36 Nanite-style Virtual Geometry (Phase 47)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| VG-01 | 메시를 ~128삼각형 단위 Meshlet으로 분할하고 Meshlet별 바운딩 스피어와 노말 Cone을 계산한다 | P0 |
+| VG-02 | Amplification Shader에서 Meshlet Frustum/Back-face Culling을 수행하여 가시 Meshlet 목록을 생성한다 | P0 |
+| VG-03 | Mesh Shader에서 가시 Meshlet의 삼각형을 출력한다 (VS/IA 대체) | P0 |
+| VG-04 | Mesh Shader 미지원 시 기존 DrawIndexedInstanced로 폴백한다 | P0 |
+| VG-05 | Compute Shader가 DrawArgs Buffer를 생성하고 `ExecuteIndirect()`로 GPU-Driven 렌더링을 수행한다 | P0 |
+| VG-06 | 디버그 뷰에서 Meshlet별 색상 시각화와 LOD 레벨 시각화를 제공한다 | P1 |
+
+### 3.37 Neural Upscaling + Neural Denoising (Phase 48)
+| ID | 요구사항 | 우선순위 |
+|----|----------|----------|
+| NU-01 | AMD FidelityFX SDK(FSR 3)를 연동하여 Color Buffer + Depth + Motion Vector 기반 업스케일을 구현한다 | P0 |
+| NU-02 | Quality/Balanced/Performance/Ultra Performance 모드를 메뉴에서 선택하고 렌더 해상도를 출력 해상도의 50~75%로 설정할 수 있다 | P0 |
+| NU-03 | NVIDIA DLSS 3(Streamline SDK)를 선택적으로 지원한다. RTX 하드웨어 미지원 시 FSR 3로 자동 폴백한다 | P1 |
+| NU-04 | Neural Denoising을 구현한다: NRD SDK(옵션 A) 또는 Temporal Accumulation Denoiser(Bilateral Filter 기반, 옵션 B) | P0 |
+| NU-05 | DebugHUD에 Upscaling 모드, 렌더/출력 해상도, Denoiser 종류를 표시한다 | P0 |
+
+---
+
 ## 4. 비기능 요구사항
 
 | ID | 요구사항 |
