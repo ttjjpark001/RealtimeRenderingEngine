@@ -938,6 +938,55 @@ tests/
 
 **완료 기준**: 전체 코드 리뷰 완료, 모든 테스트 통과, D3D12 Debug Layer 경고 0건, PBR.hlsl X4000 잔존 경고 제거, ARCHITECTURE.md 작성 완료
 
+## Phase 02 의존성 그래프
+
+```
+Phase 11 (Phase 01 완료)
+    │
+    ├── Phase 12 (SceneLoader) ──┐
+    │       └── Phase 13 (Vertex+Material) ──┐
+    │               └── Phase 14 (Texture) ──┤
+    │                                        ├── Phase 16 (셰이더: PBR) ──┐
+    ├── Phase 15 (RHI 확장) ─────────────────┤                           │
+    │                                        ├── Phase 17 (다중 광원) ───┤
+    │                                        │       └── Phase 18 (Shadow) ──┐
+    │                                        │                               │
+    │                                        ├── Phase 19 (씬 UI+카메라) ────┤
+    │                                        │                               │
+    │                                        └── Phase 20 (렌더 모드) ───────┤
+    │                                                                        │
+    ├── Phase 21 (레거시 정리+테스트) ────────────────────────────────────────┤
+    ├── Phase 22 (프리미티브 분리+AABB) ────────────────────────────────────┤
+    │       └── Phase 23 (Culling+LOD) ────────────────────────────────────┤
+    │               └── Phase 24 (HLSL 경고+Shadow 자동 크기) ✅ ───────────┤
+    ├── Phase 25 (Bistro 씬 분석+에셋 준비) ─────────────────────────────────┤
+    │       └── Phase 26 (Bistro! 메뉴+씬 전용 설정) ────────────────────────┤
+    ├── Phase 27 (Texture Streaming) ────────────────────────────────────────┤
+    ├── Phase 28 (Instancing+멀티스레드) ────────────────────────────────────┤
+    ├── Phase 29 (GPU 메모리 최적화) ────────────────────────────────────────┤
+    │                                                                        │
+    └────────────────────────────────────────────────────── Phase 30 (통합) ─┘
+                                                                             │
+                                                            Phase 31 (RRScenePreprocessor: .rrscene 전처리 도구) ─┘
+                                                                             │
+                                                            Phase 32 (코드 리뷰 + ARCHITECTURE.md)
+                                                                             ↓
+                                                                     Phase 03 시작 (Phase 33~48)
+```
+
+## Phase 02 리스크 & 대응
+
+| 리스크 | 대응 |
+|--------|------|
+| Assimp 파싱 성능 (대형 씬) | Assimp 파싱은 메인 스레드, 후처리(VB/IB/텍스처)를 워커 스레드에 분배 |
+| 텍스처 메모리 초과 (Sponza 등) | Texture Streaming + VRAM 예산 모니터링으로 Mip 동적 해제 |
+| Shadow Map 품질 (계단, acne) | Depth Bias 튜닝 + PCF 커널 크기 조정 (3×3 → 5×5) |
+| 다중 PSO 관리 복잡도 | PSO 캐시 (Material 속성 조합 → PSO 매핑), 상태 정렬로 전환 최소화 |
+| CB 풀 크기 부족 (대형 씬) | 초기 4MB, 부족 시 자동 확장 (새 Upload Heap 추가), VRAM 예산 내에서 |
+| 멀티스레드 race condition | GPU 업로드는 메인 스레드에서만, 교체는 원자적, 상태 플래그로 동기화 |
+| Gamma Correction 이중 적용 | SRGB 텍스처/렌더타겟 설정을 정확히 구분, pow 수동 변환과 혼용 금지 |
+| 렌더 모드 전환 시 깜빡임 | PSO/CB를 미리 준비, 모드 전환은 프레임 경계에서만 수행 |
+
 ---
 
 ## Phase 03: 고급 렌더링 기법
@@ -1378,52 +1427,3 @@ Phase 32 (Phase 02 완료: 코드 리뷰 + ARCHITECTURE.md)
 | Nanite Mesh Shader 미지원 (구형 GPU) | Feature Level 확인, 미지원 시 기존 LODSelector + DrawIndexedInstanced 폴백 |
 | FSR/DLSS SDK 버전 관리 | vcpkg 또는 서브모듈로 SDK 버전 고정, 업데이트 시 통합 테스트 |
 | Neural Denoiser latency (1프레임 딜레이) | Temporal Denoiser는 1프레임 레이턴시 허용 (RT Shadow/Reflection 결과에는 용인 범위) |
-
-## Phase 02 의존성 그래프
-
-```
-Phase 11 (Phase 01 완료)
-    │
-    ├── Phase 12 (SceneLoader) ──┐
-    │       └── Phase 13 (Vertex+Material) ──┐
-    │               └── Phase 14 (Texture) ──┤
-    │                                        ├── Phase 16 (셰이더: PBR) ──┐
-    ├── Phase 15 (RHI 확장) ─────────────────┤                           │
-    │                                        ├── Phase 17 (다중 광원) ───┤
-    │                                        │       └── Phase 18 (Shadow) ──┐
-    │                                        │                               │
-    │                                        ├── Phase 19 (씬 UI+카메라) ────┤
-    │                                        │                               │
-    │                                        └── Phase 20 (렌더 모드) ───────┤
-    │                                                                        │
-    ├── Phase 21 (레거시 정리+테스트) ────────────────────────────────────────┤
-    ├── Phase 22 (프리미티브 분리+AABB) ────────────────────────────────────┤
-    │       └── Phase 23 (Culling+LOD) ────────────────────────────────────┤
-    │               └── Phase 24 (HLSL 경고+Shadow 자동 크기) ✅ ───────────┤
-    ├── Phase 25 (Bistro 씬 분석+에셋 준비) ─────────────────────────────────┤
-    │       └── Phase 26 (Bistro! 메뉴+씬 전용 설정) ────────────────────────┤
-    ├── Phase 27 (Texture Streaming) ────────────────────────────────────────┤
-    ├── Phase 28 (Instancing+멀티스레드) ────────────────────────────────────┤
-    ├── Phase 29 (GPU 메모리 최적화) ────────────────────────────────────────┤
-    │                                                                        │
-    └────────────────────────────────────────────────────── Phase 30 (통합) ─┘
-                                                                             │
-                                                            Phase 31 (RRScenePreprocessor: .rrscene 전처리 도구) ─┘
-                                                                             │
-                                                            Phase 32 (코드 리뷰 + ARCHITECTURE.md)
-                                                                             ↓
-                                                                     Phase 03 시작 (Phase 33~48)
-```
-
-## Phase 02 리스크 & 대응
-
-| 리스크 | 대응 |
-|--------|------|
-| Assimp 파싱 성능 (대형 씬) | Assimp 파싱은 메인 스레드, 후처리(VB/IB/텍스처)를 워커 스레드에 분배 |
-| 텍스처 메모리 초과 (Sponza 등) | Texture Streaming + VRAM 예산 모니터링으로 Mip 동적 해제 |
-| Shadow Map 품질 (계단, acne) | Depth Bias 튜닝 + PCF 커널 크기 조정 (3×3 → 5×5) |
-| 다중 PSO 관리 복잡도 | PSO 캐시 (Material 속성 조합 → PSO 매핑), 상태 정렬로 전환 최소화 |
-| CB 풀 크기 부족 (대형 씬) | 초기 4MB, 부족 시 자동 확장 (새 Upload Heap 추가), VRAM 예산 내에서 |
-| 멀티스레드 race condition | GPU 업로드는 메인 스레드에서만, 교체는 원자적, 상태 플래그로 동기화 |
-| Gamma Correction 이중 적용 | SRGB 텍스처/렌더타겟 설정을 정확히 구분, pow 수동 변환과 혼용 금지 |
-| 렌더 모드 전환 시 깜빡임 | PSO/CB를 미리 준비, 모드 전환은 프레임 경계에서만 수행 |
