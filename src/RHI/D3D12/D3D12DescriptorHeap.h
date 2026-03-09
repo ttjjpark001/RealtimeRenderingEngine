@@ -35,6 +35,10 @@ public:
     D3D12_GPU_DESCRIPTOR_HANDLE AllocateTransientGPU();
     void ResetTransient();
 
+    // Persistent index management (for TextureCache reset on scene change)
+    uint32 GetPersistentIndex() const { return m_persistentIndex; }
+    void SetPersistentIndex(uint32 idx) { m_persistentIndex = idx; }
+
     ID3D12DescriptorHeap* GetHeap() const { return m_heap.Get(); }
     D3D12_CPU_DESCRIPTOR_HANDLE GetCPUStart() const { return m_heap->GetCPUDescriptorHandleForHeapStart(); }
     D3D12_GPU_DESCRIPTOR_HANDLE GetGPUStart() const { return m_heap->GetGPUDescriptorHandleForHeapStart(); }

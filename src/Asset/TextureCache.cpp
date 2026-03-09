@@ -2,6 +2,7 @@
 #include "RHI/D3D12/D3D12DescriptorHeap.h"
 
 #define STB_IMAGE_IMPLEMENTATION
+#define STBI_WINDOWS_UTF8   // Use _wfopen_s internally so Unicode (Korean etc.) paths work
 #include <stb_image.h>
 
 namespace RRE
@@ -23,6 +24,10 @@ bool TextureCache::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* c
 
     // Create SRV for fallback texture
     CreateSRV(device, m_fallbackTexture.get());
+
+    // Save persistent descriptor index after fallback so Clear() can recycle slots on scene change
+    if (m_srvHeap)
+        m_basePersistentIndex = m_srvHeap->GetPersistentIndex();
 
     return true;
 }
@@ -153,6 +158,9 @@ void TextureCache::CreateSRV(ID3D12Device* device, Texture* texture)
 void TextureCache::Clear()
 {
     m_cache.clear();
+    // Recycle persistent descriptor slots used by old textures (fallback slots remain)
+    if (m_srvHeap && m_basePersistentIndex > 0)
+        m_srvHeap->SetPersistentIndex(m_basePersistentIndex);
 }
 
 void TextureCache::ReleaseUploadBuffers()

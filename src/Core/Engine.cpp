@@ -500,6 +500,10 @@ void Engine::LoadSponzaScene()
         m_camera->SetLookAt ({ 0.0f,  0.0f, 0.0f });
         m_camera->SetFov(XMConvertToRadians(60.0f));
         m_camera->SetMoveSpeedScale(m_sceneDiagonal / 40.0f);  // quarter of default (diagonal/10)
+        // Sponza diagonal ~36 m; set far plane to 10× diagonal (min 500 m)
+        float farPlane = m_sceneDiagonal * 10.0f;
+        if (farPlane < 500.0f) farPlane = 500.0f;
+        m_camera->SetFarPlane(farPlane);
     }
 
     // --- Lights: replace the generic 3-point setup with Sponza-specific layout ---
@@ -588,6 +592,10 @@ void Engine::LoadBistroScene()
         m_camera->SetLookAt ({ 0.0f, 2.0f,   0.0f });
         m_camera->SetFov(XMConvertToRadians(60.0f));
         m_camera->SetMoveSpeedScale(m_sceneDiagonal / 20.0f);
+        // Bistro diagonal ~200 m; set far plane to 10× diagonal (min 500 m)
+        float farPlane = m_sceneDiagonal * 10.0f;
+        if (farPlane < 500.0f) farPlane = 500.0f;
+        m_camera->SetFarPlane(farPlane);
     }
 
     // Bistro scene flags
@@ -801,6 +809,8 @@ void Engine::LoadScene(const std::string& filePath)
         m_camera->SetPosition(data.camera->position);
         m_camera->SetLookAt(data.camera->lookAt);
         m_camera->SetFov(data.camera->fovY);
+        m_camera->SetNearPlane(data.camera->nearPlane);
+        m_camera->SetFarPlane(data.camera->farPlane);
     }
     else if (worldBounds.IsValid())
     {

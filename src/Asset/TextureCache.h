@@ -59,6 +59,7 @@ private:
     std::unique_ptr<Texture> m_fallbackTexture;
     D3D12DescriptorHeap* m_srvHeap = nullptr;
     ID3D12Device* m_device = nullptr;
+    uint32 m_basePersistentIndex = 0;  // descriptor index after fallback; used by Clear() to recycle slots
 };
 
 } // namespace RRE

@@ -36,6 +36,10 @@ public:
     void SetPosition(const DirectX::XMFLOAT3& pos) { m_position = pos; }
     void SetLookAt(const DirectX::XMFLOAT3& target) { m_lookAt = target; }
     void SetFov(float radians) { m_fov = radians; }
+    void SetNearPlane(float n) { m_nearPlane = n; }
+    void SetFarPlane(float f) { m_farPlane = f; }
+    float GetNearPlane() const { return m_nearPlane; }
+    float GetFarPlane() const { return m_farPlane; }
     void SetProjectionMode(ProjectionMode mode) { m_projectionMode = mode; }
 
     // Movement
