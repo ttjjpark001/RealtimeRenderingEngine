@@ -86,21 +86,40 @@ Texture* TextureCache::GetOrLoad(const std::string& path, bool isSRGB,
         // Non-DDS: decode with stb_image
         int width = 0, height = 0, channels = 0;
         stbi_uc* pixels = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
+
         if (!pixels)
-            return m_fallbackTexture.get();
+        {
+            // stb_image failed. Scenes like Amazon Bistro ship with DDS-only textures while
+            // the glTF (via MSFT_texture_dds extension) references PNG paths that don't exist.
+            // Try replacing the extension with ".dds" and loading via DirectXTex.
+            size_t dotPos = path.find_last_of('.');
+            size_t slashPos = path.find_last_of("/\\");
+            bool hasExtAfterSlash = (dotPos != std::string::npos) &&
+                                    (slashPos == std::string::npos || dotPos > slashPos);
+            if (hasExtAfterSlash)
+            {
+                std::string ddsPath = path.substr(0, dotPos) + ".dds";
+                std::wstring wDdsPath = ToWide(ddsPath);
+                texture = Texture::CreateFromDDS(device, cmdList, wDdsPath.c_str(), isSRGB);
+            }
+            if (!texture)
+                return m_fallbackTexture.get();
+        }
+        else
+        {
+            DXGI_FORMAT format = isSRGB ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
+                                        : DXGI_FORMAT_R8G8B8A8_UNORM;
 
-        DXGI_FORMAT format = isSRGB ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
-                                    : DXGI_FORMAT_R8G8B8A8_UNORM;
+            texture = std::make_unique<Texture>();
+            bool success = texture->CreateFromData(device, cmdList, pixels,
+                                                    static_cast<uint32>(width),
+                                                    static_cast<uint32>(height),
+                                                    format);
+            stbi_image_free(pixels);
 
-        texture = std::make_unique<Texture>();
-        bool success = texture->CreateFromData(device, cmdList, pixels,
-                                                static_cast<uint32>(width),
-                                                static_cast<uint32>(height),
-                                                format);
-        stbi_image_free(pixels);
-
-        if (!success)
-            return m_fallbackTexture.get();
+            if (!success)
+                return m_fallbackTexture.get();
+        }
     }
 
     // Create SRV for the loaded texture
