@@ -259,8 +259,8 @@ private:
     // Unified CBV+SRV descriptor heap (shader-visible)
     // Persistent region: texture SRVs
     // Transient region: per-frame CBVs
-    static constexpr uint32 PERSISTENT_DESCRIPTORS = 1024;
-    static constexpr uint32 TRANSIENT_DESCRIPTORS = 8192;
+    static constexpr uint32 PERSISTENT_DESCRIPTORS = 2048;
+    static constexpr uint32 TRANSIENT_DESCRIPTORS = 32768;
     D3D12DescriptorHeap m_cbvSrvHeap;
     UINT m_cbvDescriptorSize = 0;
 

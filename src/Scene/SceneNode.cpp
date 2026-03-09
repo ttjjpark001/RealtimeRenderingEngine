@@ -46,6 +46,11 @@ DirectX::BoundingBox SceneNode::GetWorldAABB() const
         if (m_mesh && !m_mesh->vertices.empty())
         {
             m_mesh->aabb.Transform(m_worldAABB, GetWorldMatrix());
+            // Ensure non-degenerate AABB to prevent frustum cull false negatives on flat meshes
+            const float kMinExtent = 0.01f;
+            if (m_worldAABB.Extents.x < kMinExtent) m_worldAABB.Extents.x = kMinExtent;
+            if (m_worldAABB.Extents.y < kMinExtent) m_worldAABB.Extents.y = kMinExtent;
+            if (m_worldAABB.Extents.z < kMinExtent) m_worldAABB.Extents.z = kMinExtent;
         }
         else
         {
