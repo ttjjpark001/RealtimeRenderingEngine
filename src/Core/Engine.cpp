@@ -91,6 +91,9 @@ bool Engine::Initialize(const EngineInitParams& params)
     m_menu->SetFileSponzaCallback([this]() {
         LoadSponzaScene();
     });
+    m_menu->SetFileBistroCallback([this]() {
+        LoadBistroScene();
+    });
     m_menu->SetCameraFitToSceneCallback([this]() {
         if (m_camera)
         {
@@ -293,6 +296,18 @@ void Engine::Update(float deltaTime)
             XMStoreFloat3(&m_lightManager->GetLightMutable(m_sponzaSunKeyIndex).direction, dir);
         }
         m_sponzaSunToggleKeyWasDown = keyDown;
+    }
+
+    // Bistro interior/exterior lighting toggle (L key) — only when loaded via Bistro! menu
+    if (m_isBistroScene && m_lightManager)
+    {
+        bool keyDown = (GetAsyncKeyState('L') & 0x8000) != 0;
+        if (keyDown && !m_bistroLightKeyWasDown)
+        {
+            m_bistroInteriorMode = !m_bistroInteriorMode;
+            ApplyBistroLighting();
+        }
+        m_bistroLightKeyWasDown = keyDown;
     }
 
     // Move camera with WASD+QE, adjust FOV with +/-
@@ -543,10 +558,148 @@ void Engine::LoadSponzaScene()
     }
 }
 
+void Engine::LoadBistroScene()
+{
+    // Show file open dialog
+    wchar_t filePath[MAX_PATH] = {};
+
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner   = m_window->GetHWND();
+    ofn.lpstrFilter = L"3D Scene Files (*.gltf;*.glb;*.fbx)\0*.gltf;*.glb;*.fbx\0All Files\0*.*\0";
+    ofn.lpstrFile   = filePath;
+    ofn.nMaxFile    = MAX_PATH;
+    ofn.Flags       = OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+
+    if (!GetOpenFileNameW(&ofn))
+        return;  // user cancelled
+
+    int len = WideCharToMultiByte(CP_UTF8, 0, filePath, -1, nullptr, 0, nullptr, nullptr);
+    std::string utf8Path(len - 1, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, filePath, -1, utf8Path.data(), len, nullptr, nullptr);
+
+    // Standard load: scene graph, textures, bounds, shadow maps
+    LoadScene(utf8Path);
+
+    // --- Camera: Bistro exterior starting view (SceneSettings.md) ---
+    if (m_camera)
+    {
+        m_camera->SetPosition({ 0.0f, 3.0f, -15.0f });
+        m_camera->SetLookAt ({ 0.0f, 2.0f,   0.0f });
+        m_camera->SetFov(XMConvertToRadians(60.0f));
+        m_camera->SetMoveSpeedScale(m_sceneDiagonal / 20.0f);
+    }
+
+    // Bistro scene flags
+    m_isBistroScene = true;
+    m_bistroInteriorMode = false;
+    m_bistroLightKeyWasDown = false;
+    m_orbitLightIndex = SIZE_MAX;   // disable generic orbit light for this scene
+
+    // Apply Bistro exterior lighting
+    ApplyBistroLighting();
+}
+
+void Engine::ApplyBistroLighting()
+{
+    if (!m_lightManager)
+        return;
+
+    m_lightManager->Clear();
+
+    if (!m_bistroInteriorMode)
+    {
+        // --- Exterior mode: Evening Sun + Sky ambient fill (2 lights) ---
+
+        // Directional "Evening Sun"
+        {
+            Light sun;
+            sun.type = LightType::Directional;
+            XMStoreFloat3(&sun.direction,
+                XMVector3Normalize(XMVectorSet(-0.5f, -0.8f, 0.3f, 0.0f)));
+            sun.color      = { 1.0f, 0.85f, 0.6f };
+            sun.intensity  = 8.0f;
+            sun.castShadow = true;
+            m_lightManager->AddLight(sun);
+        }
+
+        // Point fill (sky ambient)
+        {
+            Light fill;
+            fill.type      = LightType::Point;
+            fill.position  = { 0.0f, 20.0f, 0.0f };
+            fill.color     = { 0.4f, 0.5f, 0.7f };
+            fill.intensity = 2.0f;
+            fill.Kc = 1.0f; fill.Kl = 0.007f; fill.Kq = 0.0002f;
+            fill.castShadow = false;
+            m_lightManager->AddLight(fill);
+        }
+    }
+    else
+    {
+        // --- Interior mode: dim sun + 3 pendants + bar + ambient (6 lights) ---
+
+        // Directional "Evening Sun" (attenuated — window indirect light)
+        {
+            Light sun;
+            sun.type = LightType::Directional;
+            XMStoreFloat3(&sun.direction,
+                XMVector3Normalize(XMVectorSet(-0.5f, -0.8f, 0.3f, 0.0f)));
+            sun.color      = { 1.0f, 0.85f, 0.6f };
+            sun.intensity  = 3.0f;
+            sun.castShadow = true;
+            m_lightManager->AddLight(sun);
+        }
+
+        // Pendant ceiling lights x3 (warm incandescent ~2700K, ~4m radius)
+        static const XMFLOAT3 kPendantPositions[3] = {
+            { -2.0f, 3.5f,  3.0f },
+            { -2.0f, 3.5f,  7.0f },
+            { -2.0f, 3.5f, 11.0f },
+        };
+        for (const auto& pos : kPendantPositions)
+        {
+            Light pendant;
+            pendant.type      = LightType::Point;
+            pendant.position  = pos;
+            pendant.color     = { 1.0f, 0.85f, 0.55f };
+            pendant.intensity = 5.0f;
+            pendant.Kc = 1.0f; pendant.Kl = 0.7f; pendant.Kq = 0.9f;
+            pendant.castShadow = false;
+            m_lightManager->AddLight(pendant);
+        }
+
+        // Bar counter light (~2200K amber, ~6m radius)
+        {
+            Light bar;
+            bar.type      = LightType::Point;
+            bar.position  = { 2.0f, 3.0f, 5.0f };
+            bar.color     = { 1.0f, 0.75f, 0.40f };
+            bar.intensity = 4.0f;
+            bar.Kc = 1.0f; bar.Kl = 0.35f; bar.Kq = 0.12f;
+            bar.castShadow = false;
+            m_lightManager->AddLight(bar);
+        }
+
+        // Ambient fill (cool sky bounce through openings, ~30m radius)
+        {
+            Light ambient;
+            ambient.type      = LightType::Point;
+            ambient.position  = { 0.0f, 8.0f, 6.0f };
+            ambient.color     = { 0.7f, 0.65f, 0.90f };
+            ambient.intensity = 0.8f;
+            ambient.Kc = 1.0f; ambient.Kl = 0.022f; ambient.Kq = 0.0019f;
+            ambient.castShadow = false;
+            m_lightManager->AddLight(ambient);
+        }
+    }
+}
+
 void Engine::LoadScene(const std::string& filePath)
 {
-    // Clear Sponza-specific state (overridden by LoadSponzaScene if called from there)
+    // Clear scene-specific state (overridden by LoadSponzaScene/LoadBistroScene if called from there)
     m_isSponzaScene = false;
+    m_isBistroScene = false;
 
     // Wait for GPU to finish all pending work
     auto* context = static_cast<D3D12Context*>(m_rhiDevice->GetContext());

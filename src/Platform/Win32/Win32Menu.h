@@ -31,6 +31,7 @@ constexpr UINT ID_CAMERA_FIT_TO_SCENE = 5007;
 
 constexpr UINT ID_FILE_OPEN_SCENE     = 6001;
 constexpr UINT ID_FILE_OPEN_SPONZA    = 6002;
+constexpr UINT ID_FILE_OPEN_BISTRO    = 6003;
 
 constexpr UINT ID_RENDER_WIREFRAME       = 7001;
 constexpr UINT ID_RENDER_SOLID           = 7002;
@@ -54,6 +55,7 @@ public:
     using CameraResetCallback = std::function<void()>;
     using FileOpenCallback   = std::function<void()>;
     using FileSponzaCallback = std::function<void()>;
+    using FileBistroCallback = std::function<void()>;
     using CameraFitToSceneCallback = std::function<void()>;
     using RenderModeCallback = std::function<void(uint32 mode)>;
     using LODToggleCallback          = std::function<void()>;
@@ -76,6 +78,7 @@ public:
     void SetCameraResetCallback(CameraResetCallback callback) { m_cameraResetCallback = std::move(callback); }
     void SetFileOpenCallback(FileOpenCallback callback)     { m_fileOpenCallback   = std::move(callback); }
     void SetFileSponzaCallback(FileSponzaCallback callback) { m_fileSponzaCallback = std::move(callback); }
+    void SetFileBistroCallback(FileBistroCallback callback) { m_fileBistroCallback = std::move(callback); }
     void SetCameraFitToSceneCallback(CameraFitToSceneCallback callback) { m_cameraFitToSceneCallback = std::move(callback); }
     void SetRenderModeCallback(RenderModeCallback callback) { m_renderModeCallback = std::move(callback); }
     void SetLODToggleCallback(LODToggleCallback callback)             { m_lodToggleCallback = std::move(callback); }
@@ -101,6 +104,7 @@ private:
     CameraResetCallback m_cameraResetCallback;
     FileOpenCallback   m_fileOpenCallback;
     FileSponzaCallback m_fileSponzaCallback;
+    FileBistroCallback m_fileBistroCallback;
     CameraFitToSceneCallback m_cameraFitToSceneCallback;
     RenderModeCallback m_renderModeCallback;
     LODToggleCallback         m_lodToggleCallback;

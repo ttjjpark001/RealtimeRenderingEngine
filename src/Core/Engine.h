@@ -48,6 +48,8 @@ private:
     void LoadScene(const std::string& filePath);
     void ShowOpenSceneDialog();
     void LoadSponzaScene();
+    void LoadBistroScene();
+    void ApplyBistroLighting();
 
     std::unique_ptr<Win32Window> m_window;
     std::unique_ptr<Win32Menu> m_menu;
@@ -85,6 +87,11 @@ private:
     bool m_sponzaSunAltMode = false;
     bool m_sponzaSunToggleKeyWasDown = false;
     size_t m_sponzaSunKeyIndex = 0;  // index of sun (Key) light in m_lightManager
+
+    // Bistro-specific interior/exterior lighting toggle (L key)
+    bool m_isBistroScene = false;
+    bool m_bistroInteriorMode = false;
+    bool m_bistroLightKeyWasDown = false;
 
     bool m_isInitialized = false;
 
