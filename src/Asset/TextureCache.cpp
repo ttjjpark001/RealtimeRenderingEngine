@@ -5,6 +5,34 @@
 #define STBI_WINDOWS_UTF8   // Use _wfopen_s internally so Unicode (Korean etc.) paths work
 #include <stb_image.h>
 
+#include <algorithm>
+#include <string>
+
+namespace
+{
+    // Returns true if path ends with ".dds" (case-insensitive)
+    bool IsDDSPath(const std::string& path)
+    {
+        if (path.size() < 4)
+            return false;
+        std::string ext = path.substr(path.size() - 4);
+        std::transform(ext.begin(), ext.end(), ext.begin(),
+                       [](unsigned char c) { return static_cast<char>(::tolower(c)); });
+        return ext == ".dds";
+    }
+
+    // Convert UTF-8 string to wide string for DirectXTex
+    std::wstring ToWide(const std::string& utf8)
+    {
+        if (utf8.empty())
+            return {};
+        int len = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
+        std::wstring result(len - 1, 0);
+        MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, result.data(), len);
+        return result;
+    }
+} // anonymous namespace
+
 namespace RRE
 {
 
@@ -43,25 +71,37 @@ Texture* TextureCache::GetOrLoad(const std::string& path, bool isSRGB,
     if (it != m_cache.end())
         return it->second.get();
 
-    // Decode image with stb_image
-    int width = 0, height = 0, channels = 0;
-    stbi_uc* pixels = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
-    if (!pixels)
-        return m_fallbackTexture.get();
+    std::unique_ptr<Texture> texture;
 
-    // Choose format based on sRGB flag
-    DXGI_FORMAT format = isSRGB ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
-                                : DXGI_FORMAT_R8G8B8A8_UNORM;
+    if (IsDDSPath(path))
+    {
+        // DDS: use DirectXTex (supports BC1/BC3/BC5/BC7 and mipmaps)
+        std::wstring wpath = ToWide(path);
+        texture = Texture::CreateFromDDS(device, cmdList, wpath.c_str(), isSRGB);
+        if (!texture)
+            return m_fallbackTexture.get();
+    }
+    else
+    {
+        // Non-DDS: decode with stb_image
+        int width = 0, height = 0, channels = 0;
+        stbi_uc* pixels = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
+        if (!pixels)
+            return m_fallbackTexture.get();
 
-    auto texture = std::make_unique<Texture>();
-    bool success = texture->CreateFromData(device, cmdList, pixels,
-                                            static_cast<uint32>(width),
-                                            static_cast<uint32>(height),
-                                            format);
-    stbi_image_free(pixels);
+        DXGI_FORMAT format = isSRGB ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
+                                    : DXGI_FORMAT_R8G8B8A8_UNORM;
 
-    if (!success)
-        return m_fallbackTexture.get();
+        texture = std::make_unique<Texture>();
+        bool success = texture->CreateFromData(device, cmdList, pixels,
+                                                static_cast<uint32>(width),
+                                                static_cast<uint32>(height),
+                                                format);
+        stbi_image_free(pixels);
+
+        if (!success)
+            return m_fallbackTexture.get();
+    }
 
     // Create SRV for the loaded texture
     CreateSRV(device, texture.get());
@@ -145,7 +185,7 @@ void TextureCache::CreateSRV(ID3D12Device* device, Texture* texture)
     srvDesc.Format = texture->GetFormat();
     srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srvDesc.Texture2D.MipLevels = 1;
+    srvDesc.Texture2D.MipLevels = texture->GetMipLevels();
     srvDesc.Texture2D.MostDetailedMip = 0;
 
     D3D12_CPU_DESCRIPTOR_HANDLE srvCpu = m_srvHeap->AllocatePersistent();

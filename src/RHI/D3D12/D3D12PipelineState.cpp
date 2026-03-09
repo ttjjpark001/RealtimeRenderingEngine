@@ -284,9 +284,10 @@ bool D3D12PipelineState::CreatePBRPipelineState(ID3D12Device* device)
     psoDesc.InputLayout.pInputElementDescs = VERTEX_INPUT_LAYOUT;
     psoDesc.InputLayout.NumElements = VERTEX_INPUT_LAYOUT_COUNT;
 
-    // Rasterizer state
+    // Rasterizer state — two-sided (NONE) so double-sided / winding-mismatch meshes render correctly;
+    // back-face lighting handled in PS via SV_IsFrontFace
     psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
     psoDesc.RasterizerState.FrontCounterClockwise = FALSE;
     psoDesc.RasterizerState.DepthClipEnable = TRUE;
 
@@ -378,9 +379,9 @@ bool D3D12PipelineState::CreatePBRAlphaBlendPipelineState(ID3D12Device* device)
     psoDesc.InputLayout.pInputElementDescs = VERTEX_INPUT_LAYOUT;
     psoDesc.InputLayout.NumElements = VERTEX_INPUT_LAYOUT_COUNT;
 
-    // Rasterizer state
+    // Rasterizer state — two-sided (NONE); back-face lighting handled via SV_IsFrontFace in PS
     psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
     psoDesc.RasterizerState.FrontCounterClockwise = FALSE;
     psoDesc.RasterizerState.DepthClipEnable = TRUE;
 

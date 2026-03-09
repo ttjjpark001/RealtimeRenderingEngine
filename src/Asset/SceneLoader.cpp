@@ -38,7 +38,8 @@ SceneData SceneLoader::LoadScene(const std::string& filePath)
     }
 
     SceneData data;
-    std::string sceneDir = std::filesystem::path(filePath).parent_path().string();
+    // u8path preserves UTF-8 encoding (e.g. Korean username in path) then converts back to UTF-8 string
+    std::string sceneDir = std::filesystem::u8path(filePath).parent_path().u8string();
 
     // Convert all materials
     for (unsigned int i = 0; i < aiScenePtr->mNumMaterials; ++i)

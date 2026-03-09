@@ -224,7 +224,7 @@ float CalcShadow(uint shadowIdx, float3 worldPos)
 // ---------------------------------------------------------------------------
 // Pixel Shader
 // ---------------------------------------------------------------------------
-float4 PSMain(PSInput input) : SV_TARGET
+float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 {
     // --- Sample textures or use factor fallback ---
 
@@ -266,6 +266,9 @@ float4 PSMain(PSInput input) : SV_TARGET
     {
         N = normalize(input.N);
     }
+    // Two-sided rendering: flip normal for back faces so lighting is correct
+    if (!isFrontFace)
+        N = -N;
 
     // Emissive
     float3 emissive = emissiveFactor;

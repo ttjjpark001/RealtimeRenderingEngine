@@ -37,10 +37,16 @@ public:
     static std::unique_ptr<Texture> CreateFallback(ID3D12Device* device,
                                                     ID3D12GraphicsCommandList* cmdList);
 
+    // Create GPU texture from a .dds file using DirectXTex (supports BC-compressed formats + mipmaps)
+    static std::unique_ptr<Texture> CreateFromDDS(ID3D12Device* device,
+                                                   ID3D12GraphicsCommandList* cmdList,
+                                                   const wchar_t* path, bool isSRGB);
+
     // Accessors
     ID3D12Resource* GetResource() const { return m_resource.Get(); }
     uint32 GetWidth() const { return m_width; }
     uint32 GetHeight() const { return m_height; }
+    uint16 GetMipLevels() const { return m_mipLevels; }
     DXGI_FORMAT GetFormat() const { return m_format; }
     TextureState GetState() const { return m_state; }
     void SetState(TextureState state) { m_state = state; }
@@ -65,6 +71,7 @@ private:
     D3D12_GPU_DESCRIPTOR_HANDLE m_srvGpu = {};
     uint32 m_width = 0;
     uint32 m_height = 0;
+    uint16 m_mipLevels = 1;
     DXGI_FORMAT m_format = DXGI_FORMAT_R8G8B8A8_UNORM;
     TextureState m_state = TextureState::Pending;
 };
