@@ -10,18 +10,38 @@
 
 Phase 26 구현 후 발견된 Bistro 씬 렌더링 버그들. **현재 코드에 수정이 적용된 상태로 두고, 나중에 정리한다.**
 
-**코드에 적용된 수정 항목**
+**코드에 적용된 수정 항목 — 분류**
 
-| 수정 | 커밋 | 분류 | 비고 |
-|------|------|------|------|
-| Descriptor heap 16→32768 슬롯 확장 | 8c62105 | 일반 필요 | 대형 씬(103개+ 메시) 지원. VRAM 영향 없음(~1MB) |
-| kMinExtent 0.5f (AABB 패딩) | d22737c | 일반 필요 | 얇은 바닥/벽 메시의 컬링 오판정 방지 |
-| Far clip plane 자동 계산 | de099a4 | 일반 필요 | sceneDiagonal 기반, 모든 씬에 적용 |
-| Texture Descriptor 누수 수정 | de099a4 | 일반 필요 | RecreateShadowMaps 호출 시 SRV 누수 |
-| Unicode 경로 지원 (UTF-8→Wide) | de099a4 | 일반 필요 | 한글 등 비ASCII 경로 에셋 로딩 |
-| **전역 CullMode=NONE + SV_IsFrontFace** | be6be78 | **임시** | Phase 32에서 Material.doubleSided 기반 PSO 분기로 교체 예정 (RM-11) |
-| DDS 텍스처 지원 (DirectXTex) | be6be78 | 일반 필요 | DDS 포맷 텍스처 로딩 |
-| PNG→DDS 폴백 | d22737c | 일반 필요 | glTF PNG 참조 + 실파일 DDS 대응 |
+**Bistro 전용 (다른 씬엔 불필요)**
+
+| 수정 내용 | 커밋 | 이유 |
+|-----------|------|------|
+| PNG→DDS 확장자 fallback | d22737c | Bistro glTF가 PNG 경로를 참조하지만 실제론 DDS 파일만 존재하는 비정상 구조. 정상적인 glTF(DamagedHelmet, Sponza, FlightHelmet 등)에선 발생하지 않음. |
+| LoadBistroScene() far plane 명시 고정 | de099a4 | LoadBistroScene()에 max(500, diagonal×10) 하드코딩. 다른 씬은 LoadScene()의 worldBounds 기반 자동 계산으로 충분. |
+
+**과잉 수정 (일반 씬엔 불필요하거나 더 작은 값으로 충분)**
+
+| 수정 내용 | 커밋 | 실제 필요 범위 |
+|-----------|------|----------------|
+| TRANSIENT_DESCRIPTORS 32768 | 8c62105 | Bistro 551 mesh × 17 = 9,367 때문에 증가. Sponza(~103 mesh)는 2,048 이하면 충분. 증가 자체는 무해하지만 Bistro 전용 스케일링. |
+| PERSISTENT_DESCRIPTORS 2048 | 8c62105 | 유사하게 Bistro 텍스처 수 기준 증가. 소형 씬은 512로도 충분. |
+
+**임시 방편 (Phase 32 교체 대상)**
+
+| 수정 내용 | 커밋 | 비고 |
+|-----------|------|------|
+| 전역 CullMode=NONE + SV_IsFrontFace | be6be78 | Phase 32에서 Material.doubleSided 기반 PSO 분기로 교체 예정 (RM-11) |
+
+**일반적으로 필요한 수정 (모든 씬에 유효)**
+
+| 수정 내용 | 커밋 | 이유 |
+|-----------|------|------|
+| kMinExtent 0.01→0.5 (AABB 패딩) | 8c62105, d22737c | 어떤 씬이든 Y=0 평면 메시는 존재. Sponza 바닥면에도 동일하게 적용됨. |
+| DDS 텍스처 지원 (DirectXTex) | be6be78 | DDS는 DX 표준 포맷. 향후 다른 씬에서도 사용 가능. |
+| glTF 카메라 nearPlane/farPlane 적용 | de099a4 | 카메라 노드가 있는 모든 씬에 해당. |
+| TextureCache::Clear() persistent index 리셋 | de099a4 | 씬 교체가 있는 모든 경우 필요. |
+| STBI_WINDOWS_UTF8 | de099a4 | 한국어 포함 경로 사용하는 모든 PC에서 필요. |
+| SceneLoader u8path 유니코드 수정 | be6be78 | 동일. |
 
 **미해결 버그 / 잔여 작업**
 
