@@ -8,20 +8,20 @@
 
 ### [버그] Bistro 씬 렌더링 버그 수정 (나중에)
 
-Phase 26 구현 후 발견된 Bistro 씬 렌더링 버그들. **현재 코드에 임시 수정이 적용된 상태로 두고, 나중에 정리한다.**
+Phase 26 구현 후 발견된 Bistro 씬 렌더링 버그들. **현재 코드에 수정이 적용된 상태로 두고, 나중에 정리한다.**
 
-**코드에 적용된 임시/과잉 수정 항목**
+**코드에 적용된 수정 항목**
 
-| 수정 | 커밋 | 비고 |
-|------|------|------|
-| Descriptor heap 16→32768 슬롯 확장 | 8c62105 | Bistro 103개 메시 지원. VRAM 영향 없음(~1MB) |
-| kMinExtent 0.5f (AABB 패딩) | d22737c | 0.01→0.5. 바닥 타일 컬링 임시 완화 |
-| Far clip plane 자동 계산 | de099a4 | sceneDiagonal 기반 |
-| Texture Descriptor 누수 수정 | de099a4 | RecreateShadowMaps 호출 시 |
-| Unicode 경로 지원 (UTF-8→Wide) | de099a4 | 한글 경로 에셋 로딩 |
-| 전역 CullMode=NONE + SV_IsFrontFace | be6be78 | 두-sided 임시방편 (Phase 32에서 교체 예정, RM-11) |
-| DDS 텍스처 지원 (DirectXTex) | be6be78 | Bistro DDS 텍스처 로딩 |
-| PNG→DDS 폴백 | d22737c | glTF PNG 참조 + 실파일 DDS 대응 |
+| 수정 | 커밋 | 분류 | 비고 |
+|------|------|------|------|
+| Descriptor heap 16→32768 슬롯 확장 | 8c62105 | 일반 필요 | 대형 씬(103개+ 메시) 지원. VRAM 영향 없음(~1MB) |
+| kMinExtent 0.5f (AABB 패딩) | d22737c | 일반 필요 | 얇은 바닥/벽 메시의 컬링 오판정 방지 |
+| Far clip plane 자동 계산 | de099a4 | 일반 필요 | sceneDiagonal 기반, 모든 씬에 적용 |
+| Texture Descriptor 누수 수정 | de099a4 | 일반 필요 | RecreateShadowMaps 호출 시 SRV 누수 |
+| Unicode 경로 지원 (UTF-8→Wide) | de099a4 | 일반 필요 | 한글 등 비ASCII 경로 에셋 로딩 |
+| **전역 CullMode=NONE + SV_IsFrontFace** | be6be78 | **임시** | Phase 32에서 Material.doubleSided 기반 PSO 분기로 교체 예정 (RM-11) |
+| DDS 텍스처 지원 (DirectXTex) | be6be78 | 일반 필요 | DDS 포맷 텍스처 로딩 |
+| PNG→DDS 폴백 | d22737c | 일반 필요 | glTF PNG 참조 + 실파일 DDS 대응 |
 
 **미해결 버그 / 잔여 작업**
 
