@@ -2030,6 +2030,10 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 32를 구현
      d. 대형 씬 로딩 중 메모리 부족: 오류 메시지 출력 후 graceful 복구
      e. 윈도우 리사이즈/모드 전환 중 씬 로딩: 크래시 없이 처리
      f. 잘못된 파일 경로/손상된 파일 로딩: 오류 처리 및 사용자 알림
+     g. **glTF `doubleSided` PSO 분기**: 현재 PBR PSO가 전역 `CullMode=NONE`(임시 방편)인 상태를 수정한다.
+        - `D3D12PipelineState`에 `CullMode=BACK` PBR PSO와 `CullMode=NONE` PBR PSO를 별도로 생성한다.
+        - `Renderer::RenderScene()`에서 `material->doubleSided` 여부에 따라 PSO를 선택한다.
+        - `PBR.hlsl`의 `SV_IsFrontFace` 법선 반전은 `CullMode=NONE` PSO 드로우콜에서만 의미 있음 (그대로 유지).
    - 멀티스레드 안전성: 텍스처 교체, 상태 플래그 읽기/쓰기에 race condition 없는지 확인
 
 5. ARCHITECTURE.md를 프로젝트 루트에 작성한다.

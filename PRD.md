@@ -376,6 +376,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | RM-08 | 렌더링 모드 전환 시 PSO(Pipeline State Object) 및 셰이더 바인딩을 즉시 교체한다 | P0 |
 | RM-09 | DebugHUD에 현재 렌더링 모드 이름을 표시한다 | P1 |
 | RM-10 | 기본 렌더링 모드는 "Full PBR + Shadows"이다 | P0 |
+| RM-11 | Material의 `doubleSided` 플래그에 따라 PSO를 분기한다: `false` → `CullMode=BACK`, `true` → `CullMode=NONE` + `SV_IsFrontFace` 법선 반전 (glTF 스펙 준수, Phase 32) | P1 |
 
 ---
 

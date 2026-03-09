@@ -532,6 +532,8 @@ struct Light {
 - Alpha Mask용 PSO: depth write + alpha test
 - Alpha Blend용 PSO: 블렌딩 활성화, depth write 비활성화
 - Double-sided용: 래스터라이저 cull mode = none
+  - **현재 구현 (임시)**: 전역 `CullMode=NONE` — Bistro 대응용 임시 방편. glTF `doubleSided=false` 머티리얼도 backface를 렌더링하므로 성능 손실 발생.
+  - **Phase 32 교체 예정**: `Material.doubleSided` 플래그 기반 PSO 분기 — `false` → `CullMode=BACK`, `true` → `CullMode=NONE`. `PBR.hlsl`의 `SV_IsFrontFace` 법선 반전은 `CullMode=NONE` PSO에서만 적용.
 
 ### 셰이더 확장 — Cook-Torrance BRDF
 

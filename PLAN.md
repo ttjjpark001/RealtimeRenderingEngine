@@ -960,6 +960,11 @@ Shadow Map 해상도·DepthBias·SlopeScaledDepthBias 시각적 확인 후 최�
    - 빈 씬(메시 0개), Material 없는 Mesh, 텍스처 없는 Material 등 엣지 케이스 처리
    - 대형 씬 로딩 중 메모리 부족 시 graceful 처리
    - 멀티스레드 race condition 검증 (ThreadSanitizer 또는 수동 검증)
+   - **glTF `doubleSided` PSO 분기**: 현재 PBR Opaque/Blend PSO의 전역 `CullMode=NONE` 임시 방편을 교체.
+     Material의 `doubleSided` 플래그를 기준으로 PSO 선택:
+     `doubleSided=false` → `CullMode=BACK` (성능 최적, 대부분의 solid geometry)
+     `doubleSided=true`  → `CullMode=NONE`  (커튼·나뭇잎 등 양면 렌더링 필요 머티리얼)
+     PBR.hlsl의 `SV_IsFrontFace` 법선 반전은 `CullMode=NONE` PSO에서만 의미 있음.
 
 5. **ARCHITECTURE.md 작성**:
    - 프로젝트 전체 디렉토리 구조 + 각 파일의 역할 설명
