@@ -51,6 +51,8 @@ cbuffer PerMaterialCB : register(b2)
     uint hasOcclusionMap;
     float3 emissiveFactor;
     uint alphaMode;       // 0=Opaque, 1=Mask, 2=Blend
+    uint useMips;         // 1=use mip chain, 0=force mip 0 (MipMap toggle)
+    uint3 _padMat;        // padding
 };
 
 static const uint MAX_SHADOW_MAPS = 8;
@@ -228,10 +230,18 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 {
     // --- Sample textures or use factor fallback ---
 
+    // Helper macro: sample with mip chain or force mip 0
+    // useMips==1: full mip chain (anisotropic filtering), ==0: always mip 0
+    float2 uv = input.texCoord;
+
     // Albedo
     float4 albedo4;
     if (hasAlbedoMap)
-        albedo4 = AlbedoMap.Sample(LinearSampler, input.texCoord) * baseColorFactor;
+    {
+        float4 s = useMips ? AlbedoMap.Sample(LinearSampler, uv)
+                           : AlbedoMap.SampleLevel(LinearSampler, uv, 0);
+        albedo4 = s * baseColorFactor;
+    }
     else
         albedo4 = baseColorFactor;
 
@@ -247,7 +257,8 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float roughness = roughnessFactor;
     if (hasMetallicRoughnessMap)
     {
-        float4 mr = MetallicRoughnessMap.Sample(LinearSampler, input.texCoord);
+        float4 mr = useMips ? MetallicRoughnessMap.Sample(LinearSampler, uv)
+                            : MetallicRoughnessMap.SampleLevel(LinearSampler, uv, 0);
         roughness *= mr.g;
         metallic *= mr.b;
     }
@@ -257,7 +268,8 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float3 N;
     if (hasNormalMap)
     {
-        float3 normalSample = NormalMap.Sample(LinearSampler, input.texCoord).rgb;
+        float3 normalSample = (useMips ? NormalMap.Sample(LinearSampler, uv)
+                                       : NormalMap.SampleLevel(LinearSampler, uv, 0)).rgb;
         normalSample = normalSample * 2.0f - 1.0f;
         float3x3 TBN = float3x3(normalize(input.T), normalize(input.B), normalize(input.N));
         N = normalize(mul(normalSample, TBN));
@@ -273,12 +285,19 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     // Emissive
     float3 emissive = emissiveFactor;
     if (hasEmissiveMap)
-        emissive *= EmissiveMap.Sample(LinearSampler, input.texCoord).rgb;
+    {
+        float3 es = (useMips ? EmissiveMap.Sample(LinearSampler, uv)
+                             : EmissiveMap.SampleLevel(LinearSampler, uv, 0)).rgb;
+        emissive *= es;
+    }
 
     // Occlusion
     float ao = 1.0f;
     if (hasOcclusionMap)
-        ao = OcclusionMap.Sample(LinearSampler, input.texCoord).r;
+    {
+        ao = useMips ? OcclusionMap.Sample(LinearSampler, uv).r
+                     : OcclusionMap.SampleLevel(LinearSampler, uv, 0).r;
+    }
 
     // --- Lighting ---
     float3 V = normalize(CameraPosition - input.worldPos);

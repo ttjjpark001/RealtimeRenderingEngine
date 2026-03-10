@@ -202,6 +202,10 @@ bool Engine::Initialize(const EngineInitParams& params)
         if (m_renderer)
             m_renderer->SetLODEnabled(!m_renderer->IsLODEnabled());
     });
+    m_menu->SetMipMapToggleCallback([this]() {
+        if (m_renderer)
+            m_renderer->SetMipMappingEnabled(!m_renderer->IsMipMappingEnabled());
+    });
 
     // Create debug HUD
     m_debugHUD = std::make_unique<DebugHUD>();

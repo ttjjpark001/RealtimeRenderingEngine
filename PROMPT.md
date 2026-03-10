@@ -1759,6 +1759,42 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 27를 구현
 멀어지면 저해상도로 대체되는지 확인하라.
 ```
 
+## Prompt 27 추가: MipMap Optimization 메뉴 토글 + LOD 기본값 OFF
+
+```
+PLAN.md, CLAUDE.md의 Phase 27 추가 섹션을 참조하여 MipMap Optimization 메뉴 토글과 LOD 기본값 변경을 구현하라.
+이 작업은 Phase 27 완료 후 추가로 진행한 작업이다. 이미 구현 완료(✅)이므로 재현·참조용이다.
+
+1. PBR.hlsl — PerMaterialCB(b2)에 useMips 필드를 추가한다.
+   - uint useMips (1=Mip 체인, 0=Mip 0 고정) + uint3 _padMat 패딩
+   - 전 채널 샘플링을 useMips 분기로 교체:
+     useMips ? Sample(LinearSampler, uv) : SampleLevel(LinearSampler, uv, 0)
+   - 대상: Albedo, Normal, MetallicRoughness, Emissive, Occlusion
+
+2. D3D12Context.h — PerMaterialConstants를 동기화한다.
+   - uint32 useMips + uint32 _padMat[3] 추가 (64→80바이트)
+   - SetMipMappingEnabled(bool) 메서드 + bool m_mipMappingEnabled = true 멤버 추가
+   - DrawPrimitivesPBR(): matConst.useMips = m_mipMappingEnabled ? 1u : 0u
+
+3. Renderer.h / Renderer.cpp — Renderer에 MipMap 연결을 추가한다.
+   - SetMipMappingEnabled(bool) / IsMipMappingEnabled() 공개 메서드
+   - m_lodEnabled 기본값을 true → false로 변경
+
+4. Win32Menu.h / Win32Menu.cpp — Optimization 메뉴를 확장한다.
+   - constexpr UINT ID_OPTIM_MIPMAP = 8004
+   - MipMapToggleCallback 타입 + SetMipMapToggleCallback() setter + m_mipMapToggleCallback 멤버
+   - Initialize(): LOD에서 MF_CHECKED 제거, MipMap 항목을 MF_CHECKED 기본으로 추가
+   - HandleCommand(): case ID_OPTIM_MIPMAP — GetMenuState → CheckMenuItem 토글
+
+5. Engine.cpp — SetMipMapToggleCallback을 연결한다.
+   m_menu->SetMipMapToggleCallback([this]() {
+       if (m_renderer) m_renderer->SetMipMappingEnabled(!m_renderer->IsMipMappingEnabled());
+   });
+
+빌드하여 Optimization > MipMap 토글 시 텍스처 선명도가 전환되고,
+LOD가 시작 시 기본 OFF 상태인지 확인하라.
+```
+
 ---
 
 ## Prompt 28: Instanced Rendering + 멀티스레드 로딩

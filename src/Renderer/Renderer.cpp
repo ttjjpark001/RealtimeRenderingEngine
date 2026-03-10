@@ -47,6 +47,13 @@ void Renderer::UploadMesh(Mesh* mesh)
     m_meshCache[mesh] = std::move(buffers);
 }
 
+void Renderer::SetMipMappingEnabled(bool enabled)
+{
+    m_mipMappingEnabled = enabled;
+    if (m_context)
+        m_context->SetMipMappingEnabled(enabled);
+}
+
 void Renderer::ClearMeshCache()
 {
     m_meshCache.clear();      // frees GPU buffers

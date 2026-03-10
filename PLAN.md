@@ -837,7 +837,7 @@ Bistro 씬을 실제 렌더링하여 Shadow Map 파라미터를 결정하고, L 
 L 키로 Exterior(2개) ↔ Interior(6개) 조명 토글 (Bistro 전용, 일반 LoadScene 시 비활성),
 Shadow Map 해상도·DepthBias·SlopeScaledDepthBias 시각적 확인 후 최적값 SceneSettings.md에 기록
 
-### Phase 27: Texture Streaming + Mip-Mapping
+### Phase 27: Texture Streaming + Mip-Mapping ✅
 **목표**: 필요 Mip만 GPU 로드, 가시성/거리 기반 우선순위
 
 1. `src/Asset/TextureStreamer.h/.cpp` — Mip 레벨 기반 스트리밍
@@ -848,6 +848,33 @@ Shadow Map 해상도·DepthBias·SlopeScaledDepthBias 시각적 확인 후 최�
 6. 메모리 예산: VRAM 모니터링, LRU + 거리 기반 해제
 
 **완료 기준**: 카메라 거리에 따라 Mip 레벨 동적 로딩/해제, Anisotropic 필터링 적용
+
+#### Phase 27 추가: MipMap Optimization 메뉴 토글 + LOD 기본값 OFF ✅
+**목표**: Optimization 메뉴에 MipMap 런타임 토글을 추가하고, LOD 기본값을 OFF로 변경한다.
+
+1. **HLSL `useMips` 플래그** (`PBR.hlsl`, `PerMaterialCB` b2)
+   - `uint useMips` + `uint3 _padMat` 패딩 추가 (16바이트 정렬 유지)
+   - 전 채널(Albedo/Normal/MetallicRoughness/Emissive/Occlusion) 샘플링 분기:
+     - `useMips == 1`: `Sample(LinearSampler, uv)` — 전체 Mip 체인
+     - `useMips == 0`: `SampleLevel(LinearSampler, uv, 0)` — Mip 0 고정
+
+2. **C++ 구조체 동기화** (`D3D12Context.h`, `PerMaterialConstants`)
+   - `uint32 useMips` + `uint32 _padMat[3]` 추가 (64 → 80바이트)
+   - `SetMipMappingEnabled(bool)` 메서드 + `m_mipMappingEnabled = true` 멤버 추가
+   - `DrawPrimitivesPBR()`: `matConst.useMips = m_mipMappingEnabled ? 1u : 0u`
+
+3. **Renderer 연결** (`Renderer.h`, `Renderer.cpp`)
+   - `SetMipMappingEnabled(bool)` / `IsMipMappingEnabled()` 공개 메서드
+   - LOD 기본값: `m_lodEnabled = false` (기존 `true`에서 변경)
+
+4. **Win32 메뉴 확장** (`Win32Menu.h`, `Win32Menu.cpp`)
+   - `ID_OPTIM_MIPMAP = 8004`, `MipMapToggleCallback`, setter/멤버 추가
+   - `"MipMap"` 항목 추가 (기본 `MF_CHECKED`), LOD 항목 `MF_CHECKED` 제거
+   - `case ID_OPTIM_MIPMAP` 핸들러: `GetMenuState` → `CheckMenuItem` 토글
+
+5. **Engine 콜백** (`Engine.cpp`): `SetMipMapToggleCallback` 연결
+
+**완료 기준**: Optimization > MipMap 토글 시 텍스처 샘플링 전환, LOD 시작 시 기본 OFF
 
 ### Phase 28: Instanced Rendering + 멀티스레드 로딩
 **목표**: 동일 Mesh+Material 인스턴싱, 병렬 리소스 로딩

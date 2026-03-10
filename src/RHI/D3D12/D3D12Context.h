@@ -90,7 +90,9 @@ struct PerMaterialConstants
     uint32 hasOcclusionMap;               // 4
     DirectX::XMFLOAT3 emissiveFactor;    // 12
     uint32 alphaMode;                     // 4  (0=Opaque, 1=Mask, 2=Blend)
-};  // Total: 64 bytes → 256 aligned
+    uint32 useMips;                       // 4  (1=use mip chain, 0=force mip 0)
+    uint32 _padMat[3];                    // 12 (padding to next multiple of 16)
+};  // Total: 80 bytes → 256 aligned
 static_assert(sizeof(PerMaterialConstants) <= 256, "PerMaterialConstants exceeds 256-byte CB slot");
 
 // Shadow mapping constants
@@ -175,6 +177,9 @@ public:
 
     // Set render mode for texture flag overrides (0=Wireframe..4=FullPBRShadows)
     void SetRenderModeInt(int mode) { m_renderModeInt = mode; }
+
+    // Set mip-mapping enabled flag (controls useMips in PerMaterialConstants)
+    void SetMipMappingEnabled(bool enabled) { m_mipMappingEnabled = enabled; }
 
     // PBR draw call: binds 3 CBs (PerObject, Lights, Material) + 5 texture SRVs + shadow data
     void DrawPrimitivesPBR(IRHIBuffer* vb, IRHIBuffer* ib,
@@ -286,6 +291,9 @@ private:
 
     // Render mode (mirrors RenderMode enum: 0=Wireframe..4=FullPBRShadows)
     int m_renderModeInt = 4;
+
+    // Mip-mapping toggle
+    bool m_mipMappingEnabled = true;
 
     // Shadow data (set via SetShadowData)
     ShadowConstants m_shadowConstants = {};

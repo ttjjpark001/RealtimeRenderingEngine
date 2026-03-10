@@ -572,6 +572,7 @@ void D3D12Context::DrawPrimitivesPBR(IRHIBuffer* vb, IRHIBuffer* ib,
         matConst.roughnessFactor = 0.5f;
         matConst.alphaMode = 0;
     }
+    matConst.useMips = m_mipMappingEnabled ? 1u : 0u;
 
     // Render mode texture flag overrides
     // 1=Solid: all texture flags off

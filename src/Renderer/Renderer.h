@@ -57,6 +57,9 @@ public:
     void SetLODEnabled(bool enabled)            { m_lodEnabled = enabled; }
     bool IsLODEnabled() const                   { return m_lodEnabled; }
 
+    void SetMipMappingEnabled(bool enabled);
+    bool IsMipMappingEnabled() const            { return m_mipMappingEnabled; }
+
     // Scene diagonal length — used to scale shadow ortho projection and far plane.
     // Call after loading a scene whenever sceneDiagonal is known.
     void SetSceneDiagonal(float d)              { m_sceneDiagonal = (d > 0.f ? d : 1.f); }
@@ -101,7 +104,8 @@ private:
     ID3D12Device* m_d3dDevice    = nullptr;
     TextureCache* m_textureCache = nullptr;
     RenderMode    m_renderMode             = RenderMode::FullPBRShadows;
-    bool          m_lodEnabled             = true;
+    bool          m_lodEnabled             = false;
+    bool          m_mipMappingEnabled      = true;
     bool          m_frustumCullingEnabled  = true;
     bool          m_lightCullingEnabled    = true;
     float         m_sceneDiagonal          = 10.0f;

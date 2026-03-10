@@ -42,6 +42,7 @@ constexpr UINT ID_RENDER_FULL_PBR_SHADOW = 7005;
 constexpr UINT ID_OPTIM_LOD              = 8001;
 constexpr UINT ID_OPTIM_FRUSTUM_CULL     = 8002;
 constexpr UINT ID_OPTIM_LIGHT_CULL       = 8003;
+constexpr UINT ID_OPTIM_MIPMAP           = 8004;
 
 class Win32Menu
 {
@@ -61,6 +62,7 @@ public:
     using LODToggleCallback          = std::function<void()>;
     using FrustumCullToggleCallback  = std::function<void()>;
     using LightCullToggleCallback    = std::function<void()>;
+    using MipMapToggleCallback       = std::function<void()>;
 
     Win32Menu() = default;
     ~Win32Menu() = default;
@@ -84,6 +86,7 @@ public:
     void SetLODToggleCallback(LODToggleCallback callback)             { m_lodToggleCallback = std::move(callback); }
     void SetFrustumCullToggleCallback(FrustumCullToggleCallback cb)   { m_frustumCullToggleCallback = std::move(cb); }
     void SetLightCullToggleCallback(LightCullToggleCallback cb)       { m_lightCullToggleCallback = std::move(cb); }
+    void SetMipMapToggleCallback(MipMapToggleCallback cb)             { m_mipMapToggleCallback = std::move(cb); }
 
 private:
     HWND m_hwnd = nullptr;
@@ -110,6 +113,7 @@ private:
     LODToggleCallback         m_lodToggleCallback;
     FrustumCullToggleCallback m_frustumCullToggleCallback;
     LightCullToggleCallback   m_lightCullToggleCallback;
+    MipMapToggleCallback      m_mipMapToggleCallback;
 };
 
 } // namespace RRE
