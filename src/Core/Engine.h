@@ -20,6 +20,7 @@ class Camera;
 class Renderer;
 class SceneGraph;
 class TextureCache;
+class TextureStreamer;
 
 struct EngineInitParams
 {
@@ -70,8 +71,10 @@ private:
     std::unique_ptr<Camera> m_camera;
     bool m_showCameraInfo = true;
 
-    // Texture cache
-    std::unique_ptr<TextureCache> m_textureCache;
+    // Texture cache + streamer
+    std::unique_ptr<TextureCache>    m_textureCache;
+    std::unique_ptr<TextureStreamer> m_textureStreamer;
+    float m_vramUpdateTimer = 0.0f;
 
     // Loaded scene data
     std::vector<std::unique_ptr<Mesh>> m_loadedMeshes;

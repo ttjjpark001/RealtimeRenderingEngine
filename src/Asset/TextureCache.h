@@ -2,6 +2,7 @@
 
 #include "Asset/Texture.h"
 
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <memory>
@@ -51,6 +52,10 @@ public:
 
     // Number of cached textures (excluding fallback)
     size_t GetCachedCount() const { return m_cache.size(); }
+
+    // Iterate over all cached textures (excluding fallback).
+    // fn receives (key, texture*) for each entry.
+    void ForEachCached(std::function<void(const std::string&, const Texture*)> fn) const;
 
 private:
     void CreateSRV(ID3D12Device* device, Texture* texture);

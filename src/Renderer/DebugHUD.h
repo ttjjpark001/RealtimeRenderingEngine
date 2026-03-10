@@ -42,6 +42,11 @@ struct RenderStats
 
     // Render mode info (Phase 20)
     const char* renderModeName = "Full PBR + Shadows";
+
+    // Texture streaming stats (Phase 27)
+    uint64 vramUsedMB      = 0;
+    uint64 vramBudgetMB    = 0;
+    uint32 trackedTextures = 0;
 };
 
 class DebugHUD

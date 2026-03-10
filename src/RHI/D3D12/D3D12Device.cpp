@@ -51,6 +51,10 @@ bool D3D12Device::Initialize(void* windowHandle, uint32 width, uint32 height)
         adapter.Reset();
     }
 
+    // Store IDXGIAdapter3 for VRAM budget queries (TextureStreamer)
+    if (adapter)
+        adapter.As(&m_adapter3);
+
     if (!adapter)
     {
         // Fall back to WARP adapter

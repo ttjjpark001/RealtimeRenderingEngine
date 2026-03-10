@@ -81,6 +81,21 @@ void DebugHUD::Render(IRHIContext& context)
     context.DrawText(x, y, buf, green);
     y += lineHeight;
 
+    // Texture streaming / VRAM stats (Phase 27)
+    if (m_lastStats.vramBudgetMB > 0)
+    {
+        snprintf(buf, sizeof(buf), "VRAM: %lluMB / %lluMB",
+            m_lastStats.vramUsedMB, m_lastStats.vramBudgetMB);
+        context.DrawText(x, y, buf, green);
+        y += lineHeight;
+    }
+    if (m_lastStats.trackedTextures > 0)
+    {
+        snprintf(buf, sizeof(buf), "Textures: %u", m_lastStats.trackedTextures);
+        context.DrawText(x, y, buf, green);
+        y += lineHeight;
+    }
+
     // Light info (conditional)
     if (m_lastStats.showLightInfo)
     {

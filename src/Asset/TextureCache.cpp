@@ -222,6 +222,15 @@ void TextureCache::Clear()
         m_srvHeap->SetPersistentIndex(m_basePersistentIndex);
 }
 
+void TextureCache::ForEachCached(std::function<void(const std::string&, const Texture*)> fn) const
+{
+    for (const auto& [key, tex] : m_cache)
+    {
+        if (tex)
+            fn(key, tex.get());
+    }
+}
+
 void TextureCache::ReleaseUploadBuffers()
 {
     if (m_fallbackTexture)

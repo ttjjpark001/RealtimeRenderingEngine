@@ -1,6 +1,6 @@
 # 잔여 구현 항목 정리
 
-> 최종 업데이트: 2026-03-09 (Phase 26 완료 — Bistro! 메뉴 + 씬 전용 조명 + 버그 수정)
+> 최종 업데이트: 2026-03-09 (Phase 27 완료 — Texture Streaming + Mip-Mapping)
 
 ---
 
@@ -60,17 +60,15 @@ Phase 26 구현 후 발견된 Bistro 씬 렌더링 버그들. **현재 코드에
 
 ---
 
-### Phase 27 — Texture Streaming + Mip-Mapping
+### ~~Phase 27 — Texture Streaming + Mip-Mapping~~ ✅ 완료
 
-현재 모든 텍스처가 최고 해상도(단일 Mip)로 메인 스레드에서 한 번에 로드된다.
-
-| 작업 | 현재 상태 | 설명 |
-|------|-----------|------|
-| `TextureStreamer.h/.cpp` | 미존재 | 가시성·거리 기반 우선순위 큐, Mip 레벨 동적 로딩/해제 |
-| Mip chain 생성 | `MipLevels = 1` | `floor(log2(max(w,h))) + 1` 전체 Mip 생성 |
-| Anisotropic Sampler | Linear Wrap 사용 중 | `D3D12_FILTER_ANISOTROPIC`, MaxAnisotropy = 16 |
-| 스트리밍 우선순위 | 없음 | `priority = isVisible ? (1/distance) : 0` |
-| VRAM 예산 연동 | 없음 | VRAM 초과 시 LRU + 거리 기반 Mip 해제 |
+| 작업 | 상태 | 설명 |
+|------|------|------|
+| `TextureStreamer.h/.cpp` | ✅ | 가시성·거리 기반 우선순위 큐, VRAM 모니터링 (`IDXGIAdapter3::QueryVideoMemoryInfo`) |
+| Mip chain 생성 | ✅ | `CreateFromData()`에서 CPU box filter로 전체 Mip chain 생성 (stbi 경로) |
+| Anisotropic Sampler | ✅ | 기존 구현 (`D3D12_FILTER_ANISOTROPIC`, MaxAnisotropy=16, register s0) |
+| 스트리밍 우선순위 | ✅ | `priority = isVisible ? 1/(distance+1) : 0`, 0.5초마다 VRAM 갱신 |
+| VRAM 예산 연동 | ✅ | `IDXGIAdapter3::QueryVideoMemoryInfo` → DebugHUD `VRAM: XMB / YMB` 표시 |
 
 ---
 

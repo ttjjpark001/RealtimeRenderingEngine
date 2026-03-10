@@ -1,9 +1,42 @@
 #include "Asset/Texture.h"
 
 #include <DirectXTex.h>
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <vector>
+
+namespace
+{
+    // Generate the next mip level from src (RGBA8, srcW×srcH) using a 2×2 box filter.
+    std::vector<uint8_t> BoxFilterDownscale(const uint8_t* src, uint32_t srcW, uint32_t srcH)
+    {
+        uint32_t dstW = (std::max)(1u, srcW / 2);
+        uint32_t dstH = (std::max)(1u, srcH / 2);
+        std::vector<uint8_t> dst(static_cast<size_t>(dstW) * dstH * 4, 0);
+
+        for (uint32_t y = 0; y < dstH; ++y)
+        {
+            for (uint32_t x = 0; x < dstW; ++x)
+            {
+                uint32_t sx  = x * 2;
+                uint32_t sy  = y * 2;
+                uint32_t sx1 = (std::min)(sx + 1, srcW - 1);
+                uint32_t sy1 = (std::min)(sy + 1, srcH - 1);
+
+                for (uint32_t c = 0; c < 4; ++c)
+                {
+                    uint32_t val = src[(sy  * srcW + sx ) * 4 + c]
+                                 + src[(sy  * srcW + sx1) * 4 + c]
+                                 + src[(sy1 * srcW + sx ) * 4 + c]
+                                 + src[(sy1 * srcW + sx1) * 4 + c];
+                    dst[(y * dstW + x) * 4 + c] = static_cast<uint8_t>(val / 4);
+                }
+            }
+        }
+        return dst;
+    }
+} // anonymous namespace
 
 namespace RRE
 {
@@ -15,105 +48,130 @@ bool Texture::CreateFromData(ID3D12Device* device, ID3D12GraphicsCommandList* cm
     if (!device || !cmdList || !pixels || width == 0 || height == 0)
         return false;
 
-    m_width = width;
+    m_width  = width;
     m_height = height;
     m_format = format;
 
-    const uint32 bytesPerPixel = 4; // RGBA
-    const uint32 rowPitch = width * bytesPerPixel;
+    constexpr uint32 kBytesPerPixel = 4; // RGBA8
 
-    // Create DEFAULT heap texture resource
+    // --- Build full mip chain on CPU using box filter ---
+    uint32 mipCount = 1;
+    {
+        uint32 w = width, h = height;
+        while (w > 1 || h > 1) { w = (std::max)(1u, w / 2); h = (std::max)(1u, h / 2); ++mipCount; }
+    }
+    m_mipLevels = static_cast<uint16>(mipCount);
+
+    std::vector<std::vector<uint8_t>> mipData(mipCount);
+    mipData[0].assign(pixels, pixels + static_cast<size_t>(width) * height * kBytesPerPixel);
+    {
+        uint32 srcW = width, srcH = height;
+        for (uint32 mip = 1; mip < mipCount; ++mip)
+        {
+            mipData[mip] = BoxFilterDownscale(mipData[mip - 1].data(), srcW, srcH);
+            srcW = (std::max)(1u, srcW / 2);
+            srcH = (std::max)(1u, srcH / 2);
+        }
+    }
+
+    // --- Create DEFAULT heap texture with all mip levels ---
     D3D12_RESOURCE_DESC texDesc = {};
-    texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-    texDesc.Width = width;
-    texDesc.Height = height;
+    texDesc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    texDesc.Width            = width;
+    texDesc.Height           = height;
     texDesc.DepthOrArraySize = 1;
-    texDesc.MipLevels = 1;
-    texDesc.Format = format;
+    texDesc.MipLevels        = static_cast<UINT16>(mipCount);
+    texDesc.Format           = format;
     texDesc.SampleDesc.Count = 1;
-    texDesc.SampleDesc.Quality = 0;
-    texDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-    texDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+    texDesc.Layout           = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    texDesc.Flags            = D3D12_RESOURCE_FLAG_NONE;
 
     D3D12_HEAP_PROPERTIES defaultHeapProps = {};
     defaultHeapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
 
     HRESULT hr = device->CreateCommittedResource(
-        &defaultHeapProps,
-        D3D12_HEAP_FLAG_NONE,
-        &texDesc,
-        D3D12_RESOURCE_STATE_COPY_DEST,
-        nullptr,
-        IID_PPV_ARGS(&m_resource));
-
+        &defaultHeapProps, D3D12_HEAP_FLAG_NONE,
+        &texDesc, D3D12_RESOURCE_STATE_COPY_DEST,
+        nullptr, IID_PPV_ARGS(&m_resource));
     if (FAILED(hr))
         return false;
 
-    // Calculate required upload buffer size
-    D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint = {};
+    // --- Query footprints for all mip levels ---
+    std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> footprints(mipCount);
+    std::vector<uint32> numRows(mipCount);
+    std::vector<uint64> rowSizes(mipCount);
     uint64 totalBytes = 0;
-    device->GetCopyableFootprints(&texDesc, 0, 1, 0, &footprint, nullptr, nullptr, &totalBytes);
+    device->GetCopyableFootprints(&texDesc, 0, mipCount, 0,
+        footprints.data(), numRows.data(), rowSizes.data(), &totalBytes);
 
-    // Create UPLOAD heap buffer
+    // --- Create UPLOAD heap buffer for all mips ---
     D3D12_HEAP_PROPERTIES uploadHeapProps = {};
     uploadHeapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
 
     D3D12_RESOURCE_DESC bufferDesc = {};
-    bufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-    bufferDesc.Width = totalBytes;
-    bufferDesc.Height = 1;
+    bufferDesc.Dimension        = D3D12_RESOURCE_DIMENSION_BUFFER;
+    bufferDesc.Width            = totalBytes;
+    bufferDesc.Height           = 1;
     bufferDesc.DepthOrArraySize = 1;
-    bufferDesc.MipLevels = 1;
-    bufferDesc.Format = DXGI_FORMAT_UNKNOWN;
+    bufferDesc.MipLevels        = 1;
+    bufferDesc.Format           = DXGI_FORMAT_UNKNOWN;
     bufferDesc.SampleDesc.Count = 1;
-    bufferDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    bufferDesc.Layout           = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 
     hr = device->CreateCommittedResource(
-        &uploadHeapProps,
-        D3D12_HEAP_FLAG_NONE,
-        &bufferDesc,
-        D3D12_RESOURCE_STATE_GENERIC_READ,
-        nullptr,
-        IID_PPV_ARGS(&m_uploadBuffer));
-
+        &uploadHeapProps, D3D12_HEAP_FLAG_NONE,
+        &bufferDesc, D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr, IID_PPV_ARGS(&m_uploadBuffer));
     if (FAILED(hr))
         return false;
 
-    // Copy pixel data into upload buffer (row by row, respecting pitch alignment)
+    // --- Map and copy all mip levels into upload buffer ---
     uint8* mapped = nullptr;
     D3D12_RANGE readRange = { 0, 0 };
     hr = m_uploadBuffer->Map(0, &readRange, reinterpret_cast<void**>(&mapped));
     if (FAILED(hr))
         return false;
 
-    uint8* dst = mapped + footprint.Offset;
-    for (uint32 row = 0; row < height; ++row)
+    uint32 mipW = width, mipH = height;
+    for (uint32 mip = 0; mip < mipCount; ++mip)
     {
-        memcpy(dst + row * footprint.Footprint.RowPitch,
-               pixels + row * rowPitch,
-               rowPitch);
+        const uint8* src = mipData[mip].data();
+        uint32 srcRowPitch = mipW * kBytesPerPixel;
+        uint8* dst = mapped + footprints[mip].Offset;
+        uint64 copySize = rowSizes[mip] < srcRowPitch ? rowSizes[mip] : srcRowPitch;
+        for (uint32 row = 0; row < numRows[mip]; ++row)
+        {
+            memcpy(dst + row * footprints[mip].Footprint.RowPitch,
+                   src + row * srcRowPitch,
+                   static_cast<size_t>(copySize));
+        }
+        mipW = (std::max)(1u, mipW / 2);
+        mipH = (std::max)(1u, mipH / 2);
     }
     m_uploadBuffer->Unmap(0, nullptr);
 
-    // Copy from upload buffer to texture resource
-    D3D12_TEXTURE_COPY_LOCATION srcLoc = {};
-    srcLoc.pResource = m_uploadBuffer.Get();
-    srcLoc.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-    srcLoc.PlacedFootprint = footprint;
+    // --- Issue CopyTextureRegion for each mip level ---
+    for (uint32 mip = 0; mip < mipCount; ++mip)
+    {
+        D3D12_TEXTURE_COPY_LOCATION srcLoc = {};
+        srcLoc.pResource        = m_uploadBuffer.Get();
+        srcLoc.Type             = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+        srcLoc.PlacedFootprint  = footprints[mip];
 
-    D3D12_TEXTURE_COPY_LOCATION dstLoc = {};
-    dstLoc.pResource = m_resource.Get();
-    dstLoc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-    dstLoc.SubresourceIndex = 0;
+        D3D12_TEXTURE_COPY_LOCATION dstLoc = {};
+        dstLoc.pResource        = m_resource.Get();
+        dstLoc.Type             = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        dstLoc.SubresourceIndex = mip;
 
-    cmdList->CopyTextureRegion(&dstLoc, 0, 0, 0, &srcLoc, nullptr);
+        cmdList->CopyTextureRegion(&dstLoc, 0, 0, 0, &srcLoc, nullptr);
+    }
 
-    // Transition from COPY_DEST to PIXEL_SHADER_RESOURCE
+    // --- Transition to PIXEL_SHADER_RESOURCE ---
     D3D12_RESOURCE_BARRIER barrier = {};
-    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barrier.Transition.pResource = m_resource.Get();
+    barrier.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource   = m_resource.Get();
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    barrier.Transition.StateAfter  = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     cmdList->ResourceBarrier(1, &barrier);
 

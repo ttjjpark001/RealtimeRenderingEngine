@@ -17,6 +17,7 @@
 #include "Asset/SceneLoader.h"
 #include "Asset/Material.h"
 #include "Asset/TextureCache.h"
+#include "Asset/TextureStreamer.h"
 #include <DirectXMath.h>
 #include <commdlg.h>
 
@@ -77,6 +78,10 @@ bool Engine::Initialize(const EngineInitParams& params)
         context->EndUploadCommands();
         m_textureCache->ReleaseUploadBuffers();
         m_renderer->SetTextureCache(m_textureCache.get());
+
+        // Initialize texture streamer (VRAM monitoring + priority tracking)
+        m_textureStreamer = std::make_unique<TextureStreamer>();
+        m_textureStreamer->Initialize(d3dDevice->GetDXGIAdapter3());
     }
 
     // Create menu
@@ -246,6 +251,7 @@ void Engine::Shutdown()
         m_rhiDevice->Shutdown();
     }
 
+    m_textureStreamer.reset();
     m_textureCache.reset();
     m_renderer.reset();
     m_loadedMeshes.clear();
@@ -326,6 +332,17 @@ void Engine::Update(float deltaTime)
         if (GetAsyncKeyState(VK_OEM_MINUS) & 0x8000)  m_camera->AdjustFov(-5.0f * deltaTime);
     }
 
+    // Update texture streamer: refresh VRAM stats every 0.5 s
+    if (m_textureStreamer)
+    {
+        m_vramUpdateTimer += deltaTime;
+        if (m_vramUpdateTimer >= 0.5f)
+        {
+            m_textureStreamer->UpdateVRAM();
+            m_vramUpdateTimer = 0.0f;
+        }
+    }
+
     // Update debug HUD
     if (m_debugHUD)
     {
@@ -392,6 +409,15 @@ void Engine::Update(float deltaTime)
             stats.frustumCulledNodes = cs.frustumCulledNodes;
             stats.activeLights       = cs.activeLights;
             stats.culledLights       = cs.culledLights;
+        }
+
+        // Texture streaming stats (Phase 27)
+        if (m_textureStreamer)
+        {
+            auto ss = m_textureStreamer->GetStats();
+            stats.vramUsedMB       = ss.vram.usedMB;
+            stats.vramBudgetMB     = ss.vram.budgetMB;
+            stats.trackedTextures  = ss.trackedTextures;
         }
 
         m_debugHUD->Update(deltaTime, stats);
@@ -716,6 +742,7 @@ void Engine::LoadScene(const std::string& filePath)
     // Clear previous scene resources
     if (m_renderer) m_renderer->ClearMeshCache();
     if (m_textureCache) m_textureCache->Clear();
+    if (m_textureStreamer) m_textureStreamer->Clear();
     m_loadedMeshes.clear();
     m_loadedMaterials.clear();
 
@@ -880,6 +907,15 @@ void Engine::LoadScene(const std::string& filePath)
         m_renderer->SetSceneDiagonal(m_sceneDiagonal);
         if (worldBounds.IsValid())
             m_renderer->SetSceneCenter(worldBounds.GetCenter());
+    }
+
+    // Register loaded textures with the streamer for VRAM tracking + priority scoring
+    if (m_textureStreamer && m_textureCache)
+    {
+        m_textureCache->ForEachCached([this](const std::string& key, const Texture*) {
+            m_textureStreamer->Register(key);
+        });
+        m_textureStreamer->UpdateVRAM();
     }
 
     // Select shadow map resolution based on scene size and recreate shadow maps.

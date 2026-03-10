@@ -102,6 +102,7 @@
     <ClCompile Include="Asset\SceneLoader.cpp" />
     <ClCompile Include="Asset\Texture.cpp" />
     <ClCompile Include="Asset\TextureCache.cpp" />
+    <ClCompile Include="Asset\TextureStreamer.cpp" />
     <ClCompile Include="Platform\Win32\Win32Window.cpp" />
     <ClCompile Include="Platform\Win32\Win32Menu.cpp" />
     <ClCompile Include="RHI\D3D12\D3D12Device.cpp" />
@@ -159,6 +160,7 @@
     <ClInclude Include="Asset\Material.h" />
     <ClInclude Include="Asset\Texture.h" />
     <ClInclude Include="Asset\TextureCache.h" />
+    <ClInclude Include="Asset\TextureStreamer.h" />
   </ItemGroup>
 
   <!-- Shader Files (CustomBuild: compile VS and PS from single HLSL) -->

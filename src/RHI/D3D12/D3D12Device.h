@@ -27,6 +27,7 @@ public:
     bool InitializeWARP(void* windowHandle, uint32 width, uint32 height);
 
     ID3D12Device* GetD3DDevice() const { return m_device.Get(); }
+    IDXGIAdapter3* GetDXGIAdapter3() const { return m_adapter3.Get(); }
 
 private:
     bool CreateDevice(IDXGIAdapter1* adapter);
@@ -34,6 +35,7 @@ private:
 
     Microsoft::WRL::ComPtr<IDXGIFactory6> m_factory;
     Microsoft::WRL::ComPtr<ID3D12Device> m_device;
+    Microsoft::WRL::ComPtr<IDXGIAdapter3> m_adapter3;
 
     D3D12Context m_context;
     D3D12SwapChain m_swapChain;
