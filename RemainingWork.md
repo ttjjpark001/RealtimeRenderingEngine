@@ -1,6 +1,6 @@
 # 잔여 구현 항목 정리
 
-> 최종 업데이트: 2026-03-09 (Phase 27 완료 — Texture Streaming + Mip-Mapping)
+> 최종 업데이트: 2026-03-13 (Phase 29 완료 — GPU 메모리 최적화)
 
 ---
 
@@ -57,67 +57,6 @@ Phase 26 구현 후 발견된 Bistro 씬 렌더링 버그들. **현재 코드에
    - SceneSettings.md에 최종 DepthBias/SlopeScaledDepthBias/해상도 값 미기록
 
 3. **doubleSided PSO 분기** (Phase 32): 전역 CullMode=NONE → Material.doubleSided 기반 PSO 분기로 교체 (RM-11)
-
----
-
-### ~~Phase 27 — Texture Streaming + Mip-Mapping~~ ✅ 완료
-
-| 작업 | 상태 | 설명 |
-|------|------|------|
-| `TextureStreamer.h/.cpp` | ✅ | 가시성·거리 기반 우선순위 큐, VRAM 모니터링 (`IDXGIAdapter3::QueryVideoMemoryInfo`) |
-| Mip chain 생성 | ✅ | `CreateFromData()`에서 CPU box filter로 전체 Mip chain 생성 (stbi 경로) |
-| Anisotropic Sampler | ✅ | 기존 구현 (`D3D12_FILTER_ANISOTROPIC`, MaxAnisotropy=16, register s0) |
-| 스트리밍 우선순위 | ✅ | `priority = isVisible ? 1/(distance+1) : 0`, 0.5초마다 VRAM 갱신 |
-| VRAM 예산 연동 | ✅ | `IDXGIAdapter3::QueryVideoMemoryInfo` → DebugHUD `VRAM: XMB / YMB` 표시 |
-
----
-
-### Phase 28 — Instanced Rendering + 멀티스레드 로딩
-
-**Instanced Rendering**
-
-| 작업 | 현재 상태 | 설명 |
-|------|-----------|------|
-| `InstanceBatcher.h/.cpp` | 미존재 | 동일 Mesh+Material 그룹핑, Instance Buffer 생성 |
-| `DrawIndexedInstanced` | 미사용 | 현재 동일 Mesh라도 노드마다 개별 Draw 호출 |
-| per-instance Input Layout | 없음 | slot 1: `INSTANCE_WORLD` (4×float4, per-instance) |
-| HLSL `SV_InstanceID` | 없음 | VS에서 Instance Buffer World Matrix 인덱싱 |
-
-**멀티스레드 로딩**
-
-| 작업 | 현재 상태 | 설명 |
-|------|-----------|------|
-| `ThreadPool.h/.cpp` | 미존재 | CPU 코어 수 기반 워커 스레드 |
-| 텍스처 디코딩 병렬화 | 순차 실행 | 씬 로드 중 메인 스레드 프리즈 원인 |
-| Copy Queue | 없음 | Graphics Queue와 병렬 GPU 업로드 |
-
----
-
-### Phase 29 — GPU 메모리 최적화
-
-**CB 풀링**
-
-| 작업 | 현재 상태 | 설명 |
-|------|-----------|------|
-| `D3D12CBPool.h/.cpp` | 미존재 | Upload Heap 풀, 256바이트 정렬, 링 버퍼 (프레임 0/1 영역 분리) |
-| Per-Object / Per-Material CB 분리 | 없음 | `register b0` (오브젝트), `register b2` (Material) |
-
-**갱신 최적화**
-
-| 작업 | 현재 상태 | 설명 |
-|------|-----------|------|
-| Transform Dirty Flag | 없음 | 변경 없으면 CB 갱신 스킵 |
-| Material Dirty Flag | 없음 | Material 파라미터 미변경 시 갱신 스킵 |
-| Light CB Dirty Flag | 없음 | 광원 데이터 미변경 시 갱신 스킵 |
-| VRAM 모니터링 | 없음 | `IDXGIAdapter3::QueryVideoMemoryInfo`, DebugHUD 표시 |
-| 적응적 CB 갱신 | 없음 | VRAM > Budget 80% 시 저우선순위 오브젝트 갱신 빈도 감소 |
-
-**정렬 최적화**
-
-| 작업 | 현재 상태 | 설명 |
-|------|-----------|------|
-| Opaque Front-to-Back 정렬 | 없음 | Early-Z rejection 극대화 |
-| Material 기반 드로우콜 정렬 | 없음 | PSO/텍스처 상태 전환 최소화 |
 
 ---
 
@@ -419,14 +358,6 @@ Phase 36 완료 후 진행. G-Buffer / Post-Processing / Ray Tracing / Neural Re
     │           Frustum Culling 버그 재조사 (Frustum 시각화 도구 구현 후)
     │           Shadow Map 시각적 튜닝 + SceneSettings.md 기록
     │           doubleSided PSO 분기는 Phase 32에서 처리
-    │
-Phase 27    Texture Streaming + Mip-Mapping
-    │           + Anisotropic Sampler 교체
-    │
-Phase 28    Instanced Rendering + 멀티스레드 로딩
-    │
-Phase 29    GPU 메모리 최적화
-    │           (CBPool + Dirty Flag + Front-to-Back + VRAM 모니터링)
     │
 Phase 30    통합 & 벤치마크 (Sponza/Bistro 60fps 목표)
     │
