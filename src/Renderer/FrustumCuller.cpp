@@ -12,8 +12,7 @@ void FrustumCuller::Build(const XMMATRIX& view, const XMMATRIX& projection)
     BoundingFrustum::CreateFromMatrix(frustumVS, projection);
 
     // Transform to world space using the inverse view matrix.
-    XMVECTOR det;
-    XMMATRIX invView = XMMatrixInverse(&det, view);
+    XMMATRIX invView = XMMatrixInverse(nullptr, view);
     frustumVS.Transform(m_frustum, invView);
 
     m_isBuilt = true;

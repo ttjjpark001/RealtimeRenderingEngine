@@ -1,5 +1,8 @@
 #pragma once
 
+// Windows/DirectX headers must precede project headers here because
+// RHIContext.h declares DrawTextW, which relies on HWND and other Win32
+// types that are only available after <windows.h> is pulled in via d3d12.h.
 #include <d3d12.h>
 #include <d3d11on12.h>
 #include <d2d1_1.h>

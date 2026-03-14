@@ -205,7 +205,11 @@ float SampleShadowMap(uint idx, float2 uv, float depth)
 
 float CalcShadow(uint shadowIdx, float3 worldPos)
 {
-    // Clamp index so FXC can prove lightViewProj access is in-bounds (suppresses X4000).
+    // Pre-initialize result so FXC dataflow analysis can prove the return value
+    // is always defined regardless of the SampleCmpLevelZero comparison-sampler path.
+    float result = 1.0f;
+
+    // Clamp index so FXC can prove lightViewProj access is in-bounds.
     shadowIdx = min(shadowIdx, MAX_SHADOW_MAPS - 1);
     float4 lightSpacePos = mul(float4(worldPos, 1.0f), lightViewProj[shadowIdx]);
     float3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
@@ -214,23 +218,28 @@ float CalcShadow(uint shadowIdx, float3 worldPos)
     float2 uv = float2(projCoords.x * 0.5f + 0.5f, -projCoords.y * 0.5f + 0.5f);
     float depth = projCoords.z;
 
-    // Out of shadow map range → no shadow
-    if (uv.x < 0.0f || uv.x > 1.0f || uv.y < 0.0f || uv.y > 1.0f || depth > 1.0f || depth < 0.0f)
-        return 1.0f;
-
-    // PCF 3x3
-    float shadow = 0.0f;
-    float texelSize = shadowTexelSize;
-    [unroll]
-    for (int y = -1; y <= 1; y++)
+    // Only run PCF when the fragment is inside the shadow map's NDC cube.
+    // Using a conditional block instead of an early return avoids FXC X4000.
+    bool inRange = (uv.x >= 0.0f && uv.x <= 1.0f &&
+                    uv.y >= 0.0f && uv.y <= 1.0f &&
+                    depth >= 0.0f && depth <= 1.0f);
+    if (inRange)
     {
+        // PCF 3x3
+        float shadow = 0.0f;
+        float texelSize = shadowTexelSize;
         [unroll]
-        for (int x = -1; x <= 1; x++)
+        for (int y = -1; y <= 1; y++)
         {
-            shadow += saturate(SampleShadowMap(shadowIdx, uv + float2(x, y) * texelSize, depth));
+            [unroll]
+            for (int x = -1; x <= 1; x++)
+            {
+                shadow += saturate(SampleShadowMap(shadowIdx, uv + float2(x, y) * texelSize, depth));
+            }
         }
+        result = shadow / 9.0f;
     }
-    return shadow / 9.0f;
+    return result;
 }
 
 // ---------------------------------------------------------------------------
