@@ -901,9 +901,10 @@ Shadow Map 해상도·DepthBias·SlopeScaledDepthBias 시각적 확인 후 최�
 
 **완료 기준**: CB 풀에서 슬롯 할당, VRAM 예산 초과 시 적응적 동작, Dirty Flag 갱신 스킵
 
-### Phase 30: Phase 02 통합 & 최종 검증
-**목표**: 전체 Phase 02 기능 통합, 대형 씬 벤치마크
+### Phase 30: Phase 02 통합 & 검증, 코드 리뷰, 아키텍처 문서화
+**목표**: 전체 Phase 02 기능 통합·검증, 코드 품질 점검, 성능 최적화, UX 개선, ARCHITECTURE.md 작성
 
+#### 30-1. 통합 & 최종 검증
 1. 전체 렌더 파이프라인 통합 (12단계):
    Scene Graph 순회 → Frustum Culling → Occlusion Culling → LOD(자동 LOD 포함) → Light Culling →
    Instance Batching → Texture Streaming → CB 갱신 → Material 정렬 → Front-to-Back → Shadow Pass → Main Pass
@@ -915,9 +916,69 @@ Shadow Map 해상도·DepthBias·SlopeScaledDepthBias 시각적 확인 후 최�
 6. 모든 유닛 테스트 + 스모크 테스트 통과
 7. 성능 프로파일링 및 최적화 조정
 
-**완료 기준**: Sponza급 씬을 PBR+Shadow+최적화로 60fps 이상 렌더링, 모든 테스트 통과
+#### 30-2. 전체 코드 리뷰
+1. 모든 소스 파일을 순회하며 코드 품질 점검
+2. 사용되지 않는 코드(dead code), 불필요한 include, 중복 로직 제거
+3. 네이밍 컨벤션 일관성 검증 (PascalCase/camelCase/UPPER_SNAKE_CASE)
+4. OWASP 취약점 점검: 버퍼 오버플로우, 범위 초과 접근, null 역참조 등
+5. COM 객체/GPU 리소스 해제 누락 검사 (Fence 대기 후 해제 보장)
+6. 스마트 포인터/ComPtr 사용 일관성 검증
 
-### Phase 31: RRScenePreprocessor — 오프라인 씬 전처리 도구 + 백그라운드 자동 생성
+#### 30-3. 성능 최적화
+1. GPU 프로파일링: PIX 또는 타임스탬프 쿼리로 병목 구간 식별
+2. CPU 프로파일링: 핫 루프, 불필요한 메모리 할당, 과도한 복사 제거
+3. D3D12 Warning/Error 메시지 전수 확인 (Debug Layer)
+4. 셰이더 최적화: 불필요한 분기 제거, 상수 폴딩, 레지스터 압력 점검
+5. 드로우콜 수, 상태 전환 횟수 최소화 확인
+6. 메모리 누수 점검 (D3D12 Live Object 리포트)
+
+#### 30-4. UX 개선
+1. **드래그 앤 드롭**: Win32 `WM_DROPFILES` 처리 → 파일 경로 추출 → `LoadScene()` 호출
+2. **Camera 중클릭 패닝**: 중클릭 드래그 시 right·up 벡터 기준 카메라 평행 이동
+
+#### 30-5. 버그 수정 및 엣지 케이스 처리
+1. 모든 유닛 테스트 + 스모크 테스트 재실행, 실패 항목 수정
+2. 윈도우 리사이즈/모드 전환 중 안정성 확인
+3. 빈 씬(메시 0개), Material 없는 Mesh, 텍스처 없는 Material 등 엣지 케이스 처리
+4. 대형 씬 로딩 중 메모리 부족 시 graceful 처리
+5. 멀티스레드 race condition 검증 (ThreadSanitizer 또는 수동 검증)
+6. **glTF `doubleSided` PSO 분기**: 현재 PBR Opaque/Blend PSO의 전역 `CullMode=NONE` 임시 방편을 교체.
+   Material의 `doubleSided` 플래그를 기준으로 PSO 선택:
+   `doubleSided=false` → `CullMode=BACK` (성능 최적, 대부분의 solid geometry)
+   `doubleSided=true`  → `CullMode=NONE`  (커튼·나뭇잎 등 양면 렌더링 필요 머티리얼)
+   PBR.hlsl의 `SV_IsFrontFace` 법선 반전은 `CullMode=NONE` PSO에서만 의미 있음.
+
+#### 30-6. ARCHITECTURE.md 작성
+1. 프로젝트 전체 디렉토리 구조 + 각 파일의 역할 설명
+2. 모듈 간 의존성 다이어그램 (텍스트 기반)
+3. 엔진 초기화 → 메인 루프 → 종료까지의 동작 흐름
+4. 프레임당 렌더링 파이프라인 흐름 (12단계 상세)
+5. 주요 클래스 관계도 (Engine, Renderer, SceneGraph, RHI, Asset 등)
+6. D3D12 리소스 라이프사이클 (생성 → 사용 → 해제)
+7. 데이터 흐름: CPU(SceneLoader) → Memory(SceneGraph/Material/Texture) → GPU(CB/VB/IB/SRV)
+8. 스레딩 모델: 메인 스레드 vs 워커 스레드 vs Copy Queue
+9. 셰이더 파이프라인: 입력 레이아웃, CB 레지스터 맵, 텍스처 바인딩 포인트
+10. 기존 PRD/PLAN/CLAUDE와의 참조 관계 명시
+
+**완료 기준**: Sponza급 씬을 PBR+Shadow+최적화로 60fps 이상 렌더링, 모든 테스트 통과,
+D3D12 Debug Layer 경고 0건, PBR.hlsl X4000 잔존 경고 제거, ARCHITECTURE.md 작성 완료
+
+---
+
+### Phase 31: Phase 02 Backup
+**목표**: Phase 02 전체 구현 완료 직후 현재 상태를 `Phase 02 Backup/` 폴더에 백업하여 Phase 03 작업의 안전망 확보.
+
+1. 프로젝트 루트에 `Phase 02 Backup/` 폴더를 생성하고, 루트의 전체 소스를 복사:
+   - 복사 대상: `src/`, `tests/`, `assets/`, `docs/`, `*.sln`, `*.md` 등 소스 파일 전체
+   - **제외 항목**: `Phase 01 Backup/` (이중 백업 방지), `bin/`, `.git/`, `*.user`, `*.suo`, `ipch/` 등 빌드 산출물 및 IDE 캐시
+2. 백업 완료 후 `Phase 02 Backup/README.md`에 백업 일시, Phase 02 최종 완료 상태를 기록
+3. **`Phase 02 Backup/` 폴더 안의 파일은 백업 후 절대 수정하지 않는다.** 이후 어떠한 Phase 구현에서도 이 폴더를 참조만 하고 절대 건드리지 않는다.
+
+**완료 기준**: `Phase 02 Backup/` 폴더가 생성되고, 현재 소스 파일이 모두 복사됨. README.md에 백업 일시와 상태 기록.
+
+---
+
+### Phase 32: RRScenePreprocessor — 오프라인 씬 전처리 도구 + 백그라운드 자동 생성
 **목표**: glTF/GLB/FBX 씬을 처리하여 엔진 전용 바이너리(`.rrscene`)로 저장하는 파이프라인을 구현한다.
 두 가지 진입점을 제공한다: ① 독립 CLI 도구(`RRScenePreprocessor.exe`), ② 표준 경로 로딩 완료 후
 렌더링 앱 내 백그라운드 자동 생성. 렌더링 앱은 `.rrscene`을 직접 로드하여 GPU 업로드만 수행한다.
@@ -958,55 +1019,6 @@ Shadow Map 해상도·DepthBias·SlopeScaledDepthBias 시각적 확인 후 최�
 
 ---
 
-### Phase 32: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
-**목표**: 전체 코드 품질 점검, 성능 최적화, 버그 수정, ARCHITECTURE.md 작성
-
-1. **전체 코드 리뷰**:
-   - 모든 소스 파일을 순회하며 코드 품질 점검
-   - 사용되지 않는 코드(dead code), 불필요한 include, 중복 로직 제거
-   - 네이밍 컨벤션 일관성 검증 (PascalCase/camelCase/UPPER_SNAKE_CASE)
-   - OWASP 취약점 점검: 버퍼 오버플로우, 범위 초과 접근, null 역참조 등
-   - COM 객체/GPU 리소스 해제 누락 검사 (Fence 대기 후 해제 보장)
-   - 스마트 포인터/ComPtr 사용 일관성 검증
-
-2. **성능 최적화**:
-   - GPU 프로파일링: PIX 또는 타임스탬프 쿼리로 병목 구간 식별
-   - CPU 프로파일링: 핫 루프, 불필요한 메모리 할당, 과도한 복사 제거
-   - D3D12 Warning/Error 메시지 전수 확인 (Debug Layer)
-   - 셰이더 최적화: 불필요한 분기 제거, 상수 폴딩, 레지스터 압력 점검
-   - 드로우콜 수, 상태 전환 횟수 최소화 확인
-   - 메모리 누수 점검 (D3D12 Live Object 리포트)
-
-3. **UX 개선**:
-   - **드래그 앤 드롭**: Win32 `WM_DROPFILES` 처리 → 파일 경로 추출 → `LoadScene()` 호출
-   - **Camera 중클릭 패닝**: 중클릭 드래그 시 right·up 벡터 기준 카메라 평행 이동
-
-4. **버그 수정 및 엣지 케이스 처리**:
-   - 모든 유닛 테스트 + 스모크 테스트 재실행, 실패 항목 수정
-   - 윈도우 리사이즈/모드 전환 중 안정성 확인
-   - 빈 씬(메시 0개), Material 없는 Mesh, 텍스처 없는 Material 등 엣지 케이스 처리
-   - 대형 씬 로딩 중 메모리 부족 시 graceful 처리
-   - 멀티스레드 race condition 검증 (ThreadSanitizer 또는 수동 검증)
-   - **glTF `doubleSided` PSO 분기**: 현재 PBR Opaque/Blend PSO의 전역 `CullMode=NONE` 임시 방편을 교체.
-     Material의 `doubleSided` 플래그를 기준으로 PSO 선택:
-     `doubleSided=false` → `CullMode=BACK` (성능 최적, 대부분의 solid geometry)
-     `doubleSided=true`  → `CullMode=NONE`  (커튼·나뭇잎 등 양면 렌더링 필요 머티리얼)
-     PBR.hlsl의 `SV_IsFrontFace` 법선 반전은 `CullMode=NONE` PSO에서만 의미 있음.
-
-5. **ARCHITECTURE.md 작성**:
-   - 프로젝트 전체 디렉토리 구조 + 각 파일의 역할 설명
-   - 모듈 간 의존성 다이어그램 (텍스트 기반)
-   - 엔진 초기화 → 메인 루프 → 종료까지의 동작 흐름
-   - 프레임당 렌더링 파이프라인 흐름 (11단계 상세)
-   - 주요 클래스 관계도 (Engine, Renderer, SceneGraph, RHI, Asset 등)
-   - D3D12 리소스 라이프사이클 (생성 → 사용 → 해제)
-   - 데이터 흐름: CPU(SceneLoader) → Memory(SceneGraph/Material/Texture) → GPU(CB/VB/IB/SRV)
-   - 스레딩 모델: 메인 스레드 vs 워커 스레드 vs Copy Queue
-   - 셰이더 파이프라인: 입력 레이아웃, CB 레지스터 맵, 텍스처 바인딩 포인트
-   - 기존 PRD/PLAN/CLAUDE와의 참조 관계 명시
-
-**완료 기준**: 전체 코드 리뷰 완료, 모든 테스트 통과, D3D12 Debug Layer 경고 0건, PBR.hlsl X4000 잔존 경고 제거, ARCHITECTURE.md 작성 완료
-
 ## Phase 02 의존성 그래프
 
 ```
@@ -1034,13 +1046,13 @@ Phase 11 (Phase 01 완료)
     ├── Phase 28 (Instancing+멀티스레드) ────────────────────────────────────┤
     ├── Phase 29 (GPU 메모리 최적화) ────────────────────────────────────────┤
     │                                                                        │
-    └────────────────────────────────────────────────────── Phase 30 (통합) ─┘
-                                                                             │
-                                                            Phase 31 (RRScenePreprocessor: .rrscene 전처리 도구) ─┘
-                                                                             │
-                                                            Phase 32 (코드 리뷰 + ARCHITECTURE.md)
-                                                                             ↓
-                                                                     Phase 03 시작 (Phase 33~48)
+    └──────────────────────────────── Phase 30 (통합+코드리뷰+문서화) ─┘
+                                                                       │
+                                                      Phase 31 (Phase 02 Backup) ─┘
+                                                                       │
+                                                      Phase 32 (RRScenePreprocessor: .rrscene 전처리 도구)
+                                                                       ↓
+                                                              Phase 03 시작 (Phase 32~49)
 ```
 
 ## Phase 02 리스크 & 대응
@@ -1064,7 +1076,7 @@ Phase 11 (Phase 01 완료)
 > 지연 렌더링(Deferred Shading), 포스트 프로세싱, 레이 트레이싱, 신경망 업스케일링 등
 > 최신 실시간 렌더링 기법을 단계적으로 추가한다.
 
-**포함 Phase**: Phase 33 ~ Phase 49
+**포함 Phase**: Phase 32 ~ Phase 49
 
 ---
 
@@ -1072,13 +1084,6 @@ Phase 11 (Phase 01 완료)
 **목표**: 현재 P0 스텁(항상 false)인 `OcclusionCuller`를 GPU Hi-Z 방식으로 완전 구현.
 CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 현재 엔진에 Compute Shader 인프라가 없으므로, 먼저 인프라를 구축한 뒤 Hi-Z를 구현한다.
-
-0. **Phase 02 Backup 생성** *(Phase 33 구현 시작 전 최초 1회)*:
-   - 프로젝트 루트에 `Phase 02 Backup/` 폴더를 생성하고, 루트의 전체 소스(`src/`, `tests/`, `assets/`, `shaders/` 등)를 복사한다.
-   - `Phase 01 Backup/` 폴더는 복사 대상에서 제외한다 (이중 백업 방지).
-   - `bin/`, `.git/`, `*.user`, `*.suo`, `ipch/` 등 빌드 산출물 및 IDE 캐시는 제외한다.
-   - 백업 완료 후 `Phase 02 Backup/README.md`에 백업 일시, Phase 02 최종 완료 상태를 기록한다.
-   - **`Phase 02 Backup/` 폴더 안의 파일은 백업 후 절대 수정하지 않는다. 이후 어떠한 Phase 구현에서도 이 폴더를 참조만 하고 절대 건드리지 않는다.**
 
 1. **Compute Shader 인프라 구축**:
    - `D3D12ComputePipeline.h/.cpp`: CS 전용 Root Signature + ID3D12PipelineState(CS)

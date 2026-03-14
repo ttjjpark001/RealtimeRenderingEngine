@@ -998,7 +998,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 19를 구현
    - 대각선 길이 기반 적절한 카메라 거리 산출
    - "Camera" 메뉴에 "Fit to Scene" 항목으로 수동 호출 가능
 
-4. 드래그 앤 드롭을 구현한다. (→ Phase 32에서 구현 예정)
+4. 드래그 앤 드롭을 구현한다. (→ Phase 30에서 구현 예정)
    - DragAcceptFiles(hwnd, TRUE) 호출
    - WM_DROPFILES → DragQueryFile로 파일 경로 추출 → 위 2와 동일 흐름
 
@@ -1007,7 +1007,7 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 19를 구현
      마우스 이동량 → Yaw/Pitch 회전 (FPS 스타일)
    - 마우스 휠 (WM_MOUSEWHEEL):
      전진/후진 (돌리 줌)
-   - 중클릭 드래그 (WM_MBUTTONDOWN + WM_MOUSEMOVE): (→ Phase 32에서 구현 예정)
+   - 중클릭 드래그 (WM_MBUTTONDOWN + WM_MOUSEMOVE): (→ Phase 30에서 구현 예정)
      상하좌우 패닝
    - 이동 속도 자동 조절: 씬 바운딩 박스 크기에 비례
 
@@ -1878,10 +1878,13 @@ VRAM 사용량이 HUD에 표시되는지 확인하라.
 
 ---
 
-## Prompt 30: Phase 02 통합 & 최종 검증
+## Prompt 30: Phase 02 통합 & 검증, 코드 리뷰, 아키텍처 문서화
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 30를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 30을 구현하라.
+이 단계는 Phase 02의 모든 기능을 통합·검증하고, 코드 품질을 점검하며, UX를 개선하고, ARCHITECTURE.md를 작성한다.
+
+### 30-1. 전체 렌더 파이프라인 통합 & 최종 검증
 
 1. 전체 렌더 파이프라인을 12단계로 통합한다.
    ① Scene Graph 순회 → AABB + 월드 행렬 수집
@@ -1926,15 +1929,131 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 30를 구현
    - 기존 Phase 01 유닛/스모크 테스트 통과 확인
    - Phase 02 테스트: test_Material, test_FrustumCuller, test_SceneLoader
 
-문제가 있으면 수정하라.
+### 30-2. 전체 코드 리뷰
+
+1. src/ 하위 모든 소스 파일(.h, .cpp, .hlsl)을 순회하며 코드 품질을 점검한다.
+2. 점검 항목:
+   a. 사용되지 않는 코드(dead code), 불필요한 #include, 중복 로직 → 제거
+   b. 네이밍 컨벤션 일관성: PascalCase(클래스/메서드), camelCase(변수), UPPER_SNAKE_CASE(상수)
+   c. 보안 점검: 버퍼 오버플로우, 범위 초과 접근, null 역참조, 초기화되지 않은 변수
+   d. COM 객체/GPU 리소스 해제 누락: Fence 대기 후 해제가 보장되는지 확인
+   e. 스마트 포인터(unique_ptr) 및 ComPtr 사용 일관성
+   f. HLSL 셰이더: 미사용 register, 불필요한 분기, 0으로 나누기 방지 (NdotL, NdotV 등)
+   g. 헤더 가드: 모든 .h 파일에 #pragma once 확인
+   h. include 순서: 자기 헤더 → 프로젝트 → DirectX/Windows → 표준 라이브러리
+3. 발견된 문제를 즉시 수정한다.
+
+### 30-3. 성능 최적화
+
+1. D3D12 Debug Layer를 활성화하고 Warning/Error 메시지를 전수 확인한다.
+   모든 경고를 0건으로 만든다.
+2. D3D12 Live Object 리포트로 메모리 누수를 점검한다.
+   (ID3D12DebugDevice::ReportLiveDeviceObjects)
+3. CPU 측 핫 루프 점검: 불필요한 메모리 할당, 과도한 std::vector 복사,
+   매 프레임 반복되는 비효율적 연산 식별 및 최적화
+4. GPU 측 점검: 드로우콜 수, PSO 상태 전환 횟수가 Material 정렬로 최소화되었는지 확인
+5. 셰이더 최적화: 불필요한 동적 분기를 상수 분기로 대체 가능한 곳 확인
+
+### 30-4. UX 개선
+
+1. 드래그 앤 드롭 씬 로딩을 구현한다.
+   - Win32Window::Initialize()에서 DragAcceptFiles(hwnd, TRUE) 호출
+   - WndProc에 WM_DROPFILES 핸들러 추가:
+     · DragQueryFile(hDrop, 0, path, MAX_PATH)로 첫 번째 파일 경로 추출
+     · 확장자 확인: .gltf / .glb / .fbx인 경우에만 Engine::LoadScene() 호출
+     · DragFinish(hDrop) 호출
+
+2. Camera 중클릭 드래그 패닝을 구현한다.
+   - Win32Input에서 WM_MBUTTONDOWN / WM_MBUTTONUP / WM_MOUSEMOVE 처리
+   - 중클릭 드래그 델타 → Camera right/up 벡터 기준 position 이동
+     · panSpeed = m_moveSpeedScale * deltaPixels * panSensitivity
+     · position += right * (-deltaX * panSpeed) + up * (deltaY * panSpeed)
+
+### 30-5. 버그 수정 및 엣지 케이스 처리
+
+1. 모든 유닛 테스트 + 스모크 테스트를 재실행한다. 실패 항목이 있으면 수정한다.
+2. 엣지 케이스 검증:
+   a. 빈 씬 (메시 0개): 크래시 없이 빈 화면 렌더링
+   b. Material 없는 Mesh: vertex-color 폴백으로 정상 렌더링
+   c. 텍스처 없는 Material: factor 값으로 폴백 렌더링
+   d. 대형 씬 로딩 중 메모리 부족: 오류 메시지 출력 후 graceful 복구
+   e. 윈도우 리사이즈/모드 전환 중 씬 로딩: 크래시 없이 처리
+   f. 잘못된 파일 경로/손상된 파일 로딩: 오류 처리 및 사용자 알림
+   g. **glTF `doubleSided` PSO 분기**: 현재 PBR PSO가 전역 `CullMode=NONE`(임시 방편)인 상태를 수정한다.
+      - `D3D12PipelineState`에 `CullMode=BACK` PBR PSO와 `CullMode=NONE` PBR PSO를 별도로 생성한다.
+      - `Renderer::RenderScene()`에서 `material->doubleSided` 여부에 따라 PSO를 선택한다.
+      - `PBR.hlsl`의 `SV_IsFrontFace` 법선 반전은 `CullMode=NONE` PSO 드로우콜에서만 의미 있음 (그대로 유지).
+3. 멀티스레드 안전성: 텍스처 교체, 상태 플래그 읽기/쓰기에 race condition 없는지 확인
+
+### 30-6. ARCHITECTURE.md 작성
+
+ARCHITECTURE.md를 프로젝트 루트에 작성한다. 다음 내용을 포함한다:
+
+   a. 프로젝트 개요 (1~2문단)
+   b. 전체 디렉토리 구조 (트리 형태) + 각 디렉토리/파일의 역할 설명
+   c. 모듈 의존성 다이어그램 (텍스트 기반):
+      Engine → Renderer → RHI(IRHIDevice/IRHIContext) → D3D12 백엔드
+      Engine → SceneGraph → SceneNode → Mesh + Material
+      Engine → Asset(SceneLoader/TextureCache/TextureStreamer)
+      Engine → Lighting(LightManager)
+      Engine → Platform(Win32Window/Win32Menu/Win32Input)
+   d. 엔진 라이프사이클:
+      Initialize → MainLoop(ProcessMessages → Update → Render) → Shutdown
+      각 단계에서 호출되는 주요 함수/클래스
+   e. 프레임당 렌더링 파이프라인 (12단계 상세):
+      각 단계의 입력/출력, 담당 클래스, 데이터 흐름
+   f. 주요 클래스 관계도 (텍스트 기반 UML 스타일):
+      Engine, Renderer, SceneGraph, Camera, LightManager,
+      SceneLoader, Material, Texture, TextureCache, TextureStreamer,
+      CBPool, FrustumCuller, OcclusionCuller, LODSelector, InstanceBatcher
+   g. D3D12 리소스 라이프사이클:
+      생성(CreateCommittedResource) → 상태 전이(Resource Barrier) → 사용(Draw) → 해제(Fence 대기)
+   h. 데이터 흐름 다이어그램:
+      파일(glTF/FBX) → Assimp 파싱 → SceneGraph/Material/Texture(CPU)
+      → Upload Buffer → Default Heap(GPU) → CB/VB/IB/SRV → 셰이더
+   i. 스레딩 모델:
+      메인 스레드(게임 루프, GPU 커맨드) vs 워커 스레드(텍스처 디코딩) vs Copy Queue(GPU 업로드)
+   j. 셰이더 바인딩 맵:
+      register b0~b2(CB), t0~t13(SRV), s0~s1(Sampler)
+      각 register에 바인딩되는 데이터 설명
+   k. 렌더링 모드별 파이프라인 차이:
+      Wireframe / Solid / BaseColor / FullPBR / FullPBR+Shadows
+   l. 참조 문서: PRD.md, PLAN.md, PROMPT.md, CLAUDE.md 역할 설명
+
+빌드하여 모든 테스트가 통과하고, D3D12 Debug Layer 경고가 0건이며,
+Sponza급 씬을 60fps 이상으로 렌더링하고, ARCHITECTURE.md가 작성되었는지 확인하라.
 ```
 
 ---
 
-## Prompt 31: RRScenePreprocessor — 오프라인 씬 전처리 도구 + 백그라운드 자동 생성
+## Prompt 31: Phase 02 Backup
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 31 섹션과 GoodToPreprocess.md를 참조하여 Phase 31를 구현하라.
+Phase 30 구현이 완료된 직후, Phase 02 전체 구현 상태를 "Phase 02 Backup/" 폴더에 백업하라.
+
+1. 프로젝트 루트에 "Phase 02 Backup/" 폴더를 생성하고, 루트의 전체 소스를 복사한다.
+   - 복사 대상: src/, tests/, assets/, docs/, *.sln, *.md 등 소스 파일 전체
+   - 제외 항목: "Phase 01 Backup/" (이중 백업 방지), bin/, .git/, *.user, *.suo, ipch/ 등
+     빌드 산출물 및 IDE 캐시
+   - PowerShell robocopy 예시:
+     robocopy . "Phase 02 Backup" /E /XD "Phase 01 Backup" "bin" ".git" "ipch" "x64" /XF "*.user" "*.suo"
+
+2. 백업 완료 후 "Phase 02 Backup/README.md"에 다음 내용을 기록한다.
+   - 백업 일시
+   - Phase 02 최종 완료 상태 (구현된 기능 목록)
+
+3. "Phase 02 Backup/" 폴더 안의 파일은 백업 후 절대 수정하지 않는다.
+   이후 어떠한 Phase 구현에서도 이 폴더를 참조만 하고 절대 건드리지 않는다.
+
+백업이 완료되면 "Phase 02 Backup/" 폴더의 파일 수와 총 용량을 확인하여 보고하라.
+```
+
+---
+
+## Prompt 32: RRScenePreprocessor — 오프라인 씬 전처리 도구 + 백그라운드 자동 생성
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 32 섹션과 GoodToPreprocess.md를 참조하여 Phase 32를 구현하라.
 이 단계는 .rrscene 전처리 파이프라인을 공용 클래스로 구현하고,
 CLI 도구와 렌더링 앱 내 백그라운드 자동 생성의 두 진입점을 제공한다.
 
@@ -2015,103 +2134,6 @@ CLI 도구와 렌더링 앱 내 백그라운드 자동 생성의 두 진입점�
 
 ---
 
-## Prompt 32: 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
-
-```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 02 섹션을 참조하여 Phase 32를 구현하라.
-이 단계는 Phase 02의 마지막 단계로, UX 개선 2건을 구현하고 전체 코드 품질을 점검하며 ARCHITECTURE.md를 작성한다.
-
-1. UX 개선 항목을 구현한다.
-   a. 드래그 앤 드롭 씬 로딩을 구현한다.
-      - Win32Window::Initialize()에서 DragAcceptFiles(hwnd, TRUE) 호출
-      - WndProc에 WM_DROPFILES 핸들러 추가:
-        · DragQueryFile(hDrop, 0, path, MAX_PATH)로 첫 번째 파일 경로 추출
-        · 확장자 확인: .gltf / .glb / .fbx인 경우에만 Engine::LoadScene() 호출
-        · DragFinish(hDrop) 호출
-   b. Camera 중클릭 드래그 패닝을 구현한다.
-      - Win32Input에서 WM_MBUTTONDOWN / WM_MBUTTONUP / WM_MOUSEMOVE 처리
-      - 중클릭 드래그 델타 → Camera right/up 벡터 기준 position 이동
-        · panSpeed = m_moveSpeedScale * deltaPixels * panSensitivity
-        · position += right * (-deltaX * panSpeed) + up * (deltaY * panSpeed)
-
-2. 전체 코드 리뷰를 수행한다.
-   - src/ 하위 모든 소스 파일(.h, .cpp, .hlsl)을 순회하며 코드 품질을 점검한다.
-   - 점검 항목:
-     a. 사용되지 않는 코드(dead code), 불필요한 #include, 중복 로직 → 제거
-     b. 네이밍 컨벤션 일관성: PascalCase(클래스/메서드), camelCase(변수), UPPER_SNAKE_CASE(상수)
-     c. 보안 점검: 버퍼 오버플로우, 범위 초과 접근, null 역참조, 초기화되지 않은 변수
-     d. COM 객체/GPU 리소스 해제 누락: Fence 대기 후 해제가 보장되는지 확인
-     e. 스마트 포인터(unique_ptr) 및 ComPtr 사용 일관성
-     f. HLSL 셰이더: 미사용 register, 불필요한 분기, 0으로 나누기 방지 (NdotL, NdotV 등)
-     g. 헤더 가드: 모든 .h 파일에 #pragma once 확인
-     h. include 순서: 자기 헤더 → 프로젝트 → DirectX/Windows → 표준 라이브러리
-   - 발견된 문제를 즉시 수정한다.
-
-3. 성능 최적화를 수행한다.
-   - D3D12 Debug Layer를 활성화하고 Warning/Error 메시지를 전수 확인한다.
-     모든 경고를 0건으로 만든다.
-   - D3D12 Live Object 리포트로 메모리 누수를 점검한다.
-     (ID3D12DebugDevice::ReportLiveDeviceObjects)
-   - CPU 측 핫 루프 점검: 불필요한 메모리 할당, 과도한 std::vector 복사,
-     매 프레임 반복되는 비효율적 연산 식별 및 최적화
-   - GPU 측 점검: 드로우콜 수, PSO 상태 전환 횟수가 Material 정렬로 최소화되었는지 확인
-   - 셰이더 최적화: 불필요한 동적 분기를 상수 분기로 대체 가능한 곳 확인
-
-4. 버그 수정 및 엣지 케이스를 처리한다.
-   - 모든 유닛 테스트 + 스모크 테스트를 재실행한다. 실패 항목이 있으면 수정한다.
-   - 엣지 케이스 검증:
-     a. 빈 씬 (메시 0개): 크래시 없이 빈 화면 렌더링
-     b. Material 없는 Mesh: vertex-color 폴백으로 정상 렌더링
-     c. 텍스처 없는 Material: factor 값으로 폴백 렌더링
-     d. 대형 씬 로딩 중 메모리 부족: 오류 메시지 출력 후 graceful 복구
-     e. 윈도우 리사이즈/모드 전환 중 씬 로딩: 크래시 없이 처리
-     f. 잘못된 파일 경로/손상된 파일 로딩: 오류 처리 및 사용자 알림
-     g. **glTF `doubleSided` PSO 분기**: 현재 PBR PSO가 전역 `CullMode=NONE`(임시 방편)인 상태를 수정한다.
-        - `D3D12PipelineState`에 `CullMode=BACK` PBR PSO와 `CullMode=NONE` PBR PSO를 별도로 생성한다.
-        - `Renderer::RenderScene()`에서 `material->doubleSided` 여부에 따라 PSO를 선택한다.
-        - `PBR.hlsl`의 `SV_IsFrontFace` 법선 반전은 `CullMode=NONE` PSO 드로우콜에서만 의미 있음 (그대로 유지).
-   - 멀티스레드 안전성: 텍스처 교체, 상태 플래그 읽기/쓰기에 race condition 없는지 확인
-
-5. ARCHITECTURE.md를 프로젝트 루트에 작성한다.
-   다음 내용을 포함한다:
-
-   a. 프로젝트 개요 (1~2문단)
-   b. 전체 디렉토리 구조 (트리 형태) + 각 디렉토리/파일의 역할 설명
-   c. 모듈 의존성 다이어그램 (텍스트 기반):
-      Engine → Renderer → RHI(IRHIDevice/IRHIContext) → D3D12 백엔드
-      Engine → SceneGraph → SceneNode → Mesh + Material
-      Engine → Asset(SceneLoader/TextureCache/TextureStreamer)
-      Engine → Lighting(LightManager)
-      Engine → Platform(Win32Window/Win32Menu/Win32Input)
-   d. 엔진 라이프사이클:
-      Initialize → MainLoop(ProcessMessages → Update → Render) → Shutdown
-      각 단계에서 호출되는 주요 함수/클래스
-   e. 프레임당 렌더링 파이프라인 (12단계 상세):
-      각 단계의 입력/출력, 담당 클래스, 데이터 흐름
-   f. 주요 클래스 관계도 (텍스트 기반 UML 스타일):
-      Engine, Renderer, SceneGraph, Camera, LightManager,
-      SceneLoader, Material, Texture, TextureCache, TextureStreamer,
-      CBPool, FrustumCuller, OcclusionCuller, LODSelector, InstanceBatcher
-   g. D3D12 리소스 라이프사이클:
-      생성(CreateCommittedResource) → 상태 전이(Resource Barrier) → 사용(Draw) → 해제(Fence 대기)
-   h. 데이터 흐름 다이어그램:
-      파일(glTF/FBX) → Assimp 파싱 → SceneGraph/Material/Texture(CPU)
-      → Upload Buffer → Default Heap(GPU) → CB/VB/IB/SRV → 셰이더
-   i. 스레딩 모델:
-      메인 스레드(게임 루프, GPU 커맨드) vs 워커 스레드(텍스처 디코딩) vs Copy Queue(GPU 업로드)
-   j. 셰이더 바인딩 맵:
-      register b0~b2(CB), t0~t13(SRV), s0~s1(Sampler)
-      각 register에 바인딩되는 데이터 설명
-   k. 렌더링 모드별 파이프라인 차이:
-      Wireframe / Solid / BaseColor / FullPBR / FullPBR+Shadows
-   l. 참조 문서: PRD.md, PLAN.md, PROMPT.md, CLAUDE.md 역할 설명
-
-빌드하여 모든 테스트가 통과하고, D3D12 Debug Layer 경고가 0건이며,
-ARCHITECTURE.md가 프로젝트 루트에 생성되었는지 확인하라.
-```
-
----
-
 ## Prompt 33: Occlusion Culling — Hi-Z GPU
 
 ```
@@ -2119,16 +2141,6 @@ PRD.md, PLAN.md(Phase 33), CLAUDE.md를 참조하여 Phase 33을 구현하라.
 이 단계는 현재 P0 스텁(항상 false)인 OcclusionCuller를 GPU Hi-Z 방식으로 완전 구현한다.
 CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 현재 엔진에 Compute Shader 인프라가 없으므로, 먼저 인프라를 구축한다.
-
-0. Phase 02 Backup을 생성한다 (구현 시작 전 최초 1회만 수행).
-   - 프로젝트 루트에 "Phase 02 Backup/" 폴더를 생성한다.
-   - src/, tests/, assets/, shaders/ 등 소스 파일 전체를 복사한다.
-   - "Phase 01 Backup/" 폴더는 복사 대상에서 반드시 제외한다 (이중 백업 방지).
-   - bin/, .git/, *.user, *.suo, ipch/, x64/ 등 빌드 산출물 및 IDE 캐시는 제외한다.
-   - 백업 완료 후 "Phase 02 Backup/README.md"를 생성하여 백업 일시와
-     Phase 02 최종 완료 상태(구현된 기능 목록)를 기록한다.
-   - **백업 완료 후 "Phase 02 Backup/" 폴더 안의 파일은 절대 수정하지 않는다.
-     이후 어떠한 Phase 구현에서도 이 폴더를 참조만 하고 절대 건드리지 않는다.**
 
 1. Compute Shader 인프라를 구축한다.
    - src/RHI/D3D12/D3D12ComputePipeline.h/.cpp를 신규 생성한다.

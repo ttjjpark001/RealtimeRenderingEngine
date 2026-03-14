@@ -26,11 +26,11 @@ Phase 26 구현 후 발견된 Bistro 씬 렌더링 버그들. **현재 코드에
 | TRANSIENT_DESCRIPTORS 32768 | 8c62105 | Bistro 551 mesh × 17 = 9,367 때문에 증가. Sponza(~103 mesh)는 2,048 이하면 충분. 증가 자체는 무해하지만 Bistro 전용 스케일링. |
 | PERSISTENT_DESCRIPTORS 2048 | 8c62105 | 유사하게 Bistro 텍스처 수 기준 증가. 소형 씬은 512로도 충분. |
 
-**임시 방편 (Phase 32 교체 대상)**
+**임시 방편 (Phase 30 교체 대상)**
 
 | 수정 내용 | 커밋 | 비고 |
 |-----------|------|------|
-| 전역 CullMode=NONE + SV_IsFrontFace | be6be78 | Phase 32에서 Material.doubleSided 기반 PSO 분기로 교체 예정 (RM-11) |
+| 전역 CullMode=NONE + SV_IsFrontFace | be6be78 | Phase 30에서 Material.doubleSided 기반 PSO 분기로 교체 예정 (RM-11) |
 
 **일반적으로 필요한 수정 (모든 씬에 유효)**
 
@@ -56,13 +56,13 @@ Phase 26 구현 후 발견된 Bistro 씬 렌더링 버그들. **현재 코드에
    - 확인 필요: 외부 바닥 → 기둥 접촉면 → 계단/경사 지붕 → 원거리 가로등 → 실내외 개구부
    - SceneSettings.md에 최종 DepthBias/SlopeScaledDepthBias/해상도 값 미기록
 
-3. **doubleSided PSO 분기** (Phase 32): 전역 CullMode=NONE → Material.doubleSided 기반 PSO 분기로 교체 (RM-11)
+3. **doubleSided PSO 분기** (Phase 30): 전역 CullMode=NONE → Material.doubleSided 기반 PSO 분기로 교체 (RM-11)
 
 ---
 
-### Phase 30 — 통합 & 벤치마크
+### Phase 30 — 통합 & 검증, 코드 리뷰, 아키텍처 문서화
 
-Phase 27~29 완료 후 전체 파이프라인 연결 및 검증.
+Phase 27~29 완료 후 전체 파이프라인 연결 및 검증, 코드 품질 점검, UX 개선, 아키텍처 문서화.
 
 | 작업 | 설명 |
 |------|------|
@@ -71,10 +71,33 @@ Phase 27~29 완료 후 전체 파이프라인 연결 및 검증.
 | 대형 씬 벤치마크 | Sponza, Bistro 로딩 + Full PBR + Shadows + 모든 최적화 활성 상태에서 60fps 목표 |
 | 5단계 렌더링 모드 전체 확인 | Wireframe / Solid / Base Color / Full PBR / Full PBR+Shadows |
 | 전체 테스트 통과 확인 | 유닛 + 스모크 통과 |
+| 전체 코드 리뷰 | Dead code 제거, include 정리, 네이밍 일관성 검증 |
+| PBR.hlsl CalcShadow X4000 경고 | FXC 컴파일러 한계 (비교 샘플러 + 동적 cbuffer 인덱스). Texture2DArray로의 리팩터링 또는 FXC 업데이트로 재검토 |
+| glTF doubleSided PSO 분기 (RM-11) | 전역 CullMode=NONE → Material.doubleSided 기반 PSO 선택: `false`→CullMode=BACK, `true`→CullMode=NONE |
+| GPU 리소스 해제 누락 검사 | Fence 대기 후 해제 보장, ComPtr 사용 일관성 |
+| Shadow Map SRV 누수 정리 | RecreateShadowMaps() 시 이전 SRV 8개 누수 — persistent heap 관리 정리 |
+| PIX / 타임스탬프 쿼리 프로파일링 | 병목 구간 식별 및 최적화 |
+| 드래그 앤 드롭 씬 로딩 | WM_DROPFILES 처리 → Engine::LoadScene() 호출 |
+| Camera 중클릭 패닝 | WM_MBUTTONDOWN + WM_MOUSEMOVE → right/up 벡터 기준 패닝 |
+| `ARCHITECTURE.md` 작성 | 전체 엔진 구조, 모듈 간 의존성, 렌더 파이프라인 다이어그램 |
 
 ---
 
-### Phase 31 — RRScenePreprocessor (오프라인 전처리 도구 + 백그라운드 자동 생성)
+### Phase 31 — Phase 02 Backup
+
+Phase 30 완료 직후 현재 소스 상태를 `Phase 02 Backup/` 폴더에 백업.
+
+| 작업 | 설명 |
+|------|------|
+| 폴더 생성 및 복사 | src/, tests/, assets/, docs/, *.sln, *.md 등 전체 복사 |
+| 제외 항목 | `Phase 01 Backup/`, bin/, .git/, *.user, *.suo, ipch/ 등 빌드 산출물 |
+| README.md 작성 | 백업 일시, Phase 02 최종 완료 상태(구현 기능 목록) 기록 |
+
+> **백업 완료 후 `Phase 02 Backup/` 폴더 안의 파일은 절대 수정하지 않는다.**
+
+---
+
+### Phase 32 — RRScenePreprocessor (오프라인 전처리 도구 + 백그라운드 자동 생성)
 
 glTF/GLB/FBX 씬을 처리하여 엔진 전용 바이너리(`.rrscene`)로 저장하는 파이프라인.
 
@@ -93,26 +116,7 @@ glTF/GLB/FBX 씬을 처리하여 엔진 전용 바이너리(`.rrscene`)로 저�
 
 ---
 
-### Phase 32 — 코드 리뷰 & 문서화
-
-| 작업 | 설명 |
-|------|------|
-| 전체 코드 리뷰 | Dead code 제거, include 정리, 네이밍 일관성 검증 |
-| PBR.hlsl CalcShadow X4000 경고 | FXC 컴파일러 한계 (비교 샘플러 + 동적 cbuffer 인덱스). Texture2DArray로의 리팩터링 또는 FXC 업데이트로 재검토 |
-| glTF doubleSided PSO 분기 (RM-11) | 전역 CullMode=NONE → Material.doubleSided 기반 PSO 선택: `false`→CullMode=BACK, `true`→CullMode=NONE |
-| GPU 리소스 해제 누락 검사 | Fence 대기 후 해제 보장, ComPtr 사용 일관성 |
-| Shadow Map SRV 누수 정리 | RecreateShadowMaps() 시 이전 SRV 8개 누수 — persistent heap 관리 정리 |
-| PIX / 타임스탬프 쿼리 프로파일링 | 병목 구간 식별 및 최적화 |
-| `ARCHITECTURE.md` 작성 | 전체 엔진 구조, 모듈 간 의존성, 렌더 파이프라인 다이어그램 |
-
----
-
 ### Phase 33 — Occlusion Culling (Hi-Z GPU)
-
-> **Phase 33 시작 전**: Phase 02 Backup 생성 (1회)
-> - `Phase 02 Backup/` 폴더에 src/, tests/, assets/, shaders/ 복사
-> - `Phase 01 Backup/` 및 빌드 산출물(bin/, .git/, *.user 등) 제외
-> - **백업 완료 후 `Phase 02 Backup/` 폴더 안의 파일은 절대 수정하지 않는다.**
 
 현재 `OcclusionCuller::IsOccluded()`는 항상 `false`를 반환하는 스텁이다.
 CPU Readback 간이 방식을 거치지 않고 GPU Hi-Z 방식으로 바로 구현한다.
@@ -357,16 +361,16 @@ Phase 36 완료 후 진행. G-Buffer / Post-Processing / Ray Tracing / Neural Re
 [버그] Bistro 씬 렌더링 버그 수정 (나중에)
     │           Frustum Culling 버그 재조사 (Frustum 시각화 도구 구현 후)
     │           Shadow Map 시각적 튜닝 + SceneSettings.md 기록
-    │           doubleSided PSO 분기는 Phase 32에서 처리
+    │           doubleSided PSO 분기는 Phase 30에서 처리
     │
-Phase 30    통합 & 벤치마크 (Sponza/Bistro 60fps 목표)
+Phase 30    통합 & 검증 + 코드 리뷰 + UX 개선 + ARCHITECTURE.md (Sponza/Bistro 60fps 목표)
     │
-Phase 31    RRScenePreprocessor (.rrscene 오프라인 전처리 도구)
+Phase 31    Phase 02 Backup (src/, tests/, assets/ 등 전체 복사 → "Phase 02 Backup/")
+    │
+Phase 32    RRScenePreprocessor (.rrscene 오프라인 전처리 도구)
     │           Assimp 파싱·이미지 디코딩·LOD·Mip chain 오프라인 처리
     │           렌더러 이중 로딩 경로 (고속/.rrscene + 표준/Assimp)
     │           → Sponza/Bistro 로딩 시간 ~90% 단축
-    │
-Phase 32    코드 리뷰 + doubleSided PSO 분기(RM-11) + CalcShadow X4000 재검토 + ARCHITECTURE.md
     │
 Phase 33    Occlusion Culling (Hi-Z GPU)
     │           CPU Readback 단계 없이 바로 Hi-Z GPU 구현
@@ -405,5 +409,5 @@ Phase 49    Phase 03 코드 리뷰 + 최적화 + 버그 수정 + ARCHITECTURE.md
 
 ## 기타 메모
 
-- **PBR.hlsl CalcShadow X4000 경고**: FXC 컴파일러 한계 — 비교 샘플러(`SamplerComparisonState`)와 동적 cbuffer 인덱스 조합 quirk. Phase 32에서 `Texture2DArray` 방식으로 리팩터링 검토.
+- **PBR.hlsl CalcShadow X4000 경고**: FXC 컴파일러 한계 — 비교 샘플러(`SamplerComparisonState`)와 동적 cbuffer 인덱스 조합 quirk. Phase 30에서 `Texture2DArray` 방식으로 리팩터링 검토.
 - **Occlusion Culling Optimization 메뉴 항목**: Phase 33 구현 시 `ID_OPTIM_OCCLUSION_CULL = 8004` 추가.

@@ -31,7 +31,7 @@ vcpkg integrate install
 RealtimeRenderingEngine.sln
 ├── RREngine (src/)                  — 엔진 (Windows Application, SubSystem: Windows)
 ├── RREngineTests (tests/)           — 테스트 (Console Application, SubSystem: Console)
-├── RRScenePreprocessor (src/Tools/) — 오프라인 씬 전처리 CLI 도구 (Console Application) [Phase 31]
+├── RRScenePreprocessor (src/Tools/) — 오프라인 씬 전처리 CLI 도구 (Console Application) [Phase 32]
 └── docs (가상 폴더)                 — PRD.md, PLAN.md, PROMPT.md, CLAUDE.md
 ```
 
@@ -533,7 +533,7 @@ struct Light {
 - Alpha Blend용 PSO: 블렌딩 활성화, depth write 비활성화
 - Double-sided용: 래스터라이저 cull mode = none
   - **현재 구현 (임시)**: 전역 `CullMode=NONE` — Bistro 대응용 임시 방편. glTF `doubleSided=false` 머티리얼도 backface를 렌더링하므로 성능 손실 발생.
-  - **Phase 32 교체 예정**: `Material.doubleSided` 플래그 기반 PSO 분기 — `false` → `CullMode=BACK`, `true` → `CullMode=NONE`. `PBR.hlsl`의 `SV_IsFrontFace` 법선 반전은 `CullMode=NONE` PSO에서만 적용.
+  - **Phase 30에서 구현 예정**: `Material.doubleSided` 플래그 기반 PSO 분기 — `false` → `CullMode=BACK`, `true` → `CullMode=NONE`. `PBR.hlsl`의 `SV_IsFrontFace` 법선 반전은 `CullMode=NONE` PSO에서만 적용.
 
 ### 셰이더 확장 — Cook-Torrance BRDF
 
@@ -872,11 +872,12 @@ Phase 02 완료 코드 위에 GPU-Driven 컬링, 고급 섀도잉, 스켈레탈 
 지연 렌더링(Deferred Shading), 포스트 프로세싱, 레이 트레이싱, 신경망 업스케일링 등
 최신 실시간 렌더링 기법을 단계적으로 추가한다.
 
-**포함 Phase**: Phase 33 (Phase 02 Backup + Occlusion Culling Hi-Z) ~ Phase 49 (코드 리뷰 + 아키텍처 문서화)
+**포함 Phase**: Phase 32 (RRScenePreprocessor) ~ Phase 49 (코드 리뷰 + 아키텍처 문서화)
 
 | 소구분 Phase | 주요 내용 |
 |-------------|----------|
-| Phase 33 | **Phase 02 Backup 생성** + Occlusion Culling — Hi-Z GPU (Compute Shader 인프라 포함) |
+| Phase 32 | RRScenePreprocessor — 오프라인 씬 전처리 도구 + 백그라운드 자동 생성 |
+| Phase 33 | Occlusion Culling — Hi-Z GPU (Compute Shader 인프라 포함) |
 | Phase 34 | Point Light Cube Map Shadowing (Omnidirectional Shadow) |
 | Phase 35 | Skeletal Animation (Node TRS + Skin/Bone GPU Skinning) |
 | Phase 36 | RRScenePreprocessor 확장 — Skeletal Animation 지원 (.rrscene v2) |
@@ -894,7 +895,7 @@ Phase 02 완료 코드 위에 GPU-Driven 컬링, 고급 섀도잉, 스켈레탈 
 | Phase 48 | Neural Upscaling (FSR 3 / DLSS 3) + Neural Denoising (NRD SDK) |
 | Phase 49 | 코드 리뷰 + 성능 최적화 + 버그 수정 + ARCHITECTURE.md 완성 |
 
-> **Phase 02 Backup 정책**: Phase 33 구현 시작 전 최초 1회만 수행.
+> **Phase 02 Backup 정책**: Phase 31에서 최초 1회 수행 (Phase 30 완료 직후).
 > `Phase 02 Backup/` 폴더에 src/, tests/, assets/, shaders/ 전체 복사.
 > `Phase 01 Backup/` 및 빌드 산출물(bin/, .git/, *.user 등)은 제외.
 > **백업 완료 후 `Phase 02 Backup/` 폴더 안의 파일은 절대 수정하지 않는다. 이후 어떠한 Phase 구현에서도 이 폴더를 참조만 하고 절대 건드리지 않는다.**
