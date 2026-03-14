@@ -27,6 +27,13 @@ bool D3D12PipelineState::Initialize(ID3D12Device* device)
     if (m_pbrVertexShader && m_pbrPixelShader)
         CreatePBRAlphaBlendPipelineState(device);
 
+    // Double-Sided PSOs (CullMode=NONE, for Material.doubleSided=true)
+    if (m_pbrVertexShader && m_pbrPixelShader)
+    {
+        CreatePBRDoubleSidedPipelineState(device);
+        CreatePBRAlphaBlendDoubleSidedPipelineState(device);
+    }
+
     // Wireframe PSO is optional
     if (LoadWireframeShaders())
         CreateWireframePipelineState(device);
@@ -39,6 +46,8 @@ void D3D12PipelineState::Shutdown()
     m_wireframePipelineState.Reset();
     m_wireframeVertexShader.Reset();
     m_wireframePixelShader.Reset();
+    m_pbrAlphaBlendDoubleSidedPipelineState.Reset();
+    m_pbrDoubleSidedPipelineState.Reset();
     m_pbrAlphaBlendPipelineState.Reset();
     m_shadowDepthPipelineState.Reset();
     m_shadowDepthVertexShader.Reset();
@@ -285,10 +294,9 @@ bool D3D12PipelineState::CreatePBRPipelineState(ID3D12Device* device)
     psoDesc.InputLayout.pInputElementDescs = INSTANCED_VERTEX_INPUT_LAYOUT;
     psoDesc.InputLayout.NumElements = INSTANCED_VERTEX_INPUT_LAYOUT_COUNT;
 
-    // Rasterizer state — two-sided (NONE) so double-sided / winding-mismatch meshes render correctly;
-    // back-face lighting handled in PS via SV_IsFrontFace
+    // Rasterizer state — single-sided (BACK culling) for standard materials
     psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
     psoDesc.RasterizerState.FrontCounterClockwise = FALSE;
     psoDesc.RasterizerState.DepthClipEnable = TRUE;
 
@@ -382,9 +390,9 @@ bool D3D12PipelineState::CreatePBRAlphaBlendPipelineState(ID3D12Device* device)
     psoDesc.InputLayout.pInputElementDescs = INSTANCED_VERTEX_INPUT_LAYOUT;
     psoDesc.InputLayout.NumElements = INSTANCED_VERTEX_INPUT_LAYOUT_COUNT;
 
-    // Rasterizer state — two-sided (NONE); back-face lighting handled via SV_IsFrontFace in PS
+    // Rasterizer state — single-sided (BACK culling) for standard alpha-blend materials
     psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
-    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
     psoDesc.RasterizerState.FrontCounterClockwise = FALSE;
     psoDesc.RasterizerState.DepthClipEnable = TRUE;
 
@@ -412,6 +420,88 @@ bool D3D12PipelineState::CreatePBRAlphaBlendPipelineState(ID3D12Device* device)
     psoDesc.SampleDesc.Count = 1;
 
     HRESULT hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pbrAlphaBlendPipelineState));
+    return SUCCEEDED(hr);
+}
+
+bool D3D12PipelineState::CreatePBRDoubleSidedPipelineState(ID3D12Device* device)
+{
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+    psoDesc.pRootSignature = m_rootSignature.Get();
+
+    psoDesc.VS.pShaderBytecode = m_pbrVertexShader->GetBufferPointer();
+    psoDesc.VS.BytecodeLength = m_pbrVertexShader->GetBufferSize();
+    psoDesc.PS.pShaderBytecode = m_pbrPixelShader->GetBufferPointer();
+    psoDesc.PS.BytecodeLength = m_pbrPixelShader->GetBufferSize();
+
+    psoDesc.InputLayout.pInputElementDescs = INSTANCED_VERTEX_INPUT_LAYOUT;
+    psoDesc.InputLayout.NumElements = INSTANCED_VERTEX_INPUT_LAYOUT_COUNT;
+
+    // Rasterizer state — two-sided (NONE) for doubleSided=true materials;
+    // back-face lighting handled in PS via SV_IsFrontFace
+    psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+    psoDesc.RasterizerState.FrontCounterClockwise = FALSE;
+    psoDesc.RasterizerState.DepthClipEnable = TRUE;
+
+    psoDesc.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+    psoDesc.DepthStencilState.DepthEnable = TRUE;
+    psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+    psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+    psoDesc.DepthStencilState.StencilEnable = FALSE;
+    psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+
+    psoDesc.SampleMask = UINT_MAX;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.NumRenderTargets = 1;
+    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    psoDesc.SampleDesc.Count = 1;
+
+    HRESULT hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pbrDoubleSidedPipelineState));
+    return SUCCEEDED(hr);
+}
+
+bool D3D12PipelineState::CreatePBRAlphaBlendDoubleSidedPipelineState(ID3D12Device* device)
+{
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+    psoDesc.pRootSignature = m_rootSignature.Get();
+
+    psoDesc.VS.pShaderBytecode = m_pbrVertexShader->GetBufferPointer();
+    psoDesc.VS.BytecodeLength = m_pbrVertexShader->GetBufferSize();
+    psoDesc.PS.pShaderBytecode = m_pbrPixelShader->GetBufferPointer();
+    psoDesc.PS.BytecodeLength = m_pbrPixelShader->GetBufferSize();
+
+    psoDesc.InputLayout.pInputElementDescs = INSTANCED_VERTEX_INPUT_LAYOUT;
+    psoDesc.InputLayout.NumElements = INSTANCED_VERTEX_INPUT_LAYOUT_COUNT;
+
+    // Rasterizer state — two-sided for doubleSided alpha-blend materials
+    psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+    psoDesc.RasterizerState.FrontCounterClockwise = FALSE;
+    psoDesc.RasterizerState.DepthClipEnable = TRUE;
+
+    psoDesc.BlendState.RenderTarget[0].BlendEnable = TRUE;
+    psoDesc.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+    psoDesc.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+    psoDesc.BlendState.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+    psoDesc.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+    psoDesc.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+    psoDesc.BlendState.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    psoDesc.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+    psoDesc.DepthStencilState.DepthEnable = TRUE;
+    psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+    psoDesc.DepthStencilState.StencilEnable = FALSE;
+    psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+
+    psoDesc.SampleMask = UINT_MAX;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.NumRenderTargets = 1;
+    psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    psoDesc.SampleDesc.Count = 1;
+
+    HRESULT hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pbrAlphaBlendDoubleSidedPipelineState));
     return SUCCEEDED(hr);
 }
 

@@ -310,8 +310,9 @@ private:
     D3D12DescriptorHeap m_shadowDsvHeap;
     D3D12_CPU_DESCRIPTOR_HANDLE m_shadowSrvCpu[MAX_SHADOW_MAPS] = {};
     D3D12_GPU_DESCRIPTOR_HANDLE m_shadowSrvGpu[MAX_SHADOW_MAPS] = {};
-    bool m_shadowMapsCreated = false;
-    uint32 m_shadowMapSize   = 1024;  // runtime-configurable resolution
+    bool m_shadowMapsCreated   = false;
+    bool m_shadowSrvsAllocated = false;  // persistent SRV slots allocated once; reused on resize
+    uint32 m_shadowMapSize     = 1024;  // runtime-configurable resolution
 
     // Constant buffer pool (replaces fixed 16-slot CB)
     D3D12CBPool m_cbPool;

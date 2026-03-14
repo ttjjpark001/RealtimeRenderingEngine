@@ -561,7 +561,7 @@ static void BindAndDrawPBR(
     D3D12CBPool&, D3D12DescriptorHeap&, UINT,
     const DirectX::XMFLOAT4X4&, const DirectX::XMFLOAT3&,
     const LightConstants&, const ShadowConstants&,
-    Material*, TextureCache*, bool, int, bool,
+    Material*, TextureCache*, int, bool,
     ID3D12PipelineState*, ID3D12RootSignature*,
     const D3D12_CPU_DESCRIPTOR_HANDLE[8], bool);
 
@@ -639,11 +639,22 @@ void D3D12Context::DrawPrimitivesPBRInstanced(IRHIBuffer* vb, IRHIBuffer* ib,
     // Copy transposed world matrices into the pool
     memcpy(inst.cpuPtr, worlds, instanceCount * sizeof(DirectX::XMFLOAT4X4));
 
-    // Choose PSO: alpha-blend uses separate blend state
-    ID3D12PipelineState* pso =
-        (material && material->alphaMode == AlphaMode::Blend && m_pipelineState.HasPBRAlphaBlendPSO())
-        ? m_pipelineState.GetPBRAlphaBlendPSO()
-        : m_pipelineState.GetPBRPSO();
+    // Choose PSO based on alpha mode and doubleSided flag:
+    // Alpha-blend + doubleSided → AlphaBlendDoubleSided PSO (CullMode=NONE)
+    // Alpha-blend + single-sided → AlphaBlend PSO          (CullMode=BACK)
+    // Opaque    + doubleSided → DoubleSided PSO             (CullMode=NONE)
+    // Opaque    + single-sided → PBR PSO                   (CullMode=BACK)
+    const bool isBlend = material && material->alphaMode == AlphaMode::Blend;
+    const bool isDS    = material && material->doubleSided;
+    ID3D12PipelineState* pso;
+    if (isBlend && isDS && m_pipelineState.HasPBRAlphaBlendDoubleSidedPSO())
+        pso = m_pipelineState.GetPBRAlphaBlendDoubleSidedPSO();
+    else if (isBlend && m_pipelineState.HasPBRAlphaBlendPSO())
+        pso = m_pipelineState.GetPBRAlphaBlendPSO();
+    else if (isDS && m_pipelineState.HasPBRDoubleSidedPSO())
+        pso = m_pipelineState.GetPBRDoubleSidedPSO();
+    else
+        pso = m_pipelineState.GetPBRPSO();
 
     BindAndDrawPBR(
         m_commandList.Get(), m_device,
@@ -653,7 +664,6 @@ void D3D12Context::DrawPrimitivesPBRInstanced(IRHIBuffer* vb, IRHIBuffer* ib,
         m_viewProjection, m_cameraPosition,
         m_pbrLightConstants, m_shadowConstants,
         material, textureCache,
-        (material && material->alphaMode == AlphaMode::Blend),
         m_renderModeInt, m_mipMappingEnabled,
         pso, m_pipelineState.GetRootSignature(),
         m_shadowSrvCpu, m_shadowMapsCreated);
@@ -723,9 +733,13 @@ void D3D12Context::CreateShadowMaps()
         D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = m_shadowDsvHeap.Allocate();
         m_device->CreateDepthStencilView(m_shadowMaps[i].Get(), &dsvDesc, dsvHandle);
 
-        // Create SRV in persistent region of cbvSrvHeap (must NOT use transient: it resets each frame)
-        m_shadowSrvCpu[i] = m_cbvSrvHeap.AllocatePersistent();
-        m_shadowSrvGpu[i] = m_cbvSrvHeap.GetGPUHandleForCPU(m_shadowSrvCpu[i]);
+        // Allocate persistent SRV slot once; on RecreateShadowMaps just reuse existing handle.
+        // This prevents descriptor heap exhaustion when scenes with different shadow-map sizes load.
+        if (!m_shadowSrvsAllocated)
+        {
+            m_shadowSrvCpu[i] = m_cbvSrvHeap.AllocatePersistent();
+            m_shadowSrvGpu[i] = m_cbvSrvHeap.GetGPUHandleForCPU(m_shadowSrvCpu[i]);
+        }
 
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
@@ -735,6 +749,7 @@ void D3D12Context::CreateShadowMaps()
         m_device->CreateShaderResourceView(m_shadowMaps[i].Get(), &srvDesc, m_shadowSrvCpu[i]);
     }
 
+    m_shadowSrvsAllocated = true;
     m_shadowMapsCreated = true;
 }
 
@@ -1018,7 +1033,6 @@ static void BindAndDrawPBR(
     const ShadowConstants&      shadows,
     Material*                   material,
     TextureCache*               textureCache,
-    bool                        isAlphaBlend,
     int                         renderModeInt,
     bool                        mipEnabled,
     ID3D12PipelineState*        pso,

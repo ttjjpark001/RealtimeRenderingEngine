@@ -23,6 +23,10 @@ public:
     bool HasShadowDepthPSO() const { return m_shadowDepthPipelineState != nullptr; }
     ID3D12PipelineState* GetPBRAlphaBlendPSO() const { return m_pbrAlphaBlendPipelineState.Get(); }
     bool HasPBRAlphaBlendPSO() const { return m_pbrAlphaBlendPipelineState != nullptr; }
+    ID3D12PipelineState* GetPBRDoubleSidedPSO() const { return m_pbrDoubleSidedPipelineState.Get(); }
+    bool HasPBRDoubleSidedPSO() const { return m_pbrDoubleSidedPipelineState != nullptr; }
+    ID3D12PipelineState* GetPBRAlphaBlendDoubleSidedPSO() const { return m_pbrAlphaBlendDoubleSidedPipelineState.Get(); }
+    bool HasPBRAlphaBlendDoubleSidedPSO() const { return m_pbrAlphaBlendDoubleSidedPipelineState != nullptr; }
     ID3D12PipelineState* GetWireframePSO() const { return m_wireframePipelineState.Get(); }
     bool HasWireframePSO() const { return m_wireframePipelineState != nullptr; }
 
@@ -35,6 +39,8 @@ private:
     bool LoadShadowDepthShaders();
     bool CreateShadowDepthPipelineState(ID3D12Device* device);
     bool CreatePBRAlphaBlendPipelineState(ID3D12Device* device);
+    bool CreatePBRDoubleSidedPipelineState(ID3D12Device* device);
+    bool CreatePBRAlphaBlendDoubleSidedPipelineState(ID3D12Device* device);
     bool LoadWireframeShaders();
     bool CreateWireframePipelineState(ID3D12Device* device);
 
@@ -56,6 +62,12 @@ private:
 
     // PBR Alpha Blend PSO
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pbrAlphaBlendPipelineState;
+
+    // PBR Double-Sided PSO (CullMode=NONE, for doubleSided=true materials)
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pbrDoubleSidedPipelineState;
+
+    // PBR Alpha Blend Double-Sided PSO
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pbrAlphaBlendDoubleSidedPipelineState;
 
     // Wireframe PSO
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_wireframePipelineState;
