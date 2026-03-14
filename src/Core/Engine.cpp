@@ -18,6 +18,7 @@
 #include "Asset/Material.h"
 #include "Asset/TextureCache.h"
 #include "Asset/TextureStreamer.h"
+#include "Core/ThreadPool.h"
 #include <DirectXMath.h>
 #include <commdlg.h>
 
@@ -83,6 +84,10 @@ bool Engine::Initialize(const EngineInitParams& params)
         m_textureStreamer = std::make_unique<TextureStreamer>();
         m_textureStreamer->Initialize(d3dDevice->GetDXGIAdapter3());
     }
+
+    // Create worker thread pool for async texture decoding / resource loading
+    // Use hardware_concurrency() workers (defaults to 0 → auto-detect in ThreadPool ctor)
+    m_threadPool = std::make_unique<ThreadPool>();
 
     // Create menu
     m_menu = std::make_unique<Win32Menu>();

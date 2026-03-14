@@ -5,6 +5,7 @@
 #include "Renderer/OcclusionCuller.h"
 #include "Renderer/LODSelector.h"
 #include "Renderer/LightCuller.h"
+#include "Renderer/InstanceBatcher.h"
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -118,6 +119,10 @@ private:
     OcclusionCuller m_occlusionCuller;
     LODSelector     m_lodSelector;
     LightCuller     m_lightCuller;
+
+    // Instance batching: groups same-mesh+material nodes into single draw calls
+    InstanceBatcher m_opaqueBatcher;
+    InstanceBatcher m_alphaMaskBatcher;
 
     CullStats m_lastCullStats;
 };

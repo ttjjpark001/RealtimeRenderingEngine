@@ -118,6 +118,8 @@
     <ClCompile Include="Renderer\OcclusionCuller.cpp" />
     <ClCompile Include="Renderer\LODSelector.cpp" />
     <ClCompile Include="Renderer\LightCuller.cpp" />
+    <ClCompile Include="Renderer\InstanceBatcher.cpp" />
+    <ClCompile Include="Core\ThreadPool.cpp" />
     <ClCompile Include="Scene\Transform.cpp" />
     <ClCompile Include="Scene\SceneNode.cpp" />
     <ClCompile Include="Scene\SceneGraph.cpp" />
@@ -150,6 +152,8 @@
     <ClInclude Include="Renderer\OcclusionCuller.h" />
     <ClInclude Include="Renderer\LODSelector.h" />
     <ClInclude Include="Renderer\LightCuller.h" />
+    <ClInclude Include="Renderer\InstanceBatcher.h" />
+    <ClInclude Include="Core\ThreadPool.h" />
     <ClInclude Include="Scene\Transform.h" />
     <ClInclude Include="Scene\SceneNode.h" />
     <ClInclude Include="Scene\SceneGraph.h" />

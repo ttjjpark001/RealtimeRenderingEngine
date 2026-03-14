@@ -6,9 +6,10 @@ static const uint MAX_LIGHTS = 16;
 // ---------------------------------------------------------------------------
 // Constant Buffers
 // ---------------------------------------------------------------------------
+// World matrix is supplied per-instance via the vertex input stream (slot 1).
+// CB0 carries only the view-projection and camera data (shared across all instances in a batch).
 cbuffer PerObjectCB : register(b0)
 {
-    float4x4 World;
     float4x4 ViewProj;
     float3 CameraPosition;
     float _padObj;
@@ -98,6 +99,11 @@ struct VSInput
     float3 normal   : NORMAL;
     float2 texCoord : TEXCOORD;
     float4 tangent  : TANGENT;
+    // Per-instance world matrix (4 rows), bound in Input Layout slot 1
+    float4 instWorld0 : INSTANCE_WORLD0;
+    float4 instWorld1 : INSTANCE_WORLD1;
+    float4 instWorld2 : INSTANCE_WORLD2;
+    float4 instWorld3 : INSTANCE_WORLD3;
 };
 
 struct PSInput
@@ -116,6 +122,10 @@ struct PSInput
 PSInput VSMain(VSInput input)
 {
     PSInput output;
+
+    // Reconstruct world matrix from per-instance rows
+    float4x4 World = float4x4(input.instWorld0, input.instWorld1,
+                               input.instWorld2, input.instWorld3);
 
     float4 worldPos = mul(float4(input.position, 1.0f), World);
     output.worldPos = worldPos.xyz;

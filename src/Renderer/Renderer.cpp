@@ -252,69 +252,127 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
     }
 
     // -----------------------------------------------------------------------
-    // Pass 1: Opaque + Alpha Mask (or Wireframe)
+    // Pass 1: Collect visible Opaque + Alpha Mask nodes, group into batches
     // -----------------------------------------------------------------------
-    graph.Traverse([this, &camPos, &viewProj](
-        SceneNode* node, const XMMATRIX& worldMatrix)
+    m_opaqueBatcher.Clear();
+    m_alphaMaskBatcher.Clear();
+
+    // Wireframe mode: draw immediately without batching (single-instance draw calls)
+    if (m_renderMode == RenderMode::Wireframe)
     {
-        Mesh* mesh = node->GetMesh();
-        if (!mesh) return;
-
-        // --- Frustum culling ---
-        DirectX::BoundingBox worldAABB = node->GetWorldAABB();
-        if (m_frustumCullingEnabled && !m_frustumCuller.IsVisible(worldAABB))
+        graph.Traverse([this, &camPos, &viewProj](
+            SceneNode* node, const XMMATRIX& worldMatrix)
         {
-            m_lastCullStats.frustumCulledNodes++;
-            return;
-        }
+            Mesh* mesh = node->GetMesh();
+            if (!mesh) return;
 
-        // --- Occlusion culling (P0 stub: never culls) ---
-        if (m_occlusionCuller.IsOccluded(worldAABB, viewProj))
-        {
-            m_lastCullStats.occlusionCulledNodes++;
-            return;
-        }
+            DirectX::BoundingBox worldAABB = node->GetWorldAABB();
+            if (m_frustumCullingEnabled && !m_frustumCuller.IsVisible(worldAABB))
+            { m_lastCullStats.frustumCulledNodes++; return; }
+            if (m_occlusionCuller.IsOccluded(worldAABB, viewProj))
+            { m_lastCullStats.occlusionCulledNodes++; return; }
 
-        // --- LOD selection (Pass 1) ---
-        XMVECTOR objCenter = XMLoadFloat3(&worldAABB.Center);
-        XMVECTOR camV      = XMLoadFloat3(&camPos);
-        float dist = XMVectorGetX(XMVector3Length(XMVectorSubtract(objCenter, camV)));
-        Mesh* drawMesh = m_lodEnabled ? m_lodSelector.SelectLOD(mesh, dist) : mesh;
+            XMVECTOR objCenter = XMLoadFloat3(&worldAABB.Center);
+            XMVECTOR camV      = XMLoadFloat3(&camPos);
+            float dist = XMVectorGetX(XMVector3Length(XMVectorSubtract(objCenter, camV)));
+            Mesh* drawMesh = m_lodEnabled ? m_lodSelector.SelectLOD(mesh, dist) : mesh;
 
-        Material* material = node->GetMaterial();
+            UploadMesh(drawMesh);
+            auto it = m_meshCache.find(drawMesh);
+            if (it == m_meshCache.end()) return;
 
-        // Alpha-blend objects go in pass 2
-        if (material && material->alphaMode == AlphaMode::Blend
-            && m_renderMode != RenderMode::Wireframe)
-            return;
-
-        UploadMesh(drawMesh);
-        auto it = m_meshCache.find(drawMesh);
-        if (it == m_meshCache.end()) return;
-
-        XMFLOAT4X4 worldFloat;
-        XMStoreFloat4x4(&worldFloat, XMMatrixTranspose(worldMatrix));
-
-        if (m_renderMode == RenderMode::Wireframe)
-        {
+            XMFLOAT4X4 worldFloat;
+            XMStoreFloat4x4(&worldFloat, XMMatrixTranspose(worldMatrix));
             m_context->DrawPrimitivesWireframe(
                 it->second.vb.get(), it->second.ib.get(), worldFloat);
-        }
-        else if (material && m_textureCache)
+
+            m_lastCullStats.renderedPolygons += drawMesh->GetPolygonCount();
+            m_lastCullStats.visibleNodes++;
+        });
+    }
+    else
+    {
+        // PBR modes: collect into batchers, then issue instanced draw calls
+        graph.Traverse([this, &camPos, &viewProj](
+            SceneNode* node, const XMMATRIX& worldMatrix)
         {
-            m_context->DrawPrimitivesPBR(
-                it->second.vb.get(), it->second.ib.get(),
-                worldFloat, material, m_textureCache);
-        }
-        else
+            Mesh* mesh = node->GetMesh();
+            if (!mesh) return;
+
+            DirectX::BoundingBox worldAABB = node->GetWorldAABB();
+            if (m_frustumCullingEnabled && !m_frustumCuller.IsVisible(worldAABB))
+            { m_lastCullStats.frustumCulledNodes++; return; }
+            if (m_occlusionCuller.IsOccluded(worldAABB, viewProj))
+            { m_lastCullStats.occlusionCulledNodes++; return; }
+
+            XMVECTOR objCenter = XMLoadFloat3(&worldAABB.Center);
+            XMVECTOR camV      = XMLoadFloat3(&camPos);
+            float dist = XMVectorGetX(XMVector3Length(XMVectorSubtract(objCenter, camV)));
+            Mesh* drawMesh = m_lodEnabled ? m_lodSelector.SelectLOD(mesh, dist) : mesh;
+
+            Material* material = node->GetMaterial();
+
+            // Ensure GPU buffers exist before batching
+            UploadMesh(drawMesh);
+            if (m_meshCache.find(drawMesh) == m_meshCache.end()) return;
+
+            XMFLOAT4X4 worldFloat;
+            XMStoreFloat4x4(&worldFloat, XMMatrixTranspose(worldMatrix));
+
+            if (material && material->alphaMode == AlphaMode::Blend)
+                return;  // Alpha-blend goes in pass 2
+
+            if (material && material->alphaMode == AlphaMode::Mask)
+                m_alphaMaskBatcher.AddInstance(drawMesh, material, worldFloat);
+            else
+                m_opaqueBatcher.AddInstance(drawMesh, material, worldFloat);
+        });
+
+        // --- Draw opaque batches ---
+        for (const auto& batch : m_opaqueBatcher.GetBatches())
         {
-            m_context->DrawPrimitives(
-                it->second.vb.get(), it->second.ib.get(), worldFloat);
+            auto it = m_meshCache.find(batch.mesh);
+            if (it == m_meshCache.end()) continue;
+
+            const auto& worlds = batch.worlds;
+            if (batch.material && m_textureCache)
+            {
+                m_context->DrawPrimitivesPBRInstanced(
+                    it->second.vb.get(), it->second.ib.get(),
+                    worlds.data(), static_cast<uint32>(worlds.size()),
+                    batch.material, m_textureCache);
+            }
+            else
+            {
+                for (const auto& w : worlds)
+                    m_context->DrawPrimitives(it->second.vb.get(), it->second.ib.get(), w);
+            }
+
+            m_lastCullStats.renderedPolygons +=
+                batch.mesh->GetPolygonCount() * static_cast<uint32>(worlds.size());
+            m_lastCullStats.visibleNodes += static_cast<uint32>(worlds.size());
         }
 
-        m_lastCullStats.renderedPolygons += drawMesh->GetPolygonCount();
-        m_lastCullStats.visibleNodes++;
-    });
+        // --- Draw alpha-mask batches ---
+        for (const auto& batch : m_alphaMaskBatcher.GetBatches())
+        {
+            auto it = m_meshCache.find(batch.mesh);
+            if (it == m_meshCache.end()) continue;
+
+            const auto& worlds = batch.worlds;
+            if (batch.material && m_textureCache)
+            {
+                m_context->DrawPrimitivesPBRInstanced(
+                    it->second.vb.get(), it->second.ib.get(),
+                    worlds.data(), static_cast<uint32>(worlds.size()),
+                    batch.material, m_textureCache);
+            }
+
+            m_lastCullStats.renderedPolygons +=
+                batch.mesh->GetPolygonCount() * static_cast<uint32>(worlds.size());
+            m_lastCullStats.visibleNodes += static_cast<uint32>(worlds.size());
+        }
+    }
 
     // -----------------------------------------------------------------------
     // Pass 2: Alpha Blend, back-to-front sorted (skip in Wireframe)

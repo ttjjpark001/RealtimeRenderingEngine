@@ -38,15 +38,24 @@ struct PerObjectConstants
 };  // Total: 224 bytes → 256 aligned
 static_assert(sizeof(PerObjectConstants) <= 256, "PerObjectConstants exceeds 256-byte CB slot");
 
-// PBR per-object constants (b0) — only world/viewProj/camera, no lighting
+// PBR per-object constants (b0) — viewProj and camera; world comes from per-instance buffer
 struct PerObjectPBR
+{
+    DirectX::XMFLOAT4X4 viewProj;       // 64
+    DirectX::XMFLOAT3 cameraPosition;   // 12
+    float _pad0;                         // 4
+};  // Total: 80 bytes → 256 aligned
+static_assert(sizeof(PerObjectPBR) <= 256, "PerObjectPBR exceeds 256-byte CB slot");
+
+// Wireframe pass constants (b0) — matches Wireframe.hlsl cbuffer exactly (world + viewProj + camPos)
+struct WireframeConstants
 {
     DirectX::XMFLOAT4X4 world;          // 64
     DirectX::XMFLOAT4X4 viewProj;       // 64
     DirectX::XMFLOAT3 cameraPosition;   // 12
     float _pad0;                         // 4
 };  // Total: 144 bytes → 256 aligned
-static_assert(sizeof(PerObjectPBR) <= 256, "PerObjectPBR exceeds 256-byte CB slot");
+static_assert(sizeof(WireframeConstants) <= 256, "WireframeConstants exceeds 256-byte CB slot");
 
 // Light data for PBR (matches HLSL LightData struct exactly)
 struct GPULightData
@@ -109,12 +118,12 @@ struct ShadowConstants
 };  // Total: 528 bytes → 768 aligned (256 * 3)
 static_assert(sizeof(ShadowConstants) <= 768, "ShadowConstants exceeds 768-byte CB slot");
 
-// Shadow depth pass per-object CB (b0)
+// Shadow depth pass per-batch CB (b0) — world comes from per-instance buffer
 struct ShadowPassConstants
 {
     DirectX::XMFLOAT4X4 lightViewProj;   // 64
-    DirectX::XMFLOAT4X4 world;           // 64
-};  // Total: 128 bytes → 256 aligned
+    // world is no longer stored here; supplied via per-instance vertex stream
+};  // Total: 64 bytes → 256 aligned
 static_assert(sizeof(ShadowPassConstants) <= 256, "ShadowPassConstants exceeds 256-byte CB slot");
 
 class Material;
@@ -181,9 +190,15 @@ public:
     // Set mip-mapping enabled flag (controls useMips in PerMaterialConstants)
     void SetMipMappingEnabled(bool enabled) { m_mipMappingEnabled = enabled; }
 
-    // PBR draw call: binds 3 CBs (PerObject, Lights, Material) + 5 texture SRVs + shadow data
+    // PBR draw call (single instance — creates a 1-element instance buffer internally)
     void DrawPrimitivesPBR(IRHIBuffer* vb, IRHIBuffer* ib,
         const DirectX::XMFLOAT4X4& worldMatrix,
+        Material* material, TextureCache* textureCache);
+
+    // PBR draw call: instanced — all instances share the same Mesh + Material
+    // worlds[] must contain instanceCount transposed world matrices
+    void DrawPrimitivesPBRInstanced(IRHIBuffer* vb, IRHIBuffer* ib,
+        const DirectX::XMFLOAT4X4* worlds, uint32 instanceCount,
         Material* material, TextureCache* textureCache);
 
     // Wireframe draw call: simple position-only rendering
@@ -201,8 +216,14 @@ public:
     void EndShadowPass(uint32 shadowIndex);
     // Restore main back-buffer RTV + DSV + viewport after all shadow passes
     void RestoreMainRenderTarget();
+    // Shadow depth — single instance (creates 1-element instance buffer internally)
     void DrawShadowDepth(IRHIBuffer* vb, IRHIBuffer* ib,
         const DirectX::XMFLOAT4X4& worldMatrix,
+        const DirectX::XMFLOAT4X4& lightViewProj);
+
+    // Shadow depth — instanced batch
+    void DrawShadowDepthInstanced(IRHIBuffer* vb, IRHIBuffer* ib,
+        const DirectX::XMFLOAT4X4* worlds, uint32 instanceCount,
         const DirectX::XMFLOAT4X4& lightViewProj);
 
     // IRHIContext interface
@@ -217,9 +238,15 @@ public:
     ID3D12CommandQueue* GetCommandQueue() const { return m_commandQueue.Get(); }
     ID3D12GraphicsCommandList* GetCommandList() const { return m_commandList.Get(); }
 
-    // Open/execute command list for resource uploads (outside render loop)
+    // Open/execute command list for resource uploads (outside render loop, uses Graphics Queue)
     void BeginUploadCommands();
     void EndUploadCommands();
+
+    // Copy Queue API — for async resource uploads parallel to rendering
+    void BeginCopyCommands();
+    void EndCopyCommands();   // submits to Copy Queue and signals copy fence
+    void WaitForCopyQueue();  // CPU-side wait for copy fence completion
+    ID3D12GraphicsCommandList* GetCopyCommandList() const { return m_copyCommandList.Get(); }
 
     // Descriptor heap access for texture SRV creation
     D3D12DescriptorHeap& GetCBVSRVHeap() { return m_cbvSrvHeap; }
@@ -237,10 +264,38 @@ private:
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> m_commandAllocator;
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> m_commandList;
 
-    // Fence for GPU synchronization
+    // Fence for GPU synchronization (Graphics Queue)
     Microsoft::WRL::ComPtr<ID3D12Fence> m_fence;
     uint64 m_fenceValue = 0;
     HANDLE m_fenceEvent = nullptr;
+
+    // Copy Queue — async resource upload parallel to rendering
+    Microsoft::WRL::ComPtr<ID3D12CommandQueue>        m_copyQueue;
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator>    m_copyCommandAllocator;
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> m_copyCommandList;
+    Microsoft::WRL::ComPtr<ID3D12Fence>               m_copyFence;
+    uint64 m_copyFenceValue = 0;
+    HANDLE m_copyFenceEvent = nullptr;
+    bool   m_copyCommandListOpen = false;
+
+    // Per-frame instance data pool (Upload Heap ring buffer, no 256-byte alignment required)
+    // Provides sub-allocations for per-instance world matrices.
+    // Layout: [ frame-0 half | frame-1 half ] — each half is INSTANCE_POOL_HALF_SIZE bytes.
+    static constexpr uint32 INSTANCE_POOL_HALF_SIZE = 2 * 1024 * 1024; // 2 MB per frame
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_instancePool;
+    uint8*    m_instancePoolMapped  = nullptr;
+    D3D12_GPU_VIRTUAL_ADDRESS m_instancePoolGpuBase = 0;
+    uint32    m_instancePoolOffset  = 0;   // current offset within the active half
+    uint32    m_instancePoolFrame   = 0;   // 0 or 1
+
+    struct InstanceAlloc
+    {
+        D3D12_GPU_VIRTUAL_ADDRESS gpuAddr;
+        uint8*                    cpuPtr;
+    };
+    // Allocate 'instanceCount' InstanceData slots (16-byte aligned).
+    // Returns {0, nullptr} if pool is exhausted (shouldn't happen with 2 MB budget).
+    InstanceAlloc AllocateInstanceBuffer(uint32 instanceCount);
 
     // Pipeline state
     D3D12PipelineState m_pipelineState;

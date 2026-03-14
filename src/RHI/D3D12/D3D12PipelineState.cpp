@@ -281,8 +281,9 @@ bool D3D12PipelineState::CreatePBRPipelineState(ID3D12Device* device)
     psoDesc.PS.pShaderBytecode = m_pbrPixelShader->GetBufferPointer();
     psoDesc.PS.BytecodeLength = m_pbrPixelShader->GetBufferSize();
 
-    psoDesc.InputLayout.pInputElementDescs = VERTEX_INPUT_LAYOUT;
-    psoDesc.InputLayout.NumElements = VERTEX_INPUT_LAYOUT_COUNT;
+    // PBR uses instanced layout: per-vertex (slot 0) + per-instance world (slot 1)
+    psoDesc.InputLayout.pInputElementDescs = INSTANCED_VERTEX_INPUT_LAYOUT;
+    psoDesc.InputLayout.NumElements = INSTANCED_VERTEX_INPUT_LAYOUT_COUNT;
 
     // Rasterizer state — two-sided (NONE) so double-sided / winding-mismatch meshes render correctly;
     // back-face lighting handled in PS via SV_IsFrontFace
@@ -336,8 +337,9 @@ bool D3D12PipelineState::CreateShadowDepthPipelineState(ID3D12Device* device)
     psoDesc.VS.BytecodeLength = m_shadowDepthVertexShader->GetBufferSize();
     // No PS — depth-only rendering
 
-    psoDesc.InputLayout.pInputElementDescs = VERTEX_INPUT_LAYOUT;
-    psoDesc.InputLayout.NumElements = VERTEX_INPUT_LAYOUT_COUNT;
+    // Shadow uses instanced layout (world matrix comes from per-instance slot 1)
+    psoDesc.InputLayout.pInputElementDescs = INSTANCED_VERTEX_INPUT_LAYOUT;
+    psoDesc.InputLayout.NumElements = INSTANCED_VERTEX_INPUT_LAYOUT_COUNT;
 
     // Rasterizer state with depth bias for shadow acne prevention
     psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
@@ -376,8 +378,9 @@ bool D3D12PipelineState::CreatePBRAlphaBlendPipelineState(ID3D12Device* device)
     psoDesc.PS.pShaderBytecode = m_pbrPixelShader->GetBufferPointer();
     psoDesc.PS.BytecodeLength = m_pbrPixelShader->GetBufferSize();
 
-    psoDesc.InputLayout.pInputElementDescs = VERTEX_INPUT_LAYOUT;
-    psoDesc.InputLayout.NumElements = VERTEX_INPUT_LAYOUT_COUNT;
+    // Alpha blend PSO also uses instanced layout
+    psoDesc.InputLayout.pInputElementDescs = INSTANCED_VERTEX_INPUT_LAYOUT;
+    psoDesc.InputLayout.NumElements = INSTANCED_VERTEX_INPUT_LAYOUT_COUNT;
 
     // Rasterizer state — two-sided (NONE); back-face lighting handled via SV_IsFrontFace in PS
     psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;

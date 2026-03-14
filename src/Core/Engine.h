@@ -21,6 +21,7 @@ class Renderer;
 class SceneGraph;
 class TextureCache;
 class TextureStreamer;
+class ThreadPool;
 
 struct EngineInitParams
 {
@@ -75,6 +76,9 @@ private:
     std::unique_ptr<TextureCache>    m_textureCache;
     std::unique_ptr<TextureStreamer> m_textureStreamer;
     float m_vramUpdateTimer = 0.0f;
+
+    // Worker thread pool for async texture decoding and resource loading
+    std::unique_ptr<ThreadPool> m_threadPool;
 
     // Loaded scene data
     std::vector<std::unique_ptr<Mesh>> m_loadedMeshes;

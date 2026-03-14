@@ -70,6 +70,66 @@ bool D3D12Context::Initialize(ID3D12Device* device)
     if (!m_cbPool.Initialize(device))
         return false;
 
+    // Initialize instance data pool (Upload Heap, 4MB total, 2MB per frame)
+    {
+        D3D12_HEAP_PROPERTIES heapProps = {};
+        heapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
+
+        D3D12_RESOURCE_DESC resDesc = {};
+        resDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        resDesc.Alignment = 0;
+        resDesc.Width     = static_cast<UINT64>(INSTANCE_POOL_HALF_SIZE) * 2;
+        resDesc.Height    = 1;
+        resDesc.DepthOrArraySize = 1;
+        resDesc.MipLevels = 1;
+        resDesc.Format    = DXGI_FORMAT_UNKNOWN;
+        resDesc.SampleDesc.Count = 1;
+        resDesc.Layout    = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        resDesc.Flags     = D3D12_RESOURCE_FLAG_NONE;
+
+        hr = device->CreateCommittedResource(
+            &heapProps, D3D12_HEAP_FLAG_NONE, &resDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+            IID_PPV_ARGS(&m_instancePool));
+        if (FAILED(hr))
+            return false;
+
+        m_instancePool->Map(0, nullptr, reinterpret_cast<void**>(&m_instancePoolMapped));
+        m_instancePoolGpuBase = m_instancePool->GetGPUVirtualAddress();
+    }
+
+    // Initialize Copy Queue for async resource uploads
+    {
+        D3D12_COMMAND_QUEUE_DESC copyQueueDesc = {};
+        copyQueueDesc.Type  = D3D12_COMMAND_LIST_TYPE_COPY;
+        copyQueueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+
+        hr = device->CreateCommandQueue(&copyQueueDesc, IID_PPV_ARGS(&m_copyQueue));
+        if (FAILED(hr))
+            return false;
+
+        hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COPY,
+            IID_PPV_ARGS(&m_copyCommandAllocator));
+        if (FAILED(hr))
+            return false;
+
+        hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_COPY,
+            m_copyCommandAllocator.Get(), nullptr, IID_PPV_ARGS(&m_copyCommandList));
+        if (FAILED(hr))
+            return false;
+
+        m_copyCommandList->Close(); // start closed
+
+        hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_copyFence));
+        if (FAILED(hr))
+            return false;
+
+        m_copyFenceValue = 0;
+        m_copyFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+        if (!m_copyFenceEvent)
+            return false;
+    }
+
     // Initialize view-projection to identity
     DirectX::XMStoreFloat4x4(&m_viewProjection, DirectX::XMMatrixIdentity());
 
@@ -276,6 +336,7 @@ void D3D12Context::FlushTextCommands()
 void D3D12Context::Shutdown()
 {
     WaitForGPU();
+    WaitForCopyQueue();
 
     ShutdownD2D();
 
@@ -288,16 +349,34 @@ void D3D12Context::Shutdown()
         m_shadowMaps[i].Reset();
     m_shadowMapsCreated = false;
 
+    // Release instance pool
+    if (m_instancePool && m_instancePoolMapped)
+    {
+        m_instancePool->Unmap(0, nullptr);
+        m_instancePoolMapped = nullptr;
+    }
+    m_instancePool.Reset();
+
     if (m_fenceEvent)
     {
         CloseHandle(m_fenceEvent);
         m_fenceEvent = nullptr;
+    }
+    if (m_copyFenceEvent)
+    {
+        CloseHandle(m_copyFenceEvent);
+        m_copyFenceEvent = nullptr;
     }
 
     m_commandList.Reset();
     m_commandAllocator.Reset();
     m_fence.Reset();
     m_commandQueue.Reset();
+
+    m_copyCommandList.Reset();
+    m_copyCommandAllocator.Reset();
+    m_copyFence.Reset();
+    m_copyQueue.Reset();
 }
 
 void D3D12Context::BeginFrame()
@@ -305,9 +384,13 @@ void D3D12Context::BeginFrame()
     m_commandAllocator->Reset();
     m_commandList->Reset(m_commandAllocator.Get(), nullptr);
 
-    // Reset CBPool for this frame and transient descriptors
+    // Reset CBPool and transient descriptors for this frame
     m_cbPool.ResetFrame(m_frameCounter);
     m_cbvSrvHeap.ResetTransient();
+
+    // Reset instance data pool for this frame
+    m_instancePoolFrame  = m_frameCounter & 1u;
+    m_instancePoolOffset = 0;
 }
 
 void D3D12Context::EndFrame()
@@ -470,6 +553,18 @@ void D3D12Context::DrawPrimitives(IRHIBuffer* vb, IRHIBuffer* ib,
     m_commandList->DrawIndexedInstanced(indexCount, 1, 0, 0, 0);
 }
 
+// Forward declaration — definition follows further below
+static void BindAndDrawPBR(
+    ID3D12GraphicsCommandList*, ID3D12Device*,
+    D3D12Buffer*, D3D12Buffer*,
+    D3D12_GPU_VIRTUAL_ADDRESS, uint32,
+    D3D12CBPool&, D3D12DescriptorHeap&, UINT,
+    const DirectX::XMFLOAT4X4&, const DirectX::XMFLOAT3&,
+    const LightConstants&, const ShadowConstants&,
+    Material*, TextureCache*, bool, int, bool,
+    ID3D12PipelineState*, ID3D12RootSignature*,
+    const D3D12_CPU_DESCRIPTOR_HANDLE[8], bool);
+
 void D3D12Context::DrawPrimitivesWireframe(IRHIBuffer* vb, IRHIBuffer* ib,
     const DirectX::XMFLOAT4X4& worldMatrix)
 {
@@ -479,21 +574,21 @@ void D3D12Context::DrawPrimitivesWireframe(IRHIBuffer* vb, IRHIBuffer* ib,
     auto* d3dVB = static_cast<D3D12Buffer*>(vb);
     auto* d3dIB = static_cast<D3D12Buffer*>(ib);
 
-    // Allocate CB slot for PerObjectPBR (world + viewProj + camPos)
-    CBAllocation cbAlloc = m_cbPool.Allocate(sizeof(PerObjectPBR));
+    // Allocate CB slot for WireframeConstants (world + viewProj + camPos)
+    CBAllocation cbAlloc = m_cbPool.Allocate(sizeof(WireframeConstants));
     if (!cbAlloc.cpuPtr)
         return;
 
-    PerObjectPBR constants = {};
+    WireframeConstants constants = {};
     constants.world = worldMatrix;
     constants.viewProj = m_viewProjection;
     constants.cameraPosition = m_cameraPosition;
-    memcpy(cbAlloc.cpuPtr, &constants, sizeof(PerObjectPBR));
+    memcpy(cbAlloc.cpuPtr, &constants, sizeof(WireframeConstants));
 
     D3D12_CPU_DESCRIPTOR_HANDLE cbvCpuHandle = m_cbvSrvHeap.AllocateTransient();
     D3D12_GPU_DESCRIPTOR_HANDLE cbvGpuHandle = m_cbvSrvHeap.GetGPUHandleForCPU(cbvCpuHandle);
 
-    UINT cbAlignedSize = (sizeof(PerObjectPBR) + 255) & ~255;
+    UINT cbAlignedSize = (sizeof(WireframeConstants) + 255) & ~255;
     D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
     cbvDesc.BufferLocation = cbAlloc.gpuAddress;
     cbvDesc.SizeInBytes = cbAlignedSize;
@@ -522,240 +617,46 @@ void D3D12Context::DrawPrimitivesPBR(IRHIBuffer* vb, IRHIBuffer* ib,
     const DirectX::XMFLOAT4X4& worldMatrix,
     Material* material, TextureCache* textureCache)
 {
-    if (!m_hasPSO || !vb || !ib || !m_pipelineState.HasPBRPSO())
+    // Delegate to the instanced path with a 1-element instance buffer
+    DrawPrimitivesPBRInstanced(vb, ib, &worldMatrix, 1, material, textureCache);
+}
+
+void D3D12Context::DrawPrimitivesPBRInstanced(IRHIBuffer* vb, IRHIBuffer* ib,
+    const DirectX::XMFLOAT4X4* worlds, uint32 instanceCount,
+    Material* material, TextureCache* textureCache)
+{
+    if (!m_hasPSO || !vb || !ib || !m_pipelineState.HasPBRPSO() || instanceCount == 0)
         return;
 
     auto* d3dVB = static_cast<D3D12Buffer*>(vb);
     auto* d3dIB = static_cast<D3D12Buffer*>(ib);
 
-    // --- Allocate 3 CBs from pool ---
+    // Allocate instance data from the per-frame pool
+    InstanceAlloc inst = AllocateInstanceBuffer(instanceCount);
+    if (!inst.cpuPtr)
+        return;
 
-    // CB0: PerObjectPBR
-    CBAllocation cb0Alloc = m_cbPool.Allocate(sizeof(PerObjectPBR));
-    if (!cb0Alloc.cpuPtr) return;
+    // Copy transposed world matrices into the pool
+    memcpy(inst.cpuPtr, worlds, instanceCount * sizeof(DirectX::XMFLOAT4X4));
 
-    PerObjectPBR perObj = {};
-    perObj.world = worldMatrix;
-    perObj.viewProj = m_viewProjection;
-    perObj.cameraPosition = m_cameraPosition;
-    memcpy(cb0Alloc.cpuPtr, &perObj, sizeof(PerObjectPBR));
+    // Choose PSO: alpha-blend uses separate blend state
+    ID3D12PipelineState* pso =
+        (material && material->alphaMode == AlphaMode::Blend && m_pipelineState.HasPBRAlphaBlendPSO())
+        ? m_pipelineState.GetPBRAlphaBlendPSO()
+        : m_pipelineState.GetPBRPSO();
 
-    // CB1: LightConstants
-    CBAllocation cb1Alloc = m_cbPool.Allocate(sizeof(LightConstants));
-    if (!cb1Alloc.cpuPtr) return;
-
-    memcpy(cb1Alloc.cpuPtr, &m_pbrLightConstants, sizeof(LightConstants));
-
-    // CB2: PerMaterialConstants
-    CBAllocation cb2Alloc = m_cbPool.Allocate(sizeof(PerMaterialConstants));
-    if (!cb2Alloc.cpuPtr) return;
-
-    PerMaterialConstants matConst = {};
-    if (material)
-    {
-        matConst.baseColorFactor = material->baseColorFactor;
-        matConst.metallicFactor = material->metallicFactor;
-        matConst.roughnessFactor = material->roughnessFactor;
-        matConst.alphaCutoff = material->alphaCutoff;
-        matConst.hasAlbedoMap = (material->baseColorTexture != nullptr) ? 1u : 0u;
-        matConst.hasNormalMap = (material->normalTexture != nullptr) ? 1u : 0u;
-        matConst.hasMetallicRoughnessMap = (material->metallicRoughnessTexture != nullptr) ? 1u : 0u;
-        matConst.hasEmissiveMap = (material->emissiveTexture != nullptr) ? 1u : 0u;
-        matConst.hasOcclusionMap = (material->occlusionTexture != nullptr) ? 1u : 0u;
-        matConst.emissiveFactor = material->emissiveFactor;
-        matConst.alphaMode = static_cast<uint32>(material->alphaMode);
-    }
-    else
-    {
-        matConst.baseColorFactor = { 1.0f, 1.0f, 1.0f, 1.0f };
-        matConst.metallicFactor = 0.0f;
-        matConst.roughnessFactor = 0.5f;
-        matConst.alphaMode = 0;
-    }
-    matConst.useMips = m_mipMappingEnabled ? 1u : 0u;
-
-    // Render mode texture flag overrides
-    // 1=Solid: all texture flags off
-    // 2=BaseColorOnly: only albedo
-    // 3=FullPBR: all flags as-is (no shadows)
-    // 4=FullPBRShadows: all flags as-is
-    if (m_renderModeInt == 1) // Solid
-    {
-        matConst.hasAlbedoMap = 0;
-        matConst.hasNormalMap = 0;
-        matConst.hasMetallicRoughnessMap = 0;
-        matConst.hasEmissiveMap = 0;
-        matConst.hasOcclusionMap = 0;
-    }
-    else if (m_renderModeInt == 2) // BaseColorOnly
-    {
-        matConst.hasNormalMap = 0;
-        matConst.hasMetallicRoughnessMap = 0;
-        matConst.hasEmissiveMap = 0;
-        matConst.hasOcclusionMap = 0;
-    }
-
-    memcpy(cb2Alloc.cpuPtr, &matConst, sizeof(PerMaterialConstants));
-
-    // --- Create 3 transient CBV descriptors ---
-
-    // CBV for b0
-    D3D12_CPU_DESCRIPTOR_HANDLE cbv0Cpu = m_cbvSrvHeap.AllocateTransient();
-    D3D12_GPU_DESCRIPTOR_HANDLE cbv0Gpu = m_cbvSrvHeap.GetGPUHandleForCPU(cbv0Cpu);
-    {
-        D3D12_CONSTANT_BUFFER_VIEW_DESC desc = {};
-        desc.BufferLocation = cb0Alloc.gpuAddress;
-        desc.SizeInBytes = (sizeof(PerObjectPBR) + 255) & ~255;
-        m_device->CreateConstantBufferView(&desc, cbv0Cpu);
-    }
-
-    // CBV for b1
-    D3D12_CPU_DESCRIPTOR_HANDLE cbv1Cpu = m_cbvSrvHeap.AllocateTransient();
-    D3D12_GPU_DESCRIPTOR_HANDLE cbv1Gpu = m_cbvSrvHeap.GetGPUHandleForCPU(cbv1Cpu);
-    {
-        D3D12_CONSTANT_BUFFER_VIEW_DESC desc = {};
-        desc.BufferLocation = cb1Alloc.gpuAddress;
-        desc.SizeInBytes = (sizeof(LightConstants) + 255) & ~255;
-        m_device->CreateConstantBufferView(&desc, cbv1Cpu);
-    }
-
-    // CBV for b2
-    D3D12_CPU_DESCRIPTOR_HANDLE cbv2Cpu = m_cbvSrvHeap.AllocateTransient();
-    D3D12_GPU_DESCRIPTOR_HANDLE cbv2Gpu = m_cbvSrvHeap.GetGPUHandleForCPU(cbv2Cpu);
-    {
-        D3D12_CONSTANT_BUFFER_VIEW_DESC desc = {};
-        desc.BufferLocation = cb2Alloc.gpuAddress;
-        desc.SizeInBytes = (sizeof(PerMaterialConstants) + 255) & ~255;
-        m_device->CreateConstantBufferView(&desc, cbv2Cpu);
-    }
-
-    // --- Copy 5 texture SRVs into contiguous transient descriptors ---
-    // Allocate 5 consecutive transient descriptors for t0~t4
-    D3D12_CPU_DESCRIPTOR_HANDLE srvBlockCpu = m_cbvSrvHeap.AllocateTransient();
-    D3D12_GPU_DESCRIPTOR_HANDLE srvBlockGpu = m_cbvSrvHeap.GetGPUHandleForCPU(srvBlockCpu);
-
-    // We need 5 contiguous descriptors; first one is already allocated above
-    // Allocate remaining 4
-    for (int i = 1; i < 5; i++)
-        m_cbvSrvHeap.AllocateTransient();
-
-    // Get fallback SRV handle
-    D3D12_GPU_DESCRIPTOR_HANDLE fallbackSrv = {};
-    if (textureCache && textureCache->GetFallback())
-        fallbackSrv = textureCache->GetFallback()->GetSRVGpuHandle();
-
-    // Helper: get SRV source for a texture (or fallback)
-    auto getSrvCpu = [&](Texture* tex) -> D3D12_CPU_DESCRIPTOR_HANDLE {
-        if (tex && tex->GetResource())
-            return tex->GetSRVCpuHandle();
-        if (textureCache && textureCache->GetFallback())
-            return textureCache->GetFallback()->GetSRVCpuHandle();
-        return {};
-    };
-
-    Texture* textures[5] = { nullptr, nullptr, nullptr, nullptr, nullptr };
-    if (material)
-    {
-        textures[0] = material->baseColorTexture;
-        textures[1] = material->normalTexture;
-        textures[2] = material->metallicRoughnessTexture;
-        textures[3] = material->emissiveTexture;
-        textures[4] = material->occlusionTexture;
-    }
-
-    // Copy SRV descriptors into the contiguous block
-    for (int i = 0; i < 5; i++)
-    {
-        D3D12_CPU_DESCRIPTOR_HANDLE srcCpu = getSrvCpu(textures[i]);
-        D3D12_CPU_DESCRIPTOR_HANDLE dstCpu = srvBlockCpu;
-        dstCpu.ptr += static_cast<SIZE_T>(i) * m_cbvDescriptorSize;
-
-        if (srcCpu.ptr != 0)
-        {
-            m_device->CopyDescriptorsSimple(1, dstCpu, srcCpu,
-                D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-        }
-    }
-
-    // --- CB3: ShadowConstants ---
-    CBAllocation cb3Alloc = m_cbPool.Allocate(sizeof(ShadowConstants));
-    if (!cb3Alloc.cpuPtr) return;
-
-    memcpy(cb3Alloc.cpuPtr, &m_shadowConstants, sizeof(ShadowConstants));
-
-    // CBV for b3
-    D3D12_CPU_DESCRIPTOR_HANDLE cbv3Cpu = m_cbvSrvHeap.AllocateTransient();
-    D3D12_GPU_DESCRIPTOR_HANDLE cbv3Gpu = m_cbvSrvHeap.GetGPUHandleForCPU(cbv3Cpu);
-    {
-        D3D12_CONSTANT_BUFFER_VIEW_DESC desc = {};
-        desc.BufferLocation = cb3Alloc.gpuAddress;
-        desc.SizeInBytes = (sizeof(ShadowConstants) + 255) & ~255;
-        m_device->CreateConstantBufferView(&desc, cbv3Cpu);
-    }
-
-    // --- Copy 8 shadow map SRVs into contiguous transient descriptors ---
-    D3D12_CPU_DESCRIPTOR_HANDLE shadowSrvBlockCpu = m_cbvSrvHeap.AllocateTransient();
-    D3D12_GPU_DESCRIPTOR_HANDLE shadowSrvBlockGpu = m_cbvSrvHeap.GetGPUHandleForCPU(shadowSrvBlockCpu);
-
-    // Allocate remaining 7 contiguous descriptors
-    for (int i = 1; i < 8; i++)
-        m_cbvSrvHeap.AllocateTransient();
-
-    // Copy shadow map SRVs (or null SRVs for unused slots)
-    for (uint32 i = 0; i < MAX_SHADOW_MAPS; i++)
-    {
-        D3D12_CPU_DESCRIPTOR_HANDLE dstCpu = shadowSrvBlockCpu;
-        dstCpu.ptr += static_cast<SIZE_T>(i) * m_cbvDescriptorSize;
-
-        if (m_shadowMapsCreated && m_shadowSrvCpu[i].ptr != 0)
-        {
-            m_device->CopyDescriptorsSimple(1, dstCpu, m_shadowSrvCpu[i],
-                D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-        }
-        else
-        {
-            // Create a null SRV for unused shadow map slot
-            D3D12_SHADER_RESOURCE_VIEW_DESC nullSrvDesc = {};
-            nullSrvDesc.Format = DXGI_FORMAT_R32_FLOAT;
-            nullSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-            nullSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-            nullSrvDesc.Texture2D.MipLevels = 1;
-            m_device->CreateShaderResourceView(nullptr, &nullSrvDesc, dstCpu);
-        }
-    }
-
-    // --- Set PSO and root signature ---
-    if (material && material->alphaMode == AlphaMode::Blend && m_pipelineState.HasPBRAlphaBlendPSO())
-        m_commandList->SetPipelineState(m_pipelineState.GetPBRAlphaBlendPSO());
-    else
-        m_commandList->SetPipelineState(m_pipelineState.GetPBRPSO());
-    m_commandList->SetGraphicsRootSignature(m_pipelineState.GetRootSignature());
-
-    // Set descriptor heap
-    ID3D12DescriptorHeap* heaps[] = { m_cbvSrvHeap.GetHeap() };
-    m_commandList->SetDescriptorHeaps(1, heaps);
-
-    // Bind root parameters
-    m_commandList->SetGraphicsRootDescriptorTable(0, cbv0Gpu);  // b0: PerObject
-    m_commandList->SetGraphicsRootDescriptorTable(1, srvBlockGpu);  // t0~t4: textures
-    m_commandList->SetGraphicsRootDescriptorTable(2, cbv1Gpu);  // b1: Lights
-    m_commandList->SetGraphicsRootDescriptorTable(3, cbv2Gpu);  // b2: Material
-    m_commandList->SetGraphicsRootDescriptorTable(4, shadowSrvBlockGpu);  // t5~t12: shadow maps
-    m_commandList->SetGraphicsRootDescriptorTable(5, cbv3Gpu);  // b3: ShadowConstants
-
-    // Set primitive topology
-    m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-    // Set vertex and index buffers
-    D3D12_VERTEX_BUFFER_VIEW vbView = d3dVB->GetVertexBufferView();
-    m_commandList->IASetVertexBuffers(0, 1, &vbView);
-
-    D3D12_INDEX_BUFFER_VIEW ibView = d3dIB->GetIndexBufferView();
-    m_commandList->IASetIndexBuffer(&ibView);
-
-    // Draw
-    uint32 indexCount = d3dIB->GetSize() / sizeof(uint32);
-    m_commandList->DrawIndexedInstanced(indexCount, 1, 0, 0, 0);
+    BindAndDrawPBR(
+        m_commandList.Get(), m_device,
+        d3dVB, d3dIB,
+        inst.gpuAddr, instanceCount,
+        m_cbPool, m_cbvSrvHeap, m_cbvDescriptorSize,
+        m_viewProjection, m_cameraPosition,
+        m_pbrLightConstants, m_shadowConstants,
+        material, textureCache,
+        (material && material->alphaMode == AlphaMode::Blend),
+        m_renderModeInt, m_mipMappingEnabled,
+        pso, m_pipelineState.GetRootSignature(),
+        m_shadowSrvCpu, m_shadowMapsCreated);
 }
 
 void D3D12Context::SetShadowMapSize(uint32 size)
@@ -935,43 +836,57 @@ void D3D12Context::DrawShadowDepth(IRHIBuffer* vb, IRHIBuffer* ib,
     const DirectX::XMFLOAT4X4& worldMatrix,
     const DirectX::XMFLOAT4X4& lightViewProj)
 {
-    if (!vb || !ib || !m_pipelineState.HasShadowDepthPSO())
+    DrawShadowDepthInstanced(vb, ib, &worldMatrix, 1, lightViewProj);
+}
+
+void D3D12Context::DrawShadowDepthInstanced(IRHIBuffer* vb, IRHIBuffer* ib,
+    const DirectX::XMFLOAT4X4* worlds, uint32 instanceCount,
+    const DirectX::XMFLOAT4X4& lightViewProj)
+{
+    if (!vb || !ib || !m_pipelineState.HasShadowDepthPSO() || instanceCount == 0)
         return;
 
     auto* d3dVB = static_cast<D3D12Buffer*>(vb);
     auto* d3dIB = static_cast<D3D12Buffer*>(ib);
 
-    // Allocate CB for ShadowPassConstants (b0)
+    // Allocate instance data from the per-frame pool
+    InstanceAlloc inst = AllocateInstanceBuffer(instanceCount);
+    if (!inst.cpuPtr)
+        return;
+    memcpy(inst.cpuPtr, worlds, instanceCount * sizeof(DirectX::XMFLOAT4X4));
+
+    // CB0: ShadowPassConstants (lightViewProj only — world is per-instance)
     CBAllocation cbAlloc = m_cbPool.Allocate(sizeof(ShadowPassConstants));
     if (!cbAlloc.cpuPtr) return;
 
     ShadowPassConstants constants = {};
     constants.lightViewProj = lightViewProj;
-    constants.world = worldMatrix;
     memcpy(cbAlloc.cpuPtr, &constants, sizeof(ShadowPassConstants));
 
-    // Create transient CBV
     D3D12_CPU_DESCRIPTOR_HANDLE cbvCpu = m_cbvSrvHeap.AllocateTransient();
     D3D12_GPU_DESCRIPTOR_HANDLE cbvGpu = m_cbvSrvHeap.GetGPUHandleForCPU(cbvCpu);
-
     D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
     cbvDesc.BufferLocation = cbAlloc.gpuAddress;
-    cbvDesc.SizeInBytes = (sizeof(ShadowPassConstants) + 255) & ~255;
+    cbvDesc.SizeInBytes    = (sizeof(ShadowPassConstants) + 255) & ~255;
     m_device->CreateConstantBufferView(&cbvDesc, cbvCpu);
 
-    // Bind CB to root param 0 (b0)
     m_commandList->SetGraphicsRootDescriptorTable(0, cbvGpu);
 
-    // Set vertex and index buffers
+    // Vertex buffer (slot 0) + instance buffer (slot 1)
     D3D12_VERTEX_BUFFER_VIEW vbView = d3dVB->GetVertexBufferView();
     m_commandList->IASetVertexBuffers(0, 1, &vbView);
+
+    D3D12_VERTEX_BUFFER_VIEW ibufView = {};
+    ibufView.BufferLocation = inst.gpuAddr;
+    ibufView.SizeInBytes    = instanceCount * 64u;
+    ibufView.StrideInBytes  = 64u;
+    m_commandList->IASetVertexBuffers(1, 1, &ibufView);
 
     D3D12_INDEX_BUFFER_VIEW ibView = d3dIB->GetIndexBufferView();
     m_commandList->IASetIndexBuffer(&ibView);
 
-    // Draw
     uint32 indexCount = d3dIB->GetSize() / sizeof(uint32);
-    m_commandList->DrawIndexedInstanced(indexCount, 1, 0, 0, 0);
+    m_commandList->DrawIndexedInstanced(indexCount, instanceCount, 0, 0, 0);
 }
 
 void D3D12Context::DrawText(int x, int y, const char* text,
@@ -1012,6 +927,253 @@ void D3D12Context::WaitForGPU()
         m_fence->SetEventOnCompletion(m_fenceValue, m_fenceEvent);
         WaitForSingleObject(m_fenceEvent, INFINITE);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Copy Queue API
+// ---------------------------------------------------------------------------
+
+void D3D12Context::BeginCopyCommands()
+{
+    m_copyCommandAllocator->Reset();
+    m_copyCommandList->Reset(m_copyCommandAllocator.Get(), nullptr);
+    m_copyCommandListOpen = true;
+}
+
+void D3D12Context::EndCopyCommands()
+{
+    if (!m_copyCommandListOpen)
+        return;
+    m_copyCommandList->Close();
+    m_copyCommandListOpen = false;
+
+    ID3D12CommandList* cmdLists[] = { m_copyCommandList.Get() };
+    m_copyQueue->ExecuteCommandLists(1, cmdLists);
+
+    m_copyFenceValue++;
+    m_copyQueue->Signal(m_copyFence.Get(), m_copyFenceValue);
+}
+
+void D3D12Context::WaitForCopyQueue()
+{
+    if (!m_copyFence)
+        return;
+    if (m_copyFence->GetCompletedValue() < m_copyFenceValue)
+    {
+        m_copyFence->SetEventOnCompletion(m_copyFenceValue, m_copyFenceEvent);
+        WaitForSingleObject(m_copyFenceEvent, INFINITE);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Instance Buffer Pool — sub-allocate from per-frame Upload Heap ring buffer
+// ---------------------------------------------------------------------------
+
+D3D12Context::InstanceAlloc D3D12Context::AllocateInstanceBuffer(uint32 instanceCount)
+{
+    if (!m_instancePoolMapped || instanceCount == 0)
+        return { 0, nullptr };
+
+    // Each InstanceData is 64 bytes; align to 16 bytes (float4 natural alignment)
+    constexpr uint32 INSTANCE_STRIDE = 64;
+    uint32 byteSize = instanceCount * INSTANCE_STRIDE;
+
+    // Round up to 16-byte boundary
+    byteSize = (byteSize + 15u) & ~15u;
+
+    if (m_instancePoolOffset + byteSize > INSTANCE_POOL_HALF_SIZE)
+        return { 0, nullptr };  // Pool exhausted for this frame
+
+    uint32 halfBase = m_instancePoolFrame * INSTANCE_POOL_HALF_SIZE;
+    uint32 absoluteOffset = halfBase + m_instancePoolOffset;
+
+    InstanceAlloc alloc;
+    alloc.gpuAddr = m_instancePoolGpuBase + absoluteOffset;
+    alloc.cpuPtr  = m_instancePoolMapped  + absoluteOffset;
+
+    m_instancePoolOffset += byteSize;
+    return alloc;
+}
+
+// ---------------------------------------------------------------------------
+// Instanced PBR draw helpers (shared CB setup extracted into a lambda below)
+// ---------------------------------------------------------------------------
+
+// Internal helper: bind all PBR CBs + SRVs, set PSO, IA; then call DrawIndexedInstanced.
+// worlds[] is a pointer to 'instanceCount' transposed XMFLOAT4X4 matrices already
+// written into an instance Upload Buffer at 'instanceGpuAddr'.
+static void BindAndDrawPBR(
+    ID3D12GraphicsCommandList* cmdList,
+    ID3D12Device*             device,
+    D3D12Buffer*              d3dVB,
+    D3D12Buffer*              d3dIB,
+    D3D12_GPU_VIRTUAL_ADDRESS instanceGpuAddr,
+    uint32                    instanceCount,
+    D3D12CBPool&              cbPool,
+    D3D12DescriptorHeap&      cbvSrvHeap,
+    UINT                      cbvDescSize,
+    const DirectX::XMFLOAT4X4& viewProj,
+    const DirectX::XMFLOAT3&   camPos,
+    const LightConstants&       lights,
+    const ShadowConstants&      shadows,
+    Material*                   material,
+    TextureCache*               textureCache,
+    bool                        isAlphaBlend,
+    int                         renderModeInt,
+    bool                        mipEnabled,
+    ID3D12PipelineState*        pso,
+    ID3D12RootSignature*        rootSig,
+    const D3D12_CPU_DESCRIPTOR_HANDLE shadowSrvCpu[8],
+    bool                        shadowMapsCreated)
+{
+    // CB0: PerObjectPBR (viewProj + camPos — world is in instance buffer)
+    CBAllocation cb0 = cbPool.Allocate(sizeof(PerObjectPBR));
+    if (!cb0.cpuPtr) return;
+    PerObjectPBR perObj = {};
+    perObj.viewProj       = viewProj;
+    perObj.cameraPosition = camPos;
+    memcpy(cb0.cpuPtr, &perObj, sizeof(PerObjectPBR));
+
+    // CB1: LightConstants
+    CBAllocation cb1 = cbPool.Allocate(sizeof(LightConstants));
+    if (!cb1.cpuPtr) return;
+    memcpy(cb1.cpuPtr, &lights, sizeof(LightConstants));
+
+    // CB2: PerMaterialConstants
+    CBAllocation cb2 = cbPool.Allocate(sizeof(PerMaterialConstants));
+    if (!cb2.cpuPtr) return;
+    PerMaterialConstants matConst = {};
+    if (material)
+    {
+        matConst.baseColorFactor       = material->baseColorFactor;
+        matConst.metallicFactor        = material->metallicFactor;
+        matConst.roughnessFactor       = material->roughnessFactor;
+        matConst.alphaCutoff           = material->alphaCutoff;
+        matConst.hasAlbedoMap          = material->baseColorTexture           ? 1u : 0u;
+        matConst.hasNormalMap          = material->normalTexture               ? 1u : 0u;
+        matConst.hasMetallicRoughnessMap = material->metallicRoughnessTexture ? 1u : 0u;
+        matConst.hasEmissiveMap        = material->emissiveTexture             ? 1u : 0u;
+        matConst.hasOcclusionMap       = material->occlusionTexture            ? 1u : 0u;
+        matConst.emissiveFactor        = material->emissiveFactor;
+        matConst.alphaMode             = static_cast<uint32>(material->alphaMode);
+    }
+    else
+    {
+        matConst.baseColorFactor = { 1.f, 1.f, 1.f, 1.f };
+        matConst.metallicFactor  = 0.f;
+        matConst.roughnessFactor = 0.5f;
+        matConst.alphaMode       = 0;
+    }
+    matConst.useMips = mipEnabled ? 1u : 0u;
+
+    if (renderModeInt == 1) // Solid
+    {
+        matConst.hasAlbedoMap = matConst.hasNormalMap =
+        matConst.hasMetallicRoughnessMap = matConst.hasEmissiveMap =
+        matConst.hasOcclusionMap = 0;
+    }
+    else if (renderModeInt == 2) // BaseColorOnly
+    {
+        matConst.hasNormalMap = matConst.hasMetallicRoughnessMap =
+        matConst.hasEmissiveMap = matConst.hasOcclusionMap = 0;
+    }
+    memcpy(cb2.cpuPtr, &matConst, sizeof(PerMaterialConstants));
+
+    // CB3: ShadowConstants
+    CBAllocation cb3 = cbPool.Allocate(sizeof(ShadowConstants));
+    if (!cb3.cpuPtr) return;
+    memcpy(cb3.cpuPtr, &shadows, sizeof(ShadowConstants));
+
+    // --- Transient CBV descriptors ---
+    auto makeCBV = [&](CBAllocation& alloc, uint32 size) -> D3D12_GPU_DESCRIPTOR_HANDLE {
+        D3D12_CPU_DESCRIPTOR_HANDLE cpu = cbvSrvHeap.AllocateTransient();
+        D3D12_CONSTANT_BUFFER_VIEW_DESC d = {};
+        d.BufferLocation = alloc.gpuAddress;
+        d.SizeInBytes    = (size + 255u) & ~255u;
+        device->CreateConstantBufferView(&d, cpu);
+        return cbvSrvHeap.GetGPUHandleForCPU(cpu);
+    };
+
+    D3D12_GPU_DESCRIPTOR_HANDLE cbv0Gpu = makeCBV(cb0, sizeof(PerObjectPBR));
+    D3D12_GPU_DESCRIPTOR_HANDLE cbv1Gpu = makeCBV(cb1, sizeof(LightConstants));
+    D3D12_GPU_DESCRIPTOR_HANDLE cbv2Gpu = makeCBV(cb2, sizeof(PerMaterialConstants));
+    D3D12_GPU_DESCRIPTOR_HANDLE cbv3Gpu = makeCBV(cb3, sizeof(ShadowConstants));
+
+    // --- 5 contiguous texture SRV descriptors ---
+    D3D12_CPU_DESCRIPTOR_HANDLE srvBlockCpu = cbvSrvHeap.AllocateTransient();
+    D3D12_GPU_DESCRIPTOR_HANDLE srvBlockGpu = cbvSrvHeap.GetGPUHandleForCPU(srvBlockCpu);
+    for (int i = 1; i < 5; i++) cbvSrvHeap.AllocateTransient();
+
+    auto getSrvCpu = [&](Texture* tex) -> D3D12_CPU_DESCRIPTOR_HANDLE {
+        if (tex && tex->GetResource()) return tex->GetSRVCpuHandle();
+        if (textureCache && textureCache->GetFallback()) return textureCache->GetFallback()->GetSRVCpuHandle();
+        return {};
+    };
+    Texture* texs[5] = { nullptr, nullptr, nullptr, nullptr, nullptr };
+    if (material) {
+        texs[0] = material->baseColorTexture;
+        texs[1] = material->normalTexture;
+        texs[2] = material->metallicRoughnessTexture;
+        texs[3] = material->emissiveTexture;
+        texs[4] = material->occlusionTexture;
+    }
+    for (int i = 0; i < 5; i++) {
+        D3D12_CPU_DESCRIPTOR_HANDLE src = getSrvCpu(texs[i]);
+        D3D12_CPU_DESCRIPTOR_HANDLE dst = srvBlockCpu;
+        dst.ptr += static_cast<SIZE_T>(i) * cbvDescSize;
+        if (src.ptr) device->CopyDescriptorsSimple(1, dst, src, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    }
+
+    // --- 8 contiguous shadow map SRV descriptors ---
+    D3D12_CPU_DESCRIPTOR_HANDLE shadowSrvBlockCpu = cbvSrvHeap.AllocateTransient();
+    D3D12_GPU_DESCRIPTOR_HANDLE shadowSrvBlockGpu = cbvSrvHeap.GetGPUHandleForCPU(shadowSrvBlockCpu);
+    for (int i = 1; i < 8; i++) cbvSrvHeap.AllocateTransient();
+
+    for (uint32 i = 0; i < MAX_SHADOW_MAPS; i++) {
+        D3D12_CPU_DESCRIPTOR_HANDLE dst = shadowSrvBlockCpu;
+        dst.ptr += static_cast<SIZE_T>(i) * cbvDescSize;
+        if (shadowMapsCreated && shadowSrvCpu[i].ptr) {
+            device->CopyDescriptorsSimple(1, dst, shadowSrvCpu[i], D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        } else {
+            D3D12_SHADER_RESOURCE_VIEW_DESC nullSrv = {};
+            nullSrv.Format                  = DXGI_FORMAT_R32_FLOAT;
+            nullSrv.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
+            nullSrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            nullSrv.Texture2D.MipLevels     = 1;
+            device->CreateShaderResourceView(nullptr, &nullSrv, dst);
+        }
+    }
+
+    // --- Set PSO + root sig + descriptor heap ---
+    cmdList->SetPipelineState(pso);
+    cmdList->SetGraphicsRootSignature(rootSig);
+    ID3D12DescriptorHeap* heaps[] = { cbvSrvHeap.GetHeap() };
+    cmdList->SetDescriptorHeaps(1, heaps);
+
+    cmdList->SetGraphicsRootDescriptorTable(0, cbv0Gpu);
+    cmdList->SetGraphicsRootDescriptorTable(1, srvBlockGpu);
+    cmdList->SetGraphicsRootDescriptorTable(2, cbv1Gpu);
+    cmdList->SetGraphicsRootDescriptorTable(3, cbv2Gpu);
+    cmdList->SetGraphicsRootDescriptorTable(4, shadowSrvBlockGpu);
+    cmdList->SetGraphicsRootDescriptorTable(5, cbv3Gpu);
+
+    // --- IA: vertex buffer (slot 0) + instance buffer (slot 1) ---
+    cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    D3D12_VERTEX_BUFFER_VIEW vbView = d3dVB->GetVertexBufferView();
+    cmdList->IASetVertexBuffers(0, 1, &vbView);
+
+    D3D12_VERTEX_BUFFER_VIEW ibufView = {};
+    ibufView.BufferLocation = instanceGpuAddr;
+    ibufView.SizeInBytes    = instanceCount * 64u; // sizeof(InstanceData)
+    ibufView.StrideInBytes  = 64u;
+    cmdList->IASetVertexBuffers(1, 1, &ibufView);
+
+    D3D12_INDEX_BUFFER_VIEW ibView = d3dIB->GetIndexBufferView();
+    cmdList->IASetIndexBuffer(&ibView);
+
+    uint32 indexCount = d3dIB->GetSize() / sizeof(uint32);
+    cmdList->DrawIndexedInstanced(indexCount, instanceCount, 0, 0, 0);
 }
 
 void D3D12Context::CreateDepthBuffer(uint32 width, uint32 height)
