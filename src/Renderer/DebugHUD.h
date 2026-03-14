@@ -47,6 +47,12 @@ struct RenderStats
     uint64 vramUsedMB      = 0;
     uint64 vramBudgetMB    = 0;
     uint32 trackedTextures = 0;
+
+    // VRAM pressure (Phase 29): true when usage > 80% of budget
+    bool vramPressure = false;
+    // Instancing stats (Phase 29)
+    uint32 opaqueBatches   = 0;  // batches after front-to-back sort
+    uint32 totalInstances  = 0;  // total opaque instances across all batches
 };
 
 class DebugHUD

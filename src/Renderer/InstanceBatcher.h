@@ -36,6 +36,11 @@ public:
 
     const std::vector<Batch>& GetBatches() const { return m_batches; }
 
+    // Sort batches front-to-back by the first instance's world translation.
+    // Call after all AddInstance() calls, before iterating GetBatches().
+    // Improves GPU Early-Z rejection for opaque geometry.
+    void SortFrontToBack(const DirectX::XMFLOAT3& cameraPos);
+
     // Total number of instances across all batches (for stats)
     uint32_t GetTotalInstanceCount() const;
 

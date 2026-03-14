@@ -33,6 +33,9 @@ struct CullStats
     uint32 activeLights         = 0;  // lights submitted to GPU after light culling
     uint32 culledLights         = 0;  // Point/Spot lights rejected by light culler
     uint32 renderedPolygons     = 0;  // actual triangles submitted (after culling + LOD)
+    // Instancing stats (Phase 29)
+    uint32 opaqueBatches        = 0;  // unique (Mesh*, Material*) batches after front-to-back sort
+    uint32 totalInstances       = 0;  // total opaque instances across all batches
 };
 
 class D3D12Context;
@@ -60,6 +63,11 @@ public:
 
     void SetMipMappingEnabled(bool enabled);
     bool IsMipMappingEnabled() const            { return m_mipMappingEnabled; }
+
+    // VRAM pressure hint: when true, LOD distances are scaled up so objects switch
+    // to lower-detail meshes sooner, reducing per-frame polygon throughput.
+    void SetVRAMPressure(bool highPressure)     { m_vramPressure = highPressure; }
+    bool IsVRAMPressure() const                 { return m_vramPressure; }
 
     // Scene diagonal length — used to scale shadow ortho projection and far plane.
     // Call after loading a scene whenever sceneDiagonal is known.
@@ -109,6 +117,7 @@ private:
     bool          m_mipMappingEnabled      = true;
     bool          m_frustumCullingEnabled  = true;
     bool          m_lightCullingEnabled    = true;
+    bool          m_vramPressure           = false;
     float         m_sceneDiagonal          = 10.0f;
     DirectX::XMFLOAT3 m_sceneCenter        = { 0.f, 0.f, 0.f };
 

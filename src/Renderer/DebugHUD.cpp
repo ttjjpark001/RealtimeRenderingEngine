@@ -81,17 +81,29 @@ void DebugHUD::Render(IRHIContext& context)
     context.DrawText(x, y, buf, green);
     y += lineHeight;
 
-    // Texture streaming / VRAM stats (Phase 27)
+    // Texture streaming / VRAM stats (Phase 27/29)
     if (m_lastStats.vramBudgetMB > 0)
     {
-        snprintf(buf, sizeof(buf), "VRAM: %lluMB / %lluMB",
-            m_lastStats.vramUsedMB, m_lastStats.vramBudgetMB);
-        context.DrawText(x, y, buf, green);
+        const DirectX::XMFLOAT4 vramColor = m_lastStats.vramPressure
+            ? DirectX::XMFLOAT4{ 1.0f, 0.3f, 0.0f, 1.0f }  // orange: high pressure
+            : green;
+        snprintf(buf, sizeof(buf), "VRAM: %lluMB / %lluMB%s",
+            m_lastStats.vramUsedMB, m_lastStats.vramBudgetMB,
+            m_lastStats.vramPressure ? " !" : "");
+        context.DrawText(x, y, buf, vramColor);
         y += lineHeight;
     }
     if (m_lastStats.trackedTextures > 0)
     {
         snprintf(buf, sizeof(buf), "Textures: %u", m_lastStats.trackedTextures);
+        context.DrawText(x, y, buf, green);
+        y += lineHeight;
+    }
+    // Instancing stats (Phase 29)
+    if (m_lastStats.opaqueBatches > 0)
+    {
+        snprintf(buf, sizeof(buf), "Batches: %u  Instances: %u",
+            m_lastStats.opaqueBatches, m_lastStats.totalInstances);
         context.DrawText(x, y, buf, green);
         y += lineHeight;
     }

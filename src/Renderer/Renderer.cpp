@@ -275,7 +275,8 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
             XMVECTOR objCenter = XMLoadFloat3(&worldAABB.Center);
             XMVECTOR camV      = XMLoadFloat3(&camPos);
             float dist = XMVectorGetX(XMVector3Length(XMVectorSubtract(objCenter, camV)));
-            Mesh* drawMesh = m_lodEnabled ? m_lodSelector.SelectLOD(mesh, dist) : mesh;
+            float effectiveDist = (m_vramPressure && m_lodEnabled) ? dist * 2.0f : dist;
+            Mesh* drawMesh = m_lodEnabled ? m_lodSelector.SelectLOD(mesh, effectiveDist) : mesh;
 
             UploadMesh(drawMesh);
             auto it = m_meshCache.find(drawMesh);
@@ -308,7 +309,9 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
             XMVECTOR objCenter = XMLoadFloat3(&worldAABB.Center);
             XMVECTOR camV      = XMLoadFloat3(&camPos);
             float dist = XMVectorGetX(XMVector3Length(XMVectorSubtract(objCenter, camV)));
-            Mesh* drawMesh = m_lodEnabled ? m_lodSelector.SelectLOD(mesh, dist) : mesh;
+            // VRAM pressure: scale distance up so LOD switches to lower detail sooner
+            float effectiveDist = (m_vramPressure && m_lodEnabled) ? dist * 2.0f : dist;
+            Mesh* drawMesh = m_lodEnabled ? m_lodSelector.SelectLOD(mesh, effectiveDist) : mesh;
 
             Material* material = node->GetMaterial();
 
@@ -327,6 +330,13 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
             else
                 m_opaqueBatcher.AddInstance(drawMesh, material, worldFloat);
         });
+
+        // Sort opaque batches front-to-back to maximize GPU Early-Z rejection
+        m_opaqueBatcher.SortFrontToBack(camPos);
+
+        // Record instancing stats before drawing
+        m_lastCullStats.opaqueBatches  = static_cast<uint32>(m_opaqueBatcher.GetBatches().size());
+        m_lastCullStats.totalInstances = m_opaqueBatcher.GetTotalInstanceCount();
 
         // --- Draw opaque batches ---
         for (const auto& batch : m_opaqueBatcher.GetBatches())

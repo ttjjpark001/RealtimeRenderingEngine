@@ -420,13 +420,26 @@ void Engine::Update(float deltaTime)
             stats.culledLights       = cs.culledLights;
         }
 
-        // Texture streaming stats (Phase 27)
+        // Texture streaming stats + VRAM pressure (Phase 27/29)
         if (m_textureStreamer)
         {
             auto ss = m_textureStreamer->GetStats();
-            stats.vramUsedMB       = ss.vram.usedMB;
-            stats.vramBudgetMB     = ss.vram.budgetMB;
-            stats.trackedTextures  = ss.trackedTextures;
+            stats.vramUsedMB      = ss.vram.usedMB;
+            stats.vramBudgetMB    = ss.vram.budgetMB;
+            stats.trackedTextures = ss.trackedTextures;
+            stats.vramPressure    = m_textureStreamer->IsVRAMOverBudget();
+
+            // Propagate VRAM pressure to renderer (adaptive LOD scaling)
+            if (m_renderer)
+                m_renderer->SetVRAMPressure(stats.vramPressure);
+        }
+
+        // Instancing stats (Phase 29)
+        if (m_renderer)
+        {
+            CullStats cs = m_renderer->GetLastCullStats();
+            stats.opaqueBatches  = cs.opaqueBatches;
+            stats.totalInstances = cs.totalInstances;
         }
 
         m_debugHUD->Update(deltaTime, stats);
