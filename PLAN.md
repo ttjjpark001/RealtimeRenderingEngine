@@ -1035,53 +1035,6 @@ Phase 11 (Phase 01 완료)
 
 **포함 Phase**: Phase 32 ~ Phase 49
 
-## Phase 03 의존성 그래프
-
-```
-Phase 31 (Phase 02 Backup)
-    │
-    └── Phase 32 (RRScenePreprocessor: .rrscene 전처리 도구) ← Phase 03 시작
-            │
-            ├── Phase 33 (Occlusion Culling: Hi-Z GPU + Compute 인프라) ──┐
-            ├── Phase 34 (Point Light Cube Map Shadowing) ─────────────────┤
-            ├── Phase 35 (Skeletal Animation) ─────────────────────────────┤
-            │       └── Phase 36 (RRScenePreprocessor 확장: Skeletal 지원) ──┤
-            │                                                               │
-            └──────────────────────────────────── Phase 37 (Deferred Rendering) ─┘
-                                                             │
-                                              Phase 38 (HDR Pipeline + Tone Mapping)
-                                                             │
-                                    ┌───────── Phase 39 (SSAO) ──────────────────┐
-                                    │         Phase 40 (Bloom + PP 파이프라인)    │
-                                    │         Phase 41 (TAA) ─────────────────────┤
-                                    │         Phase 42 (Motion Blur + DoF) ───────┤
-                                    │         Phase 43 (SSR + Refraction) ─────────┤
-                                    │         Phase 44 (SSSSS) ────────────────────┤
-                                    │                                              │
-                                    └──────────────────────── Phase 45 (DDGI/GI) ──┤
-                                                                       │           │
-                                                        Phase 46 (DXR Hybrid RT) ──┘
-                                                                       │
-                                                        Phase 47 (Nanite: Virtual Geometry)
-                                                                       │
-                                                        Phase 48 (Neural Upscaling + Denoising)
-                                                                       │
-                                                        Phase 49 (코드 리뷰 + 최적화 + 버그 수정 + ARCHITECTURE.md)
-```
-
-## Phase 03 리스크 & 대응
-
-| 리스크 | 대응 |
-|--------|------|
-| Deferred Rendering으로 전환 시 Alpha Blend 호환 | Hybrid Forward+: Alpha Blend 오브젝트는 기존 Forward 패스 유지 |
-| G-Buffer VRAM 오버헤드 | RT0~RT2 + Depth = ~30MB (1080p 기준), VRAM 예산 확인 후 포맷 최적화 |
-| TAA 고스팅 (Ghost Artifact) | Variance Clipping + Velocity 가중치로 억제, 움직임 큰 씬에서 블렌딩 감소 |
-| DXR 미지원 하드웨어 (no RTX) | 런타임 DXR Tier 감지, PCF Shadow/SSR/DDGI Static Probe로 자동 폴백 |
-| DDGI Probe Ray 비용 (256 Probe × 256 Ray) | 비동기 Compute Queue에서 Probe 부분 업데이트 (매 프레임 일부만 갱신) |
-| Nanite Mesh Shader 미지원 (구형 GPU) | Feature Level 확인, 미지원 시 기존 LODSelector + DrawIndexedInstanced 폴백 |
-| FSR/DLSS SDK 버전 관리 | vcpkg 또는 서브모듈로 SDK 버전 고정, 업데이트 시 통합 테스트 |
-| Neural Denoiser latency (1프레임 딜레이) | Temporal Denoiser는 1프레임 레이턴시 허용 (RT Shadow/Reflection 결과에는 용인 범위) |
-
 ---
 
 ### Phase 32: RRScenePreprocessor — 오프라인 씬 전처리 도구 + 백그라운드 자동 생성
@@ -1501,4 +1454,51 @@ Rasterization과 Ray Tracing을 Hybrid 방식으로 결합, PCF Shadow/SSR 대�
 **완료 기준**: D3D12 Debug Layer 경고 0건, 주요 패스 타임스탬프 측정 완료, ARCHITECTURE.md 작성 완료, Sponza+Bistro 벤치마크 결과 기록
 
 ---
+
+## Phase 03 의존성 그래프
+
+```
+Phase 31 (Phase 02 Backup)
+    │
+    └── Phase 32 (RRScenePreprocessor: .rrscene 전처리 도구) ← Phase 03 시작
+            │
+            ├── Phase 33 (Occlusion Culling: Hi-Z GPU + Compute 인프라) ──┐
+            ├── Phase 34 (Point Light Cube Map Shadowing) ─────────────────┤
+            ├── Phase 35 (Skeletal Animation) ─────────────────────────────┤
+            │       └── Phase 36 (RRScenePreprocessor 확장: Skeletal 지원) ──┤
+            │                                                               │
+            └──────────────────────────────────── Phase 37 (Deferred Rendering) ─┘
+                                                             │
+                                              Phase 38 (HDR Pipeline + Tone Mapping)
+                                                             │
+                                    ┌───────── Phase 39 (SSAO) ──────────────────┐
+                                    │         Phase 40 (Bloom + PP 파이프라인)    │
+                                    │         Phase 41 (TAA) ─────────────────────┤
+                                    │         Phase 42 (Motion Blur + DoF) ───────┤
+                                    │         Phase 43 (SSR + Refraction) ─────────┤
+                                    │         Phase 44 (SSSSS) ────────────────────┤
+                                    │                                              │
+                                    └──────────────────────── Phase 45 (DDGI/GI) ──┤
+                                                                       │           │
+                                                        Phase 46 (DXR Hybrid RT) ──┘
+                                                                       │
+                                                        Phase 47 (Nanite: Virtual Geometry)
+                                                                       │
+                                                        Phase 48 (Neural Upscaling + Denoising)
+                                                                       │
+                                                        Phase 49 (코드 리뷰 + 최적화 + 버그 수정 + ARCHITECTURE.md)
+```
+
+## Phase 03 리스크 & 대응
+
+| 리스크 | 대응 |
+|--------|------|
+| Deferred Rendering으로 전환 시 Alpha Blend 호환 | Hybrid Forward+: Alpha Blend 오브젝트는 기존 Forward 패스 유지 |
+| G-Buffer VRAM 오버헤드 | RT0~RT2 + Depth = ~30MB (1080p 기준), VRAM 예산 확인 후 포맷 최적화 |
+| TAA 고스팅 (Ghost Artifact) | Variance Clipping + Velocity 가중치로 억제, 움직임 큰 씬에서 블렌딩 감소 |
+| DXR 미지원 하드웨어 (no RTX) | 런타임 DXR Tier 감지, PCF Shadow/SSR/DDGI Static Probe로 자동 폴백 |
+| DDGI Probe Ray 비용 (256 Probe × 256 Ray) | 비동기 Compute Queue에서 Probe 부분 업데이트 (매 프레임 일부만 갱신) |
+| Nanite Mesh Shader 미지원 (구형 GPU) | Feature Level 확인, 미지원 시 기존 LODSelector + DrawIndexedInstanced 폴백 |
+| FSR/DLSS SDK 버전 관리 | vcpkg 또는 서브모듈로 SDK 버전 고정, 업데이트 시 통합 테스트 |
+| Neural Denoiser latency (1프레임 딜레이) | Temporal Denoiser는 1프레임 레이턴시 허용 (RT Shadow/Reflection 결과에는 용인 범위) |
 
