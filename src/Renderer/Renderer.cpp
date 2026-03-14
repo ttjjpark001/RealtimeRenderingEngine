@@ -160,6 +160,9 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
             const GPULightData& gpuLight = builtLights.lights[li];
             XMMATRIX lvp;
 
+            XMMATRIX shadowView = XMMatrixIdentity();
+            XMMATRIX shadowProj = XMMatrixIdentity();
+
             if (gpuLight.type == 0)  // Directional
             {
                 XMVECTOR dir    = XMLoadFloat3(&gpuLight.direction);
@@ -180,8 +183,9 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
                 // looking toward sceneCenter + dir*(farPlane/2).
                 XMVECTOR shadowCamPos = XMVectorSubtract(center,
                     XMVectorScale(dir, farPlane * 0.5f));
-                lvp = XMMatrixLookAtLH(shadowCamPos, XMVectorAdd(shadowCamPos, dir), up)
-                    * XMMatrixOrthographicLH(orthoSize, orthoSize, nearPlane, farPlane);
+                shadowView = XMMatrixLookAtLH(shadowCamPos, XMVectorAdd(shadowCamPos, dir), up);
+                shadowProj = XMMatrixOrthographicLH(orthoSize, orthoSize, nearPlane, farPlane);
+                lvp = shadowView * shadowProj;
             }
             else if (gpuLight.type == 2)  // Spot
             {
@@ -195,8 +199,9 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
                 if (fov < 0.1f) fov = 0.1f;
                 float spotFar  = m_sceneDiagonal * 3.0f;
                 float spotNear = m_sceneDiagonal * 0.05f;  // scale with scene; was hardcoded 0.1f
-                lvp = XMMatrixLookAtLH(pos, XMVectorAdd(pos, dir), up)
-                    * XMMatrixPerspectiveFovLH(fov, 1.0f, spotNear, spotFar);
+                shadowView = XMMatrixLookAtLH(pos, XMVectorAdd(pos, dir), up);
+                shadowProj = XMMatrixPerspectiveFovLH(fov, 1.0f, spotNear, spotFar);
+                lvp = shadowView * shadowProj;
             }
             else  // Point light (cube shadow not yet implemented)
             {
@@ -209,11 +214,25 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
             XMFLOAT4X4 lvpFloat;
             XMStoreFloat4x4(&lvpFloat, XMMatrixTranspose(lvp));
 
+            // Build a frustum from the light's view to skip shadow draw calls
+            // for objects outside the light's view volume.
+            FrustumCuller lightFrustum;
+            lightFrustum.Build(shadowView, shadowProj);
+
             m_context->BeginShadowPass(shadowIdx);
-            graph.Traverse([this, &lvpFloat](SceneNode* node, const XMMATRIX& worldMatrix)
+            graph.Traverse([this, &lvpFloat, &lightFrustum](SceneNode* node, const XMMATRIX& worldMatrix)
             {
                 Mesh* mesh = node->GetMesh();
                 if (!mesh) return;
+
+                // Frustum cull against the light's view frustum
+                if (m_frustumCullingEnabled)
+                {
+                    BoundingBox worldAABB = node->GetWorldAABB();
+                    if (!lightFrustum.IsVisible(worldAABB))
+                        return;
+                }
+
                 UploadMesh(mesh);
                 auto it = m_meshCache.find(mesh);
                 if (it == m_meshCache.end()) return;
