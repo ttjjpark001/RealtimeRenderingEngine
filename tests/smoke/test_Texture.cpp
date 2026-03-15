@@ -84,7 +84,15 @@ protected:
     void TearDown() override
     {
         auto* context = static_cast<RRE::D3D12Context*>(m_device->GetContext());
-        // End the frame and wait for GPU
+
+        // Test-body locals (Texture, TextureCache) go out of scope BEFORE TearDown runs,
+        // releasing GPU resources that are still referenced by the open command list.
+        // Executing that command list would cause a WARP hang / use-after-free.
+        // Fix: close and discard the recorded commands, then start a fresh clean frame.
+        m_cmdList->Close();    // discard pending texture-upload commands
+        context->BeginFrame(); // reset allocator + cmd list (safe: never submitted)
+
+        // Submit a harmless clear-only frame so EndFrame has a valid RT transition.
         DirectX::XMFLOAT4 black(0, 0, 0, 1);
         context->Clear(black);
         context->EndFrame();

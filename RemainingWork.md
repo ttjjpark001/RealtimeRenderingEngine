@@ -1,6 +1,6 @@
 # 잔여 구현 항목 정리
 
-> 최종 업데이트: 2026-03-14 (Phase 30 완료 — 통합 & 검증, 아키텍처 문서화)
+> 최종 업데이트: 2026-03-14 (Phase 30 완료 — 전체 91개 테스트 통과 확인)
 
 ---
 
@@ -70,7 +70,7 @@ Phase 27~29 완료 후 전체 파이프라인 연결 및 검증, 코드 품질 �
 | DebugHUD 전체 항목 | VRAM 사용량, 스트리밍 리소스 수, 드로우콜 수 추가 |
 | 대형 씬 벤치마크 | Sponza, Bistro 로딩 + Full PBR + Shadows + 모든 최적화 활성 상태에서 60fps 목표 |
 | 5단계 렌더링 모드 전체 확인 | Wireframe / Solid / Base Color / Full PBR / Full PBR+Shadows |
-| 전체 테스트 통과 확인 | 유닛 + 스모크 통과 |
+| ~~전체 테스트 통과 확인~~ | ✅ 완료: 91/91 통과 (TextureTest TearDown use-after-free 수정 포함) |
 | 전체 코드 리뷰 | Dead code 제거, include 정리, 네이밍 일관성 검증 |
 | PBR.hlsl CalcShadow X4000 경고 | FXC 컴파일러 한계 (비교 샘플러 + 동적 cbuffer 인덱스). Texture2DArray로의 리팩터링 또는 FXC 업데이트로 재검토 |
 | ~~glTF doubleSided PSO 분기 (RM-11)~~ | ✅ 완료: Material.doubleSided 기반 4종 PSO 분기 (CullMode=BACK/NONE × Opaque/AlphaBlend) |
