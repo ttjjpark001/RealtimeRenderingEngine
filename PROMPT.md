@@ -128,7 +128,7 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
    - IsOccluded()가 GPU Hi-Z 결과 버퍼의 값을 반환하도록 구현한다.
    - occlusionCulledNodes 통계를 CullStats에 반영하고 DebugHUD에 표시한다.
    - Optimization 메뉴 항목을 추가한다:
-     · Win32Menu에 ID_OPTIM_OCCLUSION_CULL = 8004 추가
+     · Win32Menu에 ID_OPTIM_OCCLUSION_CULL = 8005 추가 (8004는 MipMap 토글에서 사용 중)
      · "Occlusion Culling" 체크 토글 항목 (Optimization 메뉴)
      · Engine 콜백 → Renderer::SetOcclusionCullingEnabled(bool) 연결
 

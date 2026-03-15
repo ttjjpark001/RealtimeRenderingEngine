@@ -63,8 +63,3 @@ Phase 26 구현 후 발견된 Bistro 씬 렌더링 버그들. **현재 코드에
 | 메모리 누수 점검 | Shutdown 후 D3D12 Live Object 리포트에서 미해제 리소스 없음 확인 |
 | 윈도우 리사이즈 / 모드 전환 안정성 | 800×450 → 드래그 리사이즈 → Full Screen → Esc 복귀 사이클 반복 확인 |
 
----
-
-## 기타 메모
-
-- **Occlusion Culling Optimization 메뉴 항목**: Phase 33 구현 시 `ID_OPTIM_OCCLUSION_CULL = 8005` 추가 (`8004`는 MipMap 토글에서 사용 중).

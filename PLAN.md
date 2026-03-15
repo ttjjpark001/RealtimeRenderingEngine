@@ -79,7 +79,7 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 4. **OcclusionCuller P0 스텁 교체**:
    - `OcclusionCuller::IsOccluded()`를 Hi-Z GPU 결과 버퍼 반환으로 교체
    - `occlusionCulledNodes` 통계 CullStats 반영, DebugHUD 표시
-   - Optimization 메뉴 항목 추가: `ID_OPTIM_OCCLUSION_CULL = 8004`
+   - Optimization 메뉴 항목 추가: `ID_OPTIM_OCCLUSION_CULL = 8005` (`8004`는 MipMap 토글에서 사용 중)
 
 **완료 기준**: Sponza에서 Occlusion Culling 활성화 시 드로우콜 절감 수치 DebugHUD 확인, GPU stall 없이 1프레임 레이턴시로 동작
 
