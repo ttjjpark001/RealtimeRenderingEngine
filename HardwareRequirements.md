@@ -167,6 +167,137 @@ RTX 5060 Ti 16 GB는 Phase 03(Phase 32~49) **전 기능을 제약 없이 구현�
 
 ---
 
+## GeForce RTX 5070 12GB 분석 (2026-03-15 추가)
+
+### 사양
+
+| 항목 | 값 |
+|------|-----|
+| GPU 아키텍처 | NVIDIA Blackwell (GB205) |
+| VRAM | 12 GB GDDR7 |
+| 메모리 버스 폭 | 192-bit |
+| GPU 메모리 대역폭 | ~672 GB/s |
+| DirectX Feature Level | 12_2 |
+| Shader Model | 6.9 |
+| DXR (Ray Tracing) | ✅ Tier 1.1 (4세대 RT 코어) |
+| Mesh Shader (SM 6.5) | ✅ DirectX 12 Ultimate |
+| DLSS | ✅ DLSS 4 (5세대 Tensor 코어, Multi Frame Generation 지원) |
+| PCIe | 5.0 |
+
+### Phase 03 전 기능 적합성 평가
+
+| Phase | 핵심 기능 | 요구 사항 | RTX 5070 12 GB |
+|-------|----------|----------|----------------|
+| Phase 32 | RRScenePreprocessor | CPU 작업 주도 | ✅ |
+| Phase 33 | Hi-Z GPU Occlusion Culling | Compute Shader (UAV) | ✅ |
+| Phase 34 | Cube Map Shadow (Point Light) | TextureCube DSV/SRV | ✅ |
+| Phase 35~36 | Skeletal Animation | 일반 D3D12 | ✅ |
+| Phase 37 | Deferred Rendering (G-Buffer MRT) | MRT 4장 동시 | ✅ |
+| Phase 38 | HDR + Tone Mapping | Compute + R16G16B16A16_FLOAT | ✅ |
+| Phase 39 | SSAO | Compute (Hemisphere Kernel) | ✅ |
+| Phase 40 | Bloom + Post-Processing | Compute + Ping-Pong Buffer | ✅ |
+| Phase 41 | TAA | Motion Vector RT + History Buffer | ✅ |
+| Phase 42 | Motion Blur + DoF | Compute (Tile Max Velocity, CoC) | ✅ |
+| Phase 43 | SSR + Refraction | Hi-Z Raymarching (Compute) | ✅ |
+| Phase 44 | SSSSS | Compute (Separable Gaussian) | ✅ |
+| Phase 45 | DDGI (GI Probe) | Compute + Texture2DArray | ✅ |
+| **Phase 46** | **DXR Hybrid Ray Tracing** | **DXR Tier 1.1 필수** | ✅ **(4세대 RT 코어, 5060 Ti 대비 ~60% 빠름)** |
+| **Phase 47** | **Nanite-style Mesh Shader** | **SM 6.5 Mesh/Amplification Shader** | ✅ **(DirectX 12 Ultimate)** |
+| **Phase 48** | **DLSS 4 + Neural Denoising** | **DLSS: NVIDIA RTX 전용** | ✅ **(DLSS 4 네이티브 지원)** |
+| Phase 49 | 최종 벤치마크 (Sponza + Bistro 60fps) | Full Phase 03 파이프라인 | ✅ **DLSS 없이도 1440p 60fps 달성 가능** |
+
+### VRAM 여유도 (12 GB GDDR7 기준)
+
+Phase 03 최대 동시 버퍼 사용량 (Deferred + DXR + DLSS 풀 파이프라인):
+
+| 항목 | 1080p | 1440p | 4K |
+|------|-------|-------|-----|
+| G-Buffer 3장 + HDR RT | ~100~200 MB | ~200~370 MB | ~400~800 MB |
+| Shadow Maps (Directional 4096² + Cube Map 4개) | ~300 MB | ~300 MB | ~300 MB |
+| Hi-Z, SSAO, Bloom, TAA, Motion Blur, SSR | ~200 MB | ~350 MB | ~700 MB |
+| DDGI Probe Textures (256 Probe) | ~50~100 MB | ~50~100 MB | ~50~100 MB |
+| TLAS/BLAS (DXR, Sponza+Bistro) | ~500 MB~1 GB | ~500 MB~1 GB | ~500 MB~1 GB |
+| 씬 메시 + 텍스처 (Sponza + Bistro) | ~2~3 GB | ~2~3 GB | ~2~3 GB |
+| DLSS 4 업스케일 버퍼, Denoiser History | ~200 MB | ~300 MB | ~500 MB |
+| **총합** | **~3~5 GB** | **~4~6 GB** | **~5~7 GB** |
+
+> **12 GB GDDR7** 기준: 1080p/1440p는 50%~67% 이상 여유. 4K에서도 총합이 12 GB 한계 이내이나, Bistro+Sponza 동시 로딩 + 4K 조합에서 최대 7~8 GB까지 올라갈 수 있어 RTX 5060 Ti 16 GB보다 여유 폭이 좁다.
+
+### Phase별 현실적 실행 가능성 요약
+
+| Phase 범위 | 가능 여부 | 비고 |
+|-----------|----------|------|
+| Phase 32-36 (전처리, Hi-Z, CubeMap, 애니) | ✅ 완전 동작 | 672 GB/s 대역폭, 고성능 |
+| Phase 37-44 (Deferred + 포스트) | ✅ 완전 동작 | 1080p/1440p/4K 모두 여유 |
+| Phase 45 (DDGI) | ✅ 완전 동작 | Probe 텍스처 + G-Buffer 동시에 여유 |
+| Phase 46 (DXR) | ✅ **하드웨어 완전 검증 가능** | 4세대 RT 코어, Tier 1.1 네이티브, 5060 Ti보다 RT 성능 우위 |
+| Phase 47 (Mesh Shader) | ✅ **하드웨어 완전 검증 가능** | DirectX 12 Ultimate (SM 6.9) |
+| Phase 48 (DLSS 4 + FSR 3 + NRD) | ✅ **DLSS 4 네이티브, NRD SDK 지원** | 5세대 Tensor 코어 기반 DLSS 4 풀 지원 |
+| Phase 49 (벤치마크: Sponza+Bistro 60fps) | ✅ **DLSS 없이 1440p 60fps 달성 가능** | DLSS 활성 시 4K도 여유 |
+
+### 결론
+
+RTX 5070 12 GB는 Phase 03(Phase 32~49) **전 기능을 제약 없이 구현·검증**할 수 있는 하드웨어다.
+RTX 5060 Ti 16 GB와 동일하게 Phase 46(DXR), Phase 47(Mesh Shader), Phase 48(DLSS 4) 모두 네이티브 지원이며, GPU 셰이더/RT/대역폭 성능이 5060 Ti를 크게 상회한다.
+유일한 상대적 단점은 VRAM이 12 GB로 5060 Ti(16 GB)보다 4 GB 적다는 것이며, 4K + Bistro+Sponza 동시 로딩 극단적 시나리오에서 VRAM 여유가 좁아질 수 있다. 그러나 Phase 49 기준 풀 파이프라인에서는 12 GB로 충분하다.
+
+---
+
+## RTX 5070 12 GB vs RTX 5060 Ti 16 GB 비교
+
+두 카드 모두 Phase 32~49 전 기능을 제약 없이 구현·검증할 수 있는 하드웨어다. 선택 기준은 GPU 성능(속도)과 VRAM(용량) 중 무엇을 우선시하느냐다.
+
+### 하드웨어 사양 비교
+
+| 항목 | RTX 5070 12 GB | RTX 5060 Ti 16 GB |
+|------|---------------|------------------|
+| GPU 칩 | GB205 | GB206 |
+| VRAM | **12 GB** GDDR7 | **16 GB** GDDR7 |
+| 메모리 버스 | **192-bit** | 128-bit |
+| 메모리 대역폭 | **~672 GB/s** (+50%) | ~448 GB/s |
+| GPU 셰이더 성능 (FP32) | **~+30% 우위** | 기준 |
+| RT 코어 세대 | 4세대 Blackwell | 4세대 Blackwell |
+| RT 코어 수 | **더 많음** (SM 비례) | 더 적음 |
+| RT 성능 | **~50~60% 우위** | 기준 |
+| Tensor 코어 세대 | 5세대 Blackwell | 5세대 Blackwell |
+| DLSS 4 | ✅ | ✅ |
+| DXR Tier | 1.1 | 1.1 |
+| Mesh Shader | SM 6.9 | SM 6.9 |
+| DirectX FL | 12_2 | 12_2 |
+| PCIe | 5.0 | 5.0 |
+| TDP | ~150 W | ~180 W |
+| 2026년 기준 가격 | ~80~90만원 | ~60~70만원 |
+
+### 프로젝트 Phase별 실질 차이
+
+| 항목 | RTX 5070 12 GB | RTX 5060 Ti 16 GB |
+|------|---------------|------------------|
+| Phase 32-36 (전처리, Hi-Z, 애니) | 차이 미미 (CPU 주도 또는 경량 Compute) | 차이 미미 |
+| Phase 37-44 (Deferred + 포스트, 1080p) | 두 카드 모두 여유 → 차이 미미 | 두 카드 모두 여유 |
+| Phase 37-44 (1440p) | ✅ 여유 | ✅ 여유 |
+| Phase 37-44 (4K) | ✅ 가능, VRAM 여유 있음 | ✅ VRAM 여유 더 큼 |
+| Phase 45 (DDGI Probe) | ✅ | ✅ |
+| **Phase 46 (DXR RT)** | **✅ RT 성능 ~50~60% 우위** — RT Shadow/Reflection 품질 검증에 실질적 이점 | ✅ 가능하나 5070 대비 느림 |
+| Phase 47 (Mesh Shader) | ✅ (Amplification Shader 처리량 우위) | ✅ |
+| Phase 48 (DLSS 4 + NRD) | ✅ Tensor 성능 우위 → Denoiser 속도 빠름 | ✅ |
+| **Phase 49 (60fps 벤치마크, 1080p)** | ✅ **DLSS 없이도 달성** | ✅ DLSS 없이 달성 |
+| **Phase 49 (60fps 벤치마크, 1440p)** | ✅ **DLSS 없이도 달성** | ⚠️ DLSS 권장 |
+| **Phase 49 (Bistro+Sponza 4K)** | ⚠️ VRAM 빠듯할 수 있음 (7~8 GB) | ✅ VRAM 여유 |
+
+### 결정 기준 요약
+
+| 우선순위 | 추천 카드 | 이유 |
+|---------|----------|------|
+| **GPU 성능 / RT 품질 검증** | **RTX 5070 12 GB** | Phase 46 DXR RT 성능 ~50~60% 우위, Phase 49 고해상도 목표 달성 용이 |
+| **메모리 대역폭** | **RTX 5070 12 GB** | 672 vs 448 GB/s — Deferred G-Buffer 읽기, DDGI Probe 업데이트, SSR Raymarching에 유리 |
+| **VRAM 여유 (대형 씬, 4K)** | **RTX 5060 Ti 16 GB** | 4K + Bistro+Sponza 동시 로딩 등 극단적 VRAM 시나리오에서 안정적 |
+| **가성비** | **RTX 5060 Ti 16 GB** | ~15~20만원 저렴, Phase 49까지 전 기능 검증 가능 |
+| **전력 효율** | **RTX 5070 12 GB** | TDP 150 W vs 180 W — 동일 성능 대비 전력 유리 |
+
+> **결론**: 두 카드 모두 Phase 49까지 전 기능을 제약 없이 구현·검증할 수 있다. **RTX 5070 12 GB**는 GPU/RT/대역폭 성능이 우위이며 Phase 46 DXR과 Phase 49 고해상도 목표에서 실질적 이점이 있다. **RTX 5060 Ti 16 GB**는 VRAM이 4 GB 많아 4K + 대형 씬 극단적 시나리오에서 더 안정적이고 가격도 저렴하다. 이 프로젝트 범위(1080p/1440p Phase 49 벤치마크 기준)에서는 **RTX 5070 12 GB가 개발 경험 면에서 유리**하나, 예산이 제약된다면 RTX 5060 Ti 16 GB로도 완전한 구현·검증이 가능하다.
+
+---
+
 ## Mac Mini M4 분석 (Metal 재작성 시나리오)
 
 > **전제**: 현재 코드베이스(Win32 + DirectX 12 + HLSL)를 macOS(AppKit + Metal + MSL)로 전면 재작성하는 경우의 하드웨어 가능성 분석.
