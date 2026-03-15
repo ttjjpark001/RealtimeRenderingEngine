@@ -4,7 +4,7 @@
 
 ---
 
-## [버그] Bistro 씬 렌더링 버그 수정 (나중에)
+## [버그] Bistro 씬 렌더링 버그 수정 (언제든 진행 가능)
 
 Phase 26 구현 후 발견된 Bistro 씬 렌더링 버그들. **현재 코드에 수정이 적용된 상태로 두고, 나중에 정리한다.**
 
@@ -50,7 +50,7 @@ Phase 26 구현 후 발견된 Bistro 씬 렌더링 버그들. **현재 코드에
 
 ---
 
-## 런타임 검증 필요 항목
+## 런타임 검증 필요 항목 (언제든 진행 가능)
 
 코드 작업은 모두 완료되었으나 프로그램을 직접 실행하여 확인해야 하는 항목.
 
@@ -62,57 +62,6 @@ Phase 26 구현 후 발견된 Bistro 씬 렌더링 버그들. **현재 코드에
 | D3D12 Debug Layer 경고 0건 확인 | Debug 빌드 실행 → Output 창에서 D3D12 WARNING/ERROR 없음 확인 |
 | 메모리 누수 점검 | Shutdown 후 D3D12 Live Object 리포트에서 미해제 리소스 없음 확인 |
 | 윈도우 리사이즈 / 모드 전환 안정성 | 800×450 → 드래그 리사이즈 → Full Screen → Esc 복귀 사이클 반복 확인 |
-
----
-
-## 권장 구현 순서
-
-```
-[버그] Bistro 씬 미해결 버그 (언제든 진행 가능)
-    │           Frustum Culling 버그 재조사 (Frustum 시각화 도구 구현 후)
-    │           Shadow Map 시각적 튜닝 + SceneSettings.md 기록
-    │
-[검증] 런타임 검증 필요 항목 (언제든 진행 가능)
-    │           Sponza/Bistro 60fps 벤치마크, 5단계 렌더링 모드 육안 검증
-    │           D3D12 Debug Layer 경고 0건, 메모리 누수 점검
-    │
-Phase 32    RRScenePreprocessor (.rrscene 오프라인 전처리 도구)
-    │           Assimp 파싱·이미지 디코딩·LOD·Mip chain 오프라인 처리
-    │           렌더러 이중 로딩 경로 (고속/.rrscene + 표준/Assimp)
-    │           → Sponza/Bistro 로딩 시간 ~90% 단축
-    │
-Phase 33    Occlusion Culling (Hi-Z GPU)
-    │           CPU Readback 단계 없이 바로 Hi-Z GPU 구현
-    │           Compute Shader 파이프라인 + Optimization 메뉴 항목 포함
-    │
-Phase 34    Point Light Cube Map Shadowing
-    │           Omnidirectional Shadow Map (TextureCube, 6-pass depth)
-    │
-Phase 35    Skeletal Animation
-    │           Part A: Node Transform Animation (TRS 키프레임)
-    │           Part B: Skeletal Animation (본/스킨, GPU Skinning)
-    │
-Phase 36    RRScenePreprocessor 확장 (Skeletal Animation 지원)
-    │           .rrscene v2: Skeleton/Skin/Animation 섹션 추가
-    │
-    │   ── Phase 03 시작 ──
-    │
-Phase 37    Deferred Rendering
-Phase 38    HDR Pipeline + Tone Mapping (ACES/Reinhard + Auto-Exposure)
-Phase 39    SSAO (Hemisphere Kernel + Bilateral Blur)
-Phase 40    Bloom + Post-Processing 파이프라인 (Ping-Pong Buffer)
-Phase 41    TAA (Halton Jitter + Variance Clipping + Velocity Buffer)
-Phase 42    Motion Blur (Tile-based) + Depth of Field (Bokeh CoC)
-Phase 43    SSR (Hi-Z Raymarching) + Refraction (IOR)
-Phase 44    Screen Space Subsurface Scattering (Separable 6-weight Gaussian)
-Phase 45    Global Illumination — DDGI (Irradiance Probe 3D Grid)
-Phase 46    DXR Hybrid Ray Tracing (BLAS/TLAS + RT Shadow + RT Reflection)
-Phase 47    Nanite-style Virtual Geometry (Meshlet + Mesh Shader + GPU-Driven)
-Phase 48    Neural Upscaling (FSR 3 / DLSS 3) + Neural Denoising (NRD SDK)
-    │
-Phase 49    Phase 03 코드 리뷰 + 최적화 + 버그 수정 + ARCHITECTURE.md 완성
-            Sponza/Bistro Full Phase 03 벤치마크 (60fps 목표)
-```
 
 ---
 
