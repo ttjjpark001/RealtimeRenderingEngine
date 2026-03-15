@@ -4,94 +4,10 @@
 
 ---
 
-## Prompt 32: RRScenePreprocessor — 오프라인 씬 전처리 도구 + 백그라운드 자동 생성
+## Prompt 32: Occlusion Culling — Hi-Z GPU
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 32 섹션과 GoodToPreprocess.md를 참조하여 Phase 32를 구현하라.
-이 단계는 .rrscene 전처리 파이프라인을 공용 클래스로 구현하고,
-CLI 도구와 렌더링 앱 내 백그라운드 자동 생성의 두 진입점을 제공한다.
-
-1. .rrscene 바이너리 포맷을 정의한다 (src/Asset/RRSceneFormat.h, 공용 헤더).
-   헤더:
-     · char magic[4] = "RRSC"
-     · uint32 version = 1
-     · uint64 sourceHash  (원본 파일 크기 ^ 수정 시각, 변경 감지용)
-     · uint32 sectionCount
-     · SectionEntry[] { SectionType type; uint64 offset; uint64 size; }
-   섹션 타입: Scene / Mesh / Material / Texture / Light
-   각 섹션 세부 구조:
-   - Scene: 노드 수, 노드별(부모 인덱스, 이름, 로컬 TRS 행렬, meshIndex, materialIndex), 씬 AABB, 카메라 초기(position/yaw/pitch/fov)
-   - Mesh: 메시 수, 메시별(vertex 수, index 수, Vertex 배열 raw dump, Index 배열 raw dump, AABB, LOD 수, LOD별 vertex/index + 전환 거리)
-   - Material: 재질 수, 재질별(PBR factor, AlphaMode, doubleSided, textureIndex 참조 5개, sRGB 플래그)
-   - Texture: 텍스처 수, 텍스처별(width, height, mipLevels, DXGI_FORMAT, 전체 Mip chain 픽셀 데이터 연속 배치)
-   - Light: 광원 수, 광원별(type, color, intensity, position, direction, Kc/Kl/Kq, innerCone, outerCone, castShadow, bsRadius)
-
-2. 전처리 파이프라인을 공용 클래스로 구현한다 (src/Asset/ScenePreprocessor.h/.cpp).
-   - static bool Generate(const std::string& sourcePath, const std::string& outputPath):
-     동기 실행, CLI 도구와 엔진에서 모두 호출 가능
-     a. Assimp 파싱: aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_CalcTangentSpace | aiProcess_ConvertToLeftHanded
-     b. Vertex/Index 변환: aiMesh → 엔진 Vertex 구조체
-        · Tangent 없으면 Gram-Schmidt 재직교화로 생성
-     c. 프리미티브 분리: aiNode의 복수 aiMesh → 각각 SceneNode로 분리
-     d. 메시별 AABB: BoundingBox::CreateFromPoints()
-     e. Auto-LOD 생성:
-        · LOD 1: 원본 삼각형 50% (QEM Edge Collapse)
-        · LOD 2: 원본 삼각형 25%
-        · 전환 거리: sceneDiagonal × 2.0f (LOD 1), × 6.0f (LOD 2)
-     f. 이미지 디코딩: stb_image로 PNG/JPEG → RGBA 픽셀 버퍼
-        · baseColor/emissive: sRGB 플래그 설정
-        · normal/metallicRoughness/occlusion: Linear 플래그 설정
-     g. Mip chain 생성: CPU box filter, floor(log2(max(w,h))) + 1 레벨
-     h. 씬 구조 직렬화: 노드 계층, 씬 AABB, 카메라 초기 배치, Material, Light(BoundingSphere 포함)
-     i. 원자적 파일 쓰기: 임시 파일(.rrscene.tmp) 완성 후 최종 경로로 rename
-   - static std::future<bool> GenerateAsync(const std::string& sourcePath):
-     std::async로 백그라운드 스레드에서 Generate() 실행, future 반환
-
-3. CLI 도구 프로젝트를 추가한다 (RRScenePreprocessor, Console Application).
-   - ScenePreprocessor::Generate()를 호출하는 얇은 래퍼
-   - main(argc, argv): 입력 파일 경로 인수 받음, 출력 경로 = 입력과 동일 디렉토리 + .rrscene 확장자
-   - 출력: bin/Debug/RRScenePreprocessor.exe
-
-4. 렌더링 앱에 이중 로딩 경로를 추가한다 (src/Asset/SceneLoader).
-   - SceneLoader::LoadScene(path):
-     a. 동일 디렉토리에 path.rrscene 존재 여부 확인
-     b. 존재하면: LoadRRScene(rrscenePath) 시도
-        · Header magic/version 검증
-        · sourceHash와 원본 파일 해시 비교 → 불일치 시 표준 경로로 폴백 + 로그
-        · 검증 통과 시: 섹션 순서대로 SceneNode/Mesh/Material/Texture/Light 객체 생성
-        · GPU 업로드(VB/IB/Texture)만 수행 (Assimp 파싱 없음)
-     c. 없거나 실패 시: 기존 Assimp 표준 경로 사용 → 로딩 완료 후 항목 5 실행
-   - DebugHUD에 로딩 경로 표시: "Fast (.rrscene)" 또는 "Standard (Assimp)"
-
-5. 표준 경로 로딩 후 백그라운드 자동 전처리를 구현한다 (Engine::LoadScene()).
-   - 표준 경로(Assimp) 로딩 완료 직후: ScenePreprocessor::GenerateAsync(sourcePath) 호출
-     · 반환된 std::future<bool>을 Engine 멤버(m_preprocessFuture)에 저장
-   - 렌더링 블로킹 없이 백그라운드 스레드에서 전처리 파이프라인 실행
-   - DebugHUD에 진행 상태 표시:
-     · 진행 중: "Preprocessing scene..." (m_preprocessFuture가 유효한 동안)
-     · 완료 후: 메시지 사라짐
-   - 매 프레임 Engine::Update()에서 future 완료 여부 폴링:
-     · future.wait_for(0ms) == ready → 결과 확인, 성공 시 콘솔 로그 출력
-       ("Sponza.rrscene saved — next load will use fast path")
-     · m_preprocessFuture 초기화(reset)
-   - 씬 교체 시 이전 전처리 future가 실행 중이면 detach(취소 불가) 후 진행
-
-6. 동작을 검증한다.
-   - Sponza.gltf 첫 로딩: 표준 경로(Assimp) 사용 + DebugHUD "Preprocessing scene..." 표시 확인
-   - 전처리 완료 후: Sponza.rrscene 파일 생성 확인, 콘솔 로그 확인
-   - Sponza.gltf 두 번째 로딩: 자동으로 고속 경로 사용(~90% 단축) 확인
-   - CLI 도구로 동일한 .rrscene 생성 후 렌더링 앱에서 고속 로딩 확인
-   - 원본 파일 변경 후 로딩: 해시 불일치 감지 → 표준 경로 폴백 + 재전처리 시작 확인
-
-빌드하여 첫 로딩 시 백그라운드 자동 생성이 동작하고, 두 번째 로딩부터 고속 경로가 사용되는지 확인하라.
-```
-
----
-
-## Prompt 33: Occlusion Culling — Hi-Z GPU
-
-```
-PRD.md, PLAN.md(Phase 33), CLAUDE.md를 참조하여 Phase 33을 구현하라.
+PRD.md, PLAN.md(Phase 32), CLAUDE.md를 참조하여 Phase 32를 구현하라.
 이 단계는 현재 P0 스텁(항상 false)인 OcclusionCuller를 GPU Hi-Z 방식으로 완전 구현한다.
 CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 현재 엔진에 Compute Shader 인프라가 없으므로, 먼저 인프라를 구축한다.
@@ -142,10 +58,10 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 
 ---
 
-## Prompt 34: Point Light Cube Map Shadowing
+## Prompt 33: Point Light Cube Map Shadowing
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 34 섹션을 참조하여 Phase 34를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 33 섹션을 참조하여 Phase 33을 구현하라.
 이 단계는 castShadow = true인 Point Light에 대해 Omnidirectional Shadow Map(TextureCube)을 구현한다.
 
 1. TextureCube D3D12 리소스를 생성한다.
@@ -199,10 +115,10 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 34 섹션을 참조하여 Phase 34를 구현
 
 ---
 
-## Prompt 35: Skeletal Animation
+## Prompt 34: Skeletal Animation
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 35 섹션을 참조하여 Phase 35를 구현하라.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 34 섹션을 참조하여 Phase 34를 구현하라.
 Part A(Node Transform Animation)를 먼저 완성한 뒤 Part B(Skeletal Animation)를 구현한다.
 
 === Part A: Node Transform Animation (G-08) ===
@@ -297,67 +213,119 @@ Part A(Node Transform Animation)를 먼저 완성한 뒤 Part B(Skeletal Animati
 
 ---
 
-## Prompt 36: RRScenePreprocessor 확장 — Skeletal Animation 지원
+## Prompt 35: RRScenePreprocessor — 오프라인 씬 전처리 도구 + Skeletal Animation 통합 지원
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 36 섹션과 GoodToPreprocess.md를 참조하여 Phase 36를 구현하라.
-이 단계는 Phase 33에서 추가된 Skeleton/Skin/Animation 데이터를 .rrscene 포맷에 통합하여
-전처리기와 렌더링 앱 고속 로딩 경로를 모두 확장한다.
+PRD.md, PLAN.md, CLAUDE.md의 Phase 35 섹션을 참조하여 Phase 35를 구현하라.
+Phase 34에서 Skeletal Animation(Skeleton/Skin/AnimationClip)이 이미 구현된 상태에서,
+glTF/GLB/FBX 씬을 엔진 전용 바이너리(.rrscene)로 저장하는 파이프라인을 처음부터 통합 구현한다.
+기본 씬 데이터와 Skeletal Animation 데이터를 단일 포맷으로 지원한다.
 
-1. .rrscene 포맷을 v2로 버전 업한다 (src/Asset/RRSceneFormat.h 수정).
-   - Header.version: 1 → 2
-   - Vertex 구조체에 joints(uint32×4), weights(float×4) 필드 추가
-     · 스킨 메시: isSkinned 플래그 = true, 해당 필드 포함
-     · 비스킨 메시: isSkinned = false, 해당 필드 생략 (파일 크기 절약)
-   - Skeleton Section 추가 (SectionType::Skeleton):
-     · uint32 boneCount
-     · 본별: 이름(문자열), parentIndex(int32), inverseBindMatrix(float 4×4)
-     · Skin 수, Skin별: skeletonIndex, jointIndices 배열
-   - Animation Section 추가 (SectionType::Animation):
-     · uint32 clipCount
-     · 클립별: 이름, 재생 시간(float), 채널 수
-     · 채널별: targetNodeIndex, Property(TRS enum), Interpolation enum,
-               키프레임 수, 키프레임 배열(float time + float3/float4 value)
-   - 하위 호환: version == 1 파일 로딩 시 Skeleton/Animation 섹션 미존재 → 관련 객체 미생성
+1. .rrscene 바이너리 포맷을 정의한다 (src/Asset/RRSceneFormat.h, 공용 헤더).
+   헤더:
+     · char magic[4] = "RRSC"
+     · uint32 version = 1
+     · uint64 sourceHash  (원본 파일 크기 ^ 수정 시각, 변경 감지용)
+     · uint32 sectionCount
+     · SectionEntry[] { SectionType type; uint64 offset; uint64 size; }
+   섹션 타입: Scene / Mesh / Material / Texture / Light / Skeleton / Animation
+   각 섹션 세부 구조:
+   - Scene: 노드 수, 노드별(부모 인덱스, 이름, 로컬 TRS 행렬, meshIndex, materialIndex), 씬 AABB, 카메라 초기(position/yaw/pitch/fov)
+   - Mesh: 메시 수, 메시별(isSkinned 플래그, vertex 수, index 수, Vertex 배열 raw dump
+           [스킨 메시: joints(uint32×4)+weights(float×4) 포함], Index 배열 raw dump, AABB,
+           LOD 수, LOD별 vertex/index + 전환 거리)
+   - Material: 재질 수, 재질별(PBR factor, AlphaMode, doubleSided, textureIndex 참조 5개, sRGB 플래그)
+   - Texture: 텍스처 수, 텍스처별(width, height, mipLevels, DXGI_FORMAT, 전체 Mip chain 픽셀 데이터)
+   - Light: 광원 수, 광원별(type, color, intensity, position, direction, Kc/Kl/Kq, innerCone, outerCone, castShadow, bsRadius)
+   - Skeleton: 본 수, 본별(이름[문자열], parentIndex[int32], inverseBindMatrix[float 4×4]),
+               Skin 수, Skin별(skeletonIndex, jointIndices 배열)
+   - Animation: 클립 수, 클립별(이름, 재생 시간[float], 채널 수,
+                채널별[targetNodeIndex, Property(TRS enum), Interpolation enum,
+                키프레임 수, 키프레임 배열(float time + float3/float4 value)])
+   - 스킨 메시 없는 씬은 Skeleton/Animation Section 생략 (sectionCount에서 제외)
 
-2. RRScenePreprocessor를 확장한다.
-   - Assimp aiMesh::mBones 순회:
-     · aiBone::mName, mOffsetMatrix → Bone 생성 (Assimp 전치 주의)
-     · aiBone::mWeights → per-vertex joint index + weight 기록
-     · 스킨 메시 Vertex에 joints/weights 기록 후 Skeleton Section 직렬화
-   - Assimp aiAnimation 순회:
-     · aiNodeAnim::mPositionKeys → Translation 키프레임 (XMFLOAT3 + time)
-     · aiNodeAnim::mRotationKeys → Rotation 키프레임 (XMFLOAT4 quaternion + time)
-     · aiNodeAnim::mScalingKeys → Scale 키프레임 (XMFLOAT3 + time)
-     · Interpolation: Assimp aiAnimBehaviour → Linear/Step/CubicSpline 매핑
-     · target name → 노드 인덱스 매핑 후 Animation Section 직렬화
-   - 버전 2 헤더와 전체 섹션 목록(Scene/Mesh/Material/Texture/Light/Skeleton/Animation) 기록
+2. 전처리 파이프라인을 공용 클래스로 구현한다 (src/Asset/ScenePreprocessor.h/.cpp).
+   - static bool Generate(const std::string& sourcePath, const std::string& outputPath):
+     동기 실행, CLI 도구와 엔진에서 모두 호출 가능
+     a. Assimp 파싱: aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_CalcTangentSpace | aiProcess_ConvertToLeftHanded
+     b. Vertex/Index 변환: aiMesh → 엔진 Vertex 구조체
+        · Tangent 없으면 Gram-Schmidt 재직교화로 생성
+     c. 프리미티브 분리: aiNode의 복수 aiMesh → 각각 SceneNode로 분리
+     d. 메시별 AABB: BoundingBox::CreateFromPoints()
+     e. Auto-LOD 생성:
+        · LOD 1: 원본 삼각형 50% (QEM Edge Collapse)
+        · LOD 2: 원본 삼각형 25%
+        · 전환 거리: sceneDiagonal × 2.0f (LOD 1), × 6.0f (LOD 2)
+     f. Skeleton/Skin 추출 (스킨 메시가 있을 경우):
+        · aiMesh::mBones 순회: aiBone::mName/mOffsetMatrix → Bone 생성 (Assimp 전치 주의)
+        · aiBone::mWeights → per-vertex joint index + weight 기록
+        · 스킨 메시 Vertex에 joints(uint32×4) + weights(float×4) 포함하여 저장
+        · Skeleton Section 직렬화
+     g. Animation 추출 (aiAnimation 존재 시):
+        · aiNodeAnim::mPositionKeys → Translation 키프레임 (XMFLOAT3 + time)
+        · aiNodeAnim::mRotationKeys → Rotation 키프레임 (XMFLOAT4 quaternion + time)
+        · aiNodeAnim::mScalingKeys → Scale 키프레임 (XMFLOAT3 + time)
+        · Interpolation: aiAnimBehaviour → Linear/Step/CubicSpline 매핑
+        · target name → 노드 인덱스 매핑 후 Animation Section 직렬화
+     h. 이미지 디코딩: stb_image로 PNG/JPEG → RGBA 픽셀 버퍼
+        · baseColor/emissive: sRGB 플래그 설정
+        · normal/metallicRoughness/occlusion: Linear 플래그 설정
+     i. Mip chain 생성: CPU box filter, floor(log2(max(w,h))) + 1 레벨
+     j. 씬 구조 직렬화: 노드 계층, 씬 AABB, 카메라 초기 배치, Material, Light(BoundingSphere 포함)
+     k. 원자적 파일 쓰기: 임시 파일(.rrscene.tmp) 완성 후 최종 경로로 rename
+   - static std::future<bool> GenerateAsync(const std::string& sourcePath):
+     std::async로 백그라운드 스레드에서 Generate() 실행, future 반환
 
-3. 렌더링 앱 고속 로딩 경로를 확장한다.
-   - SceneLoader::LoadRRScene() 내 version 분기:
-     · version == 2: Skeleton/Animation 섹션 파싱
-       - Skeleton Section → Skeleton/Skin 객체 생성 → Mesh.skin 포인터 연결
-       - Animation Section → AnimationClip 배열 생성 → AnimationController 등록
-     · version == 1: 기존 로직 유지 (Skeleton/Animation 없이 로딩)
-   - 스킨 Vertex(joints/weights 포함) → GPU VB 업로드 (Input Layout v2 사용)
-   - AnimationController에 클립 자동 등록, 첫 번째 클립 자동 재생 시작
+3. CLI 도구 프로젝트를 추가한다 (RRScenePreprocessor, Console Application).
+   - ScenePreprocessor::Generate()를 호출하는 얇은 래퍼
+   - main(argc, argv): 입력 파일 경로 인수 받음, 출력 경로 = 입력과 동일 디렉토리 + .rrscene 확장자
+   - 출력: bin/Debug/RRScenePreprocessor.exe
 
-4. 동작을 검증한다.
-   - CesiumMan.glb를 RRScenePreprocessor에 입력 → CesiumMan.rrscene(v2) 생성
-   - 렌더링 앱에서 CesiumMan.gltf 열기 → v2 고속 경로로 스켈레탈 애니메이션 재생 확인
-   - 비애니메이션 씬의 v1 .rrscene 파일도 계속 정상 로딩되는지 확인 (하위 호환)
-   - v1과 v2 rrscene 모두 Assimp 표준 경로 렌더링 결과와 동일한지 비교
+4. 렌더링 앱에 이중 로딩 경로를 추가한다 (src/Asset/SceneLoader).
+   - SceneLoader::LoadScene(path):
+     a. 동일 디렉토리에 path.rrscene 존재 여부 확인
+     b. 존재하면: LoadRRScene(rrscenePath) 시도
+        · Header magic/version 검증
+        · sourceHash와 원본 파일 해시 비교 → 불일치 시 표준 경로로 폴백 + 로그
+        · 검증 통과 시: 섹션 순서대로 SceneNode/Mesh/Material/Texture/Light 객체 생성
+        · Skeleton Section 존재 시: Skeleton/Skin 객체 생성 → Mesh.skin 포인터 연결
+        · Animation Section 존재 시: AnimationClip 배열 생성 → AnimationController 등록,
+          첫 번째 클립 자동 재생 시작
+        · GPU 업로드(VB/IB/Texture)만 수행 (Assimp 파싱 없음)
+     c. 없거나 실패 시: 기존 Assimp 표준 경로 사용 → 로딩 완료 후 항목 5 실행
+   - DebugHUD에 로딩 경로 표시: "Fast (.rrscene)" 또는 "Standard (Assimp)"
 
-빌드하여 모든 테스트가 통과하고, CesiumMan.rrscene에서 스켈레탈 애니메이션이
-표준 로딩 경로와 동일하게 재생되는지 확인하라. v1 파일 하위 호환을 유지해야 한다.
+5. 표준 경로 로딩 후 백그라운드 자동 전처리를 구현한다 (Engine::LoadScene()).
+   - 표준 경로(Assimp) 로딩 완료 직후: ScenePreprocessor::GenerateAsync(sourcePath) 호출
+     · 반환된 std::future<bool>을 Engine 멤버(m_preprocessFuture)에 저장
+   - 렌더링 블로킹 없이 백그라운드 스레드에서 전처리 파이프라인 실행 (Skeleton/Animation 포함)
+   - DebugHUD에 진행 상태 표시:
+     · 진행 중: "Preprocessing scene..." (m_preprocessFuture가 유효한 동안)
+     · 완료 후: 메시지 사라짐
+   - 매 프레임 Engine::Update()에서 future 완료 여부 폴링:
+     · future.wait_for(0ms) == ready → 결과 확인, 성공 시 콘솔 로그 출력
+       ("Sponza.rrscene saved — next load will use fast path")
+     · m_preprocessFuture 초기화(reset)
+   - 씬 교체 시 이전 전처리 future가 실행 중이면 detach(취소 불가) 후 진행
+
+6. 동작을 검증한다.
+   - Sponza.gltf 첫 로딩: 표준 경로(Assimp) 사용 + DebugHUD "Preprocessing scene..." 표시 확인
+   - 전처리 완료 후: Sponza.rrscene 파일 생성 확인, 콘솔 로그 확인
+   - Sponza.gltf 두 번째 로딩: 자동으로 고속 경로 사용(~90% 단축) 확인
+   - CesiumMan.glb를 CLI 도구로 전처리 → CesiumMan.rrscene 생성
+   - 렌더링 앱에서 CesiumMan.gltf 열기 → 고속 경로로 스켈레탈 애니메이션 정상 재생 확인
+   - 원본 파일 변경 후 로딩: 해시 불일치 감지 → 표준 경로 폴백 + 재전처리 시작 확인
+
+빌드하여 기본 씬(Sponza)과 스켈레탈 씬(CesiumMan) 모두에서
+첫 로딩 시 백그라운드 자동 생성, 두 번째 로딩부터 고속 경로가 동작하는지 확인하라.
 ```
 
 ---
 
-## Prompt 37: Deferred Rendering — G-Buffer 기반 렌더링 파이프라인
+## Prompt 36: Deferred Rendering — G-Buffer 기반 렌더링 파이프라인
 
 ```
-PRD.md, PLAN.md(Phase 03), CLAUDE.md를 참조하여 Phase 37을 구현하라.
+PRD.md, PLAN.md(Phase 03), CLAUDE.md를 참조하여 Phase 36을 구현하라.
 기존 Forward Rendering 파이프라인을 Deferred Shading으로 전환한다.
 Alpha Blend 오브젝트는 Forward 패스를 유지하는 Hybrid 구조를 적용한다.
 
@@ -380,10 +348,10 @@ Alpha Blend 오브젝트는 Forward 패스를 유지하는 Hybrid 구조를 적�
 
 ---
 
-## Prompt 38: HDR Pipeline + Tone Mapping
+## Prompt 37: HDR Pipeline + Tone Mapping
 
 ```
-PRD.md, PLAN.md(Phase 38), CLAUDE.md를 참조하여 Phase 38을 구현하라.
+PRD.md, PLAN.md(Phase 37), CLAUDE.md를 참조하여 Phase 37을 구현하라.
 
 1. HDR Render Target: DXGI_FORMAT_R16G16B16A16_FLOAT (Lighting Pass 출력)
 2. Tone Mapping Pass: Reinhard 또는 ACES Filmic — Render 메뉴 선택
@@ -396,10 +364,10 @@ PRD.md, PLAN.md(Phase 38), CLAUDE.md를 참조하여 Phase 38을 구현하라.
 
 ---
 
-## Prompt 39: SSAO (Screen Space Ambient Occlusion)
+## Prompt 38: SSAO (Screen Space Ambient Occlusion)
 
 ```
-PRD.md, PLAN.md(Phase 39), CLAUDE.md를 참조하여 Phase 39를 구현하라.
+PRD.md, PLAN.md(Phase 38), CLAUDE.md를 참조하여 Phase 38을 구현하라.
 
 1. SSAO Buffer: R8_UNORM 렌더 타겟
 2. SSAO Pass: Hemisphere Sample Kernel(16~64개) + 노이즈 텍스처 랜덤화
@@ -414,10 +382,10 @@ PRD.md, PLAN.md(Phase 39), CLAUDE.md를 참조하여 Phase 39를 구현하라.
 
 ---
 
-## Prompt 40: Bloom + Post-Processing 파이프라인
+## Prompt 39: Bloom + Post-Processing 파이프라인
 
 ```
-PRD.md, PLAN.md(Phase 40), CLAUDE.md를 참조하여 Phase 40을 구현하라.
+PRD.md, PLAN.md(Phase 39), CLAUDE.md를 참조하여 Phase 39를 구현하라.
 
 1. Ping-Pong Buffer 프레임워크: PostProcessor 클래스, HDR RT 2개 교대
 2. Bright Pass: Luminance 임계값 이상 픽셀 추출
@@ -431,10 +399,10 @@ PRD.md, PLAN.md(Phase 40), CLAUDE.md를 참조하여 Phase 40을 구현하라.
 
 ---
 
-## Prompt 41: TAA (Temporal Anti-Aliasing)
+## Prompt 40: TAA (Temporal Anti-Aliasing)
 
 ```
-PRD.md, PLAN.md(Phase 41), CLAUDE.md를 참조하여 Phase 41을 구현하라.
+PRD.md, PLAN.md(Phase 40), CLAUDE.md를 참조하여 Phase 40을 구현하라.
 
 1. Jitter Matrix: 8~16프레임 Halton Sequence로 투영 행렬 서브픽셀 오프셋
 2. Motion Vector Buffer: R16G16_FLOAT, 정적(카메라)/동적(WorldMatrix) Reprojection
@@ -448,10 +416,10 @@ PRD.md, PLAN.md(Phase 41), CLAUDE.md를 참조하여 Phase 41을 구현하라.
 
 ---
 
-## Prompt 42: Motion Blur + Depth of Field
+## Prompt 41: Motion Blur + Depth of Field
 
 ```
-PRD.md, PLAN.md(Phase 42), CLAUDE.md를 참조하여 Phase 42를 구현하라.
+PRD.md, PLAN.md(Phase 41), CLAUDE.md를 참조하여 Phase 41을 구현하라.
 
 1. Motion Blur: Tile-based Max Velocity (Compute) → 속도 방향 N샘플 평균, 셔터 속도 스케일
 2. Depth of Field:
@@ -464,10 +432,10 @@ PRD.md, PLAN.md(Phase 42), CLAUDE.md를 참조하여 Phase 42를 구현하라.
 
 ---
 
-## Prompt 43: SSR (Screen Space Reflections) + Refraction
+## Prompt 42: SSR (Screen Space Reflections) + Refraction
 
 ```
-PRD.md, PLAN.md(Phase 43), CLAUDE.md를 참조하여 Phase 43을 구현하라.
+PRD.md, PLAN.md(Phase 42), CLAUDE.md를 참조하여 Phase 42를 구현하라.
 
 1. SSR: G-Buffer Normal+Depth → 반사 Ray, Hi-Z Raymarching, Fresnel, Roughness 블러, Envmap Fallback
 2. Refraction: Alpha Blend 오브젝트에 IOR 기반 UV 오프셋, Depth 비교로 penetration 방지
@@ -479,10 +447,10 @@ PRD.md, PLAN.md(Phase 43), CLAUDE.md를 참조하여 Phase 43을 구현하라.
 
 ---
 
-## Prompt 44: Screen Space Subsurface Scattering (SSSSS)
+## Prompt 43: Screen Space Subsurface Scattering (SSSSS)
 
 ```
-PRD.md, PLAN.md(Phase 44), CLAUDE.md를 참조하여 Phase 44를 구현하라.
+PRD.md, PLAN.md(Phase 43), CLAUDE.md를 참조하여 Phase 43을 구현하라.
 
 1. Material 확장: subsurfaceColor(XMFLOAT3) + scatterWidth(float)
 2. SSS Pass: Stencil 마스크, 6-weight Gaussian × 3채널(R>G>B 확산 폭), 수평→수직 2패스
@@ -494,10 +462,10 @@ PRD.md, PLAN.md(Phase 44), CLAUDE.md를 참조하여 Phase 44를 구현하라.
 
 ---
 
-## Prompt 45: Global Illumination — DDGI (Dynamic Diffuse GI)
+## Prompt 44: Global Illumination — DDGI (Dynamic Diffuse GI)
 
 ```
-PRD.md, PLAN.md(Phase 45), CLAUDE.md를 참조하여 Phase 45를 구현하라.
+PRD.md, PLAN.md(Phase 44), CLAUDE.md를 참조하여 Phase 44를 구현하라.
 
 1. Probe Grid: 씬 AABB 내 3D Grid (8×4×8=256 Probe), Octahedral Map 텍스처
 2. Probe Update: DXR 가능 시 Radiance Ray, 미지원 시 정적 Reflection Capture Fallback
@@ -510,17 +478,17 @@ PRD.md, PLAN.md(Phase 45), CLAUDE.md를 참조하여 Phase 45를 구현하라.
 
 ---
 
-## Prompt 46: DXR Hybrid Ray Tracing
+## Prompt 45: DXR Hybrid Ray Tracing
 
 ```
-PRD.md, PLAN.md(Phase 46), CLAUDE.md를 참조하여 Phase 46을 구현하라.
+PRD.md, PLAN.md(Phase 45), CLAUDE.md를 참조하여 Phase 45를 구현하라.
 DXR Tier 1.1 미지원 시 PCF Shadow/SSR로 자동 폴백해야 한다.
 
 1. DXR 인프라: Feature 감지, DXR PSO(RayGen/ClosestHit/Miss/AnyHit), BLAS(정적/동적), TLAS(매 프레임), ShaderTable
 2. Ray-Traced Shadow: 광원별 Shadow Ray, Alpha AnyHit, PCF 대체 (메뉴 토글)
 3. Ray-Traced Reflection: Normal+Roughness → Cone Sampling, 재귀 1~2레벨
 4. GI 연동: DDGI Probe Update에 DXR Ray 활용
-5. Denoiser 연동: Phase 48 Denoiser 또는 Temporal Accumulation
+5. Denoiser 연동: Phase 47 Denoiser 또는 Temporal Accumulation
 6. 폴백: DXR 미지원 시 PCF/SSR/DDGI Static
 
 빌드하여 TLAS/BLAS, RT Shadow, RT Reflection, Hybrid 전환을 확인하라.
@@ -528,10 +496,10 @@ DXR Tier 1.1 미지원 시 PCF Shadow/SSR로 자동 폴백해야 한다.
 
 ---
 
-## Prompt 47: Nanite-style Virtual Geometry
+## Prompt 46: Nanite-style Virtual Geometry
 
 ```
-PRD.md, PLAN.md(Phase 47), CLAUDE.md를 참조하여 Phase 47을 구현하라.
+PRD.md, PLAN.md(Phase 46), CLAUDE.md를 참조하여 Phase 46을 구현하라.
 Mesh Shader 미지원 시 기존 DrawIndexedInstanced + LODSelector로 폴백해야 한다.
 
 1. Meshlet 분할: ~128 삼각형, 바운딩 스피어 + 노말 Cone
@@ -546,10 +514,10 @@ Mesh Shader 미지원 시 기존 DrawIndexedInstanced + LODSelector로 폴백해
 
 ---
 
-## Prompt 48: Neural Upscaling (DLSS/FSR) + Neural Denoising
+## Prompt 47: Neural Upscaling (DLSS/FSR) + Neural Denoising
 
 ```
-PRD.md, PLAN.md(Phase 48), CLAUDE.md를 참조하여 Phase 48을 구현하라.
+PRD.md, PLAN.md(Phase 47), CLAUDE.md를 참조하여 Phase 47을 구현하라.
 
 1. FSR 3: FidelityFX SDK 연동, Color+Depth+MotionVector → 업스케일, Quality Mode 메뉴
 2. DLSS 3 (선택): Streamline SDK, RTX 감지, 미지원 시 FSR 폴백
@@ -561,11 +529,11 @@ PRD.md, PLAN.md(Phase 48), CLAUDE.md를 참조하여 Phase 48을 구현하라.
 
 ---
 
-## Prompt 49: Phase 03 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
+## Prompt 48: Phase 03 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
 
 ```
-PRD.md, PLAN.md(Phase 49), CLAUDE.md를 참조하여 Phase 49를 수행하라.
-Phase 33~48에서 추가된 모든 고급 렌더링 기법의 코드 품질을 점검하고,
+PRD.md, PLAN.md(Phase 48), CLAUDE.md를 참조하여 Phase 48을 수행하라.
+Phase 32~47에서 추가된 모든 고급 렌더링 기법의 코드 품질을 점검하고,
 성능을 최적화하며, 버그를 수정하고, ARCHITECTURE.md를 완성한다.
 
 1. 코드 리뷰를 수행한다.
@@ -594,7 +562,7 @@ Phase 33~48에서 추가된 모든 고급 렌더링 기법의 코드 품질을 �
    - FSR/DLSS Motion Vector 스케일 불일치
 
 4. ARCHITECTURE.md를 완성한다.
-   - 전체 렌더 파이프라인 다이어그램 (Phase 01~48 누적 아키텍처)
+   - 전체 렌더 파이프라인 다이어그램 (Phase 01~47 누적 아키텍처)
    - 렌더 패스 순서 및 리소스 의존성 다이어그램
      (Shadow → G-Buffer → Lighting → SSAO → SSR → Bloom → TAA → Tone Mapping → Upscale)
    - 주요 모듈 간 의존성 (Engine / Renderer / SceneGraph / RHI / Asset / Lighting)

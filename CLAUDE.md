@@ -31,7 +31,7 @@ vcpkg integrate install
 RealtimeRenderingEngine.sln
 ├── RREngine (src/)                  — 엔진 (Windows Application, SubSystem: Windows)
 ├── RREngineTests (tests/)           — 테스트 (Console Application, SubSystem: Console)
-├── RRScenePreprocessor (src/Tools/) — 오프라인 씬 전처리 CLI 도구 (Console Application) [Phase 32]
+├── RRScenePreprocessor (src/Tools/) — 오프라인 씬 전처리 CLI 도구 (Console Application) [Phase 35]
 └── docs (가상 폴더)                 — PRD.md, PLAN.md, PROMPT.md, CLAUDE.md
 ```
 
@@ -201,9 +201,9 @@ assimp-vc143-mt.lib — Assimp (glTF/GLB 로딩)
 ## 주요 참조 문서
 
 - `PRD.md` — 제품 요구사항 정의
-- `PLAN.md` — Phase 03 (32~49) 구현 설계
-- `PROMPT.md` — Phase 03 (32~49) 구현 프롬프트
-- `ARCHITECTURE.md` — 아키텍처 문서 (Phase 49에서 완성 예정)
+- `PLAN.md` — Phase 03 (32~48) 구현 설계
+- `PROMPT.md` — Phase 03 (32~48) 구현 프롬프트
+- `ARCHITECTURE.md` — 아키텍처 문서 (Phase 48에서 완성 예정)
 - `RemainingWork.md` — 미해결 버그 및 런타임 검증 항목
 
 ## 주의사항
@@ -305,7 +305,7 @@ PSO 종류 (현재 구현):
 | LOD | `ID_OPTIM_LOD = 8001` | ON | `SetLODEnabled(bool)` |
 | Frustum Culling | `ID_OPTIM_FRUSTUM_CULL = 8002` | ON | `SetFrustumCullingEnabled(bool)` |
 | Light Culling | `ID_OPTIM_LIGHT_CULL = 8003` | ON | `SetLightCullingEnabled(bool)` |
-| Occlusion Culling | `ID_OPTIM_OCCLUSION_CULL = 8005` | — | Phase 33 구현 예정 (8004는 MipMap 토글 사용 중) |
+| Occlusion Culling | `ID_OPTIM_OCCLUSION_CULL = 8005` | — | Phase 32 구현 예정 (8004는 MipMap 토글 사용 중) |
 
 ### 렌더 파이프라인 실행 순서
 
@@ -322,7 +322,7 @@ PSO 종류 (현재 구현):
 11. Shadow Depth Pass → 그림자 생성 광원별 depth-only 렌더링
 12. Main Pass → Opaque → Alpha Mask → Alpha Blend (back-to-front)
 
-### RRScenePreprocessor (Phase 31 완료)
+### RRScenePreprocessor (Phase 35 예정)
 
 glTF/GLB/FBX 씬을 엔진 전용 바이너리(`.rrscene`)로 변환하여 이후 로딩 시 GPU 업로드만 수행한다.
 
@@ -336,10 +336,10 @@ glTF/GLB/FBX 씬을 엔진 전용 바이너리(`.rrscene`)로 변환하여 이�
 
 ---
 
-## Phase 03: 고급 렌더링 기법 (Phase 32~49)
+## Phase 03: 고급 렌더링 기법 (Phase 32~48)
 
 상세 설계: `PLAN.md` / 구현 프롬프트: `PROMPT.md`
 
 > **Backup 정책**: `Phase 01 Backup/` 및 `Phase 02 Backup/` 폴더 안의 파일은 절대 참조하거나 수정하지 않는다. 어떠한 작업에서도 이 폴더들을 건드리지 않는다.
 
-**다음 구현 대상**: Phase 32 — RRScenePreprocessor (`.rrscene` 파이프라인 + CLI 도구)
+**다음 구현 대상**: Phase 32 — Occlusion Culling (Hi-Z GPU + Compute Shader 인프라)

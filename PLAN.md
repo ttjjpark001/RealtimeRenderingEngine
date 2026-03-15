@@ -10,52 +10,11 @@
 > 지연 렌더링(Deferred Shading), 포스트 프로세싱, 레이 트레이싱, 신경망 업스케일링 등
 > 최신 실시간 렌더링 기법을 단계적으로 추가한다.
 
-**포함 Phase**: Phase 32 ~ Phase 49
+**포함 Phase**: Phase 32 ~ Phase 48
 
 ---
 
-### Phase 32: RRScenePreprocessor — 오프라인 씬 전처리 도구 + 백그라운드 자동 생성
-**목표**: glTF/GLB/FBX 씬을 처리하여 엔진 전용 바이너리(`.rrscene`)로 저장하는 파이프라인을 구현한다.
-두 가지 진입점을 제공한다: ① 독립 CLI 도구(`RRScenePreprocessor.exe`), ② 표준 경로 로딩 완료 후
-렌더링 앱 내 백그라운드 자동 생성. 렌더링 앱은 `.rrscene`을 직접 로드하여 GPU 업로드만 수행한다.
-
-1. **전처리 파이프라인 구현** (`src/Asset/ScenePreprocessor.h/.cpp`, CLI와 엔진이 공유):
-   - `ScenePreprocessor::Generate(sourcePath, outputPath)`: 동기 전처리 (CLI 도구용)
-   - `ScenePreprocessor::GenerateAsync(sourcePath)`: `std::async`로 백그라운드 실행, `std::future<bool>` 반환 (엔진 내 자동 생성용)
-   - 내부 파이프라인: Assimp 파싱 → Vertex/Index 변환 + Tangent → 프리미티브 분리 → 메시별 AABB → Auto-LOD(QEM, LOD1=50%/LOD2=25%) → 이미지 디코딩(stb_image) → Mip chain(CPU box filter) → 씬 직렬화
-   - 원자적 파일 쓰기: 임시 파일(`.rrscene.tmp`) 완성 후 원본 경로로 rename (부분 파일 방지)
-
-2. **VS 프로젝트 `RRScenePreprocessor` 추가** (솔루션 내 Console Application):
-   - `ScenePreprocessor` (엔진 헤더 공유)를 호출하는 얇은 CLI 래퍼
-   - 진입점: `main(argc, argv)` — 입력 파일 경로를 인수로 받아 `Generate()` 호출
-   - 출력: `bin/Debug/RRScenePreprocessor.exe`
-
-3. **`.rrscene` 바이너리 포맷 정의** (`src/Asset/RRSceneFormat.h`, 공용 헤더):
-   - Header: magic("RRSC"), version(uint32), sourceHash(uint64, 크기^수정시각), 섹션 오프셋 테이블
-   - Scene Section: 노드 계층(부모-자식 인덱스, 이름, 로컬 TRS), 씬 AABB, 카메라 초기 상태
-   - Mesh Section: 메시별 — Vertex 배열(position/color/normal/texCoord/tangent) raw dump, Index 배열, AABB, LOD 데이터(LOD 0~2 Vertex/Index + 전환 거리)
-   - Material Section: PBR factor 값, AlphaMode, doubleSided, 텍스처 인덱스, sRGB/Linear 포맷 힌트
-   - Texture Section: 텍스처별 — 너비/높이/Mip 수, DXGI_FORMAT, 전체 Mip chain 픽셀 데이터(연속 배치)
-   - Light Section: 타입/색상/강도/위치/방향/감쇠/원뿔각/castShadow/BoundingSphere radius
-
-4. **렌더링 앱 이중 로딩 경로 추가** (`src/Asset/SceneLoader`):
-   - **고속 경로**: `.rrscene` 발견 + 해시 일치 → 바이너리 직접 읽기 → GPU 업로드(VB/IB/텍스처)만 수행
-   - **표준 경로**: `.rrscene` 없거나 해시 불일치 → Assimp 런타임 파싱 → 로딩 완료 후 항목 5 실행
-   - 자동 감지: 원본 파일과 동일 디렉토리에 동일 이름 `.rrscene` 존재 → 자동 선택
-   - DebugHUD에 로딩 경로 표시: "Fast (.rrscene)" / "Standard (Assimp)"
-
-5. **표준 경로 로딩 후 백그라운드 자동 전처리** (`Engine::LoadScene()`):
-   - 표준 경로(Assimp) 로딩 완료 직후: `ScenePreprocessor::GenerateAsync(sourcePath)` 호출
-   - 렌더링을 블로킹하지 않고 백그라운드 스레드에서 전처리 파이프라인 실행
-   - DebugHUD에 진행 상태 표시: "Preprocessing scene..." (완료 후 사라짐)
-   - 완료 시: `.rrscene` 파일 원자적 저장, 콘솔 로그 출력 ("Sponza.rrscene saved")
-   - 다음 로딩 시 자동으로 고속 경로 사용
-
-**완료 기준**: 신규 씬 첫 로딩 시 표준 경로 + 백그라운드 자동 생성 동작 확인, 두 번째 로딩 시 자동으로 고속 경로 사용 확인(1~3초), CLI 도구(`RRScenePreprocessor.exe`)로도 동일한 `.rrscene` 생성 가능, 렌더링 결과 동일
-
----
-
-### Phase 33: Occlusion Culling — Hi-Z GPU
+### Phase 32: Occlusion Culling — Hi-Z GPU
 **목표**: 현재 P0 스텁(항상 false)인 `OcclusionCuller`를 GPU Hi-Z 방식으로 완전 구현.
 CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 현재 엔진에 Compute Shader 인프라가 없으므로, 먼저 인프라를 구축한 뒤 Hi-Z를 구현한다.
@@ -85,7 +44,7 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 
 ---
 
-### Phase 34: Point Light Cube Map Shadowing
+### Phase 33: Point Light Cube Map Shadowing
 **목표**: `castShadow = true`인 Point Light에 대해 6면 Cube Map 기반 Omnidirectional Shadow Map 구현.
 
 1. **TextureCube D3D12 리소스 생성**:
@@ -116,7 +75,7 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 
 ---
 
-### Phase 35: Skeletal Animation
+### Phase 34: Skeletal Animation
 **목표**: glTF Node Transform 애니메이션(키프레임)과 Skeletal Animation(본/스킨) 구현.
 Part A가 Part B의 전제 조건이므로 순서대로 구현한다.
 
@@ -145,7 +104,7 @@ Part A가 Part B의 전제 조건이므로 순서대로 구현한다.
    - SceneLoader: aiMesh의 aiBone 배열 → Skeleton 생성, per-vertex joint/weight 추출
 
 5. **Vertex 포맷 확장**:
-   - `Vertex` 구조체에 `XMUSHORT4 joints` (JOINTS_0) + `XMFLOAT4 weights` (WEIGHTS_0) 추가
+   - `Vertex` 구조체에 `XMUINT4 joints` (JOINTS_0) + `XMFLOAT4 weights` (WEIGHTS_0) 추가
    - D3D12 Input Layout, HLSL 입력 구조체, `static_assert` 갱신
 
 6. **GPU Skinning**:
@@ -159,37 +118,51 @@ Part A가 Part B의 전제 조건이므로 순서대로 구현한다.
 
 ---
 
-### Phase 36: RRScenePreprocessor 확장 — Skeletal Animation 지원
-**목표**: Phase 33에서 추가된 Skeleton/Skin/Animation 데이터를 `.rrscene` 포맷에 통합하여
-전처리기와 렌더러 양쪽을 확장한다. 애니메이션 씬도 고속 로딩 경로를 사용할 수 있게 된다.
+### Phase 35: RRScenePreprocessor — 오프라인 씬 전처리 도구 + Skeletal Animation 통합 지원
+**목표**: Phase 34에서 구현한 Skeleton/Skin/AnimationClip이 이미 완성된 시점에서,
+glTF/GLB/FBX 씬을 엔진 전용 바이너리(`.rrscene`)로 저장하는 파이프라인을 처음부터 통합 구현한다.
+기본 씬 데이터(Mesh/Material/Texture/Light)와 Skeletal Animation 데이터를 단일 포맷으로 지원하며,
+CLI 도구(`RRScenePreprocessor.exe`)와 렌더링 앱 내 백그라운드 자동 생성의 두 진입점을 제공한다.
 
-1. **`.rrscene` 포맷 버전 업 (v2)**:
-   - Header의 version 필드: 1 → 2
-   - Vertex 포맷 확장: `joints(XMUINT4)` + `weights(XMFLOAT4)` 필드 추가 (스킨 메시용)
-   - **Skeleton Section 추가**: 본 수, 본별 이름/parentIndex/inverseBindMatrix, Skin → joint 인덱스 배열
-   - **Animation Section 추가**: 클립 수, 클립별 — 이름, 재생 시간, 채널 수, 채널별 — target 노드 인덱스/Property(TRS)/Interpolation/키프레임 배열(시간+값)
-   - 하위 호환: v1(비애니메이션 씬) 파일도 계속 로딩 가능
+1. **`.rrscene` 바이너리 포맷 정의** (`src/Asset/RRSceneFormat.h`, 공용 헤더):
+   - Header: magic("RRSC"), version(uint32=1), sourceHash(uint64, 크기^수정시각), 섹션 오프셋 테이블
+   - Scene Section: 노드 수, 노드별(부모 인덱스, 이름, 로컬 TRS 행렬, meshIndex, materialIndex), 씬 AABB, 카메라 초기 상태
+   - Mesh Section: 메시별 — `isSkinned` 플래그, Vertex 배열(스킨 메시는 joints/weights 포함) raw dump, Index 배열, AABB, LOD 데이터(LOD 0~2 Vertex/Index + 전환 거리)
+   - Material Section: PBR factor 값, AlphaMode, doubleSided, 텍스처 인덱스, sRGB/Linear 포맷 힌트
+   - Texture Section: 텍스처별 — 너비/높이/Mip 수, DXGI_FORMAT, 전체 Mip chain 픽셀 데이터(연속 배치)
+   - Light Section: 타입/색상/강도/위치/방향/감쇠/원뿔각/castShadow/BoundingSphere radius
+   - **Skeleton Section**: 본 수, 본별(이름, parentIndex, inverseBindMatrix), Skin 수, Skin별(skeletonIndex, jointIndices 배열)
+   - **Animation Section**: 클립 수, 클립별(이름, 재생 시간, 채널 수), 채널별(targetNodeIndex, Property(TRS), Interpolation, 키프레임 수, 키프레임 배열)
+   - 스킨 메시 없는 씬은 Skeleton/Animation Section 생략 (SectionCount 기반 감지)
 
-2. **RRScenePreprocessor 확장**:
-   - Assimp `aiMesh::mBones` → Skeleton/Skin 직렬화 (per-vertex joint/weight 포함)
-   - Assimp `aiAnimation` → AnimationClip 직렬화 (TRS 키프레임, 보간 타입 포함)
-   - 스킨 메시의 Vertex에 joints/weights 필드 포함하여 `.rrscene` Mesh Section 저장
-   - 비스킨 메시는 joints/weights 필드 생략 (플래그로 구분)
+2. **전처리 파이프라인 구현** (`src/Asset/ScenePreprocessor.h/.cpp`, CLI와 엔진이 공유):
+   - `ScenePreprocessor::Generate(sourcePath, outputPath)`: 동기 전처리 (CLI 도구용)
+   - `ScenePreprocessor::GenerateAsync(sourcePath)`: `std::async`로 백그라운드 실행, `std::future<bool>` 반환 (엔진 내 자동 생성용)
+   - 내부 파이프라인: Assimp 파싱 → Vertex/Index 변환 + Tangent → 프리미티브 분리 → 메시별 AABB → Auto-LOD(QEM, LOD1=50%/LOD2=25%) → Skeleton/Skin 추출(스킨 메시 시) → Animation 추출(aiAnimation 존재 시) → 이미지 디코딩(stb_image) → Mip chain(CPU box filter) → 씬 직렬화
+   - 원자적 파일 쓰기: 임시 파일(`.rrscene.tmp`) 완성 후 원본 경로로 rename (부분 파일 방지)
 
-3. **렌더링 앱 고속 경로 확장**:
-   - `.rrscene` v2 로딩: Skeleton/Skin → `Skeleton`/`Skin` 객체 생성, Animation → `AnimationClip` 객체 생성
-   - AnimationController에 클립 등록, 자동 재생 시작 (씬에 클립이 있을 때)
-   - 스킨 Vertex 데이터 → GPU VB(joint/weight 포함) 업로드
+3. **VS 프로젝트 `RRScenePreprocessor` 추가** (솔루션 내 Console Application):
+   - `ScenePreprocessor` (엔진 헤더 공유)를 호출하는 얇은 CLI 래퍼
+   - 진입점: `main(argc, argv)` — 입력 파일 경로를 인수로 받아 `Generate()` 호출
+   - 출력: `bin/Debug/RRScenePreprocessor.exe`
 
-4. **버전 감지 및 마이그레이션**:
-   - v1 파일 로딩 시 Skeleton/Animation Section 없음 → 해당 객체 미생성으로 처리
-   - 원본 파일 해시 불일치 → 재전처리 안내 메시지 출력
+4. **렌더링 앱 이중 로딩 경로 추가** (`src/Asset/SceneLoader`):
+   - **고속 경로**: `.rrscene` 발견 + sourceHash 일치 → 섹션 순서대로 SceneNode/Mesh/Material/Texture/Light 객체 생성 + Skeleton Section 존재 시 Skeleton/Skin 생성 + Animation Section 존재 시 AnimationClip 생성 및 AnimationController 등록 → GPU 업로드(VB/IB/Texture)만 수행 (Assimp 파싱 없음)
+   - **표준 경로**: `.rrscene` 없거나 해시 불일치 → Assimp 런타임 파싱 → 로딩 완료 후 항목 5 실행
+   - DebugHUD에 로딩 경로 표시: "Fast (.rrscene)" / "Standard (Assimp)"
 
-**완료 기준**: CesiumMan.glb를 RRScenePreprocessor로 전처리 후 렌더링 앱에서 `.rrscene` 고속 로딩으로 스켈레탈 애니메이션 정상 재생 확인, 비애니메이션 `.rrscene`(v1)과의 하위 호환 유지
+5. **표준 경로 로딩 후 백그라운드 자동 전처리** (`Engine::LoadScene()`):
+   - 표준 경로(Assimp) 로딩 완료 직후: `ScenePreprocessor::GenerateAsync(sourcePath)` 호출
+   - 렌더링을 블로킹하지 않고 백그라운드 스레드에서 전처리 파이프라인 실행 (Skeleton/Animation 포함)
+   - DebugHUD에 진행 상태 표시: "Preprocessing scene..." (완료 후 사라짐)
+   - 완료 시: `.rrscene` 파일 원자적 저장, 콘솔 로그 출력 ("Sponza.rrscene saved")
+   - 다음 로딩 시 자동으로 고속 경로 사용
+
+**완료 기준**: 신규 씬 첫 로딩 시 표준 경로 + 백그라운드 자동 생성 동작 확인, 두 번째 로딩 시 자동으로 고속 경로 사용 확인(1~3초), CLI 도구(`RRScenePreprocessor.exe`)로도 동일한 `.rrscene` 생성 가능, CesiumMan.glb를 전처리 후 고속 로딩으로 스켈레탈 애니메이션 정상 재생 확인, 스킨 없는 씬(Sponza)과 스킨 있는 씬(CesiumMan) 모두 렌더링 결과 동일
 
 ---
 
-### Phase 37: Deferred Rendering — G-Buffer 기반 렌더링 파이프라인
+### Phase 36: Deferred Rendering — G-Buffer 기반 렌더링 파이프라인
 **목표**: 기존 Forward Rendering 파이프라인을 Deferred Shading으로 전환.
 G-Buffer에 기하학 정보를 저장하고 Lighting Pass에서 화면 공간 라이팅을 수행.
 다수 Point Light의 라이팅 비용을 O(픽셀 × 광원)에서 O(픽셀)로 분리한다.
@@ -208,7 +181,7 @@ G-Buffer에 기하학 정보를 저장하고 Lighting Pass에서 화면 공간 �
 
 ---
 
-### Phase 38: HDR Pipeline + Tone Mapping
+### Phase 37: HDR Pipeline + Tone Mapping
 **목표**: 16-bit HDR 렌더 파이프라인 구축 및 Tone Mapping, Auto-Exposure 적용.
 
 1. **HDR Render Target**: `DXGI_FORMAT_R16G16B16A16_FLOAT` (Lighting Pass 출력, Bloom 입력)
@@ -223,7 +196,7 @@ G-Buffer에 기하학 정보를 저장하고 Lighting Pass에서 화면 공간 �
 
 ---
 
-### Phase 39: SSAO (Screen Space Ambient Occlusion)
+### Phase 38: SSAO (Screen Space Ambient Occlusion)
 **목표**: G-Buffer Depth/Normal 활용 화면 공간 주변 차폐 계산. 접촉 그림자와 크레비스 음영으로 장면 깊이감 향상.
 
 1. **SSAO Buffer**: `R8_UNORM` 별도 렌더 타겟
@@ -238,7 +211,7 @@ G-Buffer에 기하학 정보를 저장하고 Lighting Pass에서 화면 공간 �
 
 ---
 
-### Phase 40: Bloom + Post-Processing 파이프라인
+### Phase 39: Bloom + Post-Processing 파이프라인
 **목표**: Bloom 효과 구현 및 Ping-Pong Buffer 기반 Post-Processing 프레임워크 구축.
 
 1. **Ping-Pong Buffer 프레임워크**: HDR RT 2개 교대 사용, `PostProcessor::AddPass(shader)` 패스 등록
@@ -252,7 +225,7 @@ G-Buffer에 기하학 정보를 저장하고 Lighting Pass에서 화면 공간 �
 
 ---
 
-### Phase 41: TAA (Temporal Anti-Aliasing)
+### Phase 40: TAA (Temporal Anti-Aliasing)
 **목표**: Halton Sequence 지터링 + History Buffer 블렌딩 + Variance Clipping으로 AA 및 서브픽셀 디테일 개선.
 
 1. **Jitter Matrix**: 8~16프레임 Halton Sequence(base 2, 3)로 투영 행렬 서브픽셀 오프셋
@@ -268,10 +241,10 @@ G-Buffer에 기하학 정보를 저장하고 Lighting Pass에서 화면 공간 �
 
 ---
 
-### Phase 42: Motion Blur + Depth of Field
+### Phase 41: Motion Blur + Depth of Field
 **목표**: Per-Object Motion Blur와 Bokeh DoF로 영화적 품질 향상.
 
-1. **Motion Blur** (Phase 41 Velocity Buffer 활용):
+1. **Motion Blur** (Phase 40 Velocity Buffer 활용):
    - Tile-based Max Velocity: N×N 타일 내 최대 속도 계산
    - 속도 방향으로 N샘플 평균, Soft-Edge 처리, 셔터 속도 시뮬레이션
 2. **Depth of Field**:
@@ -284,7 +257,7 @@ G-Buffer에 기하학 정보를 저장하고 Lighting Pass에서 화면 공간 �
 
 ---
 
-### Phase 43: SSR (Screen Space Reflections) + Refraction
+### Phase 42: SSR (Screen Space Reflections) + Refraction
 **목표**: G-Buffer Depth/Normal 기반 화면 공간 반사 및 굴절 구현.
 
 1. **SSR (Screen Space Reflections)**:
@@ -300,7 +273,7 @@ G-Buffer에 기하학 정보를 저장하고 Lighting Pass에서 화면 공간 �
 
 ---
 
-### Phase 44: Screen Space Subsurface Scattering (SSSSS)
+### Phase 43: Screen Space Subsurface Scattering (SSSSS)
 **목표**: 피부·밀랍·대리석 등 반투명 재질의 광 산란 효과.
 
 1. **Subsurface Material**: `subsurfaceColor`(XMFLOAT3) + `scatterWidth`(float) 파라미터 추가
@@ -314,12 +287,12 @@ G-Buffer에 기하학 정보를 저장하고 Lighting Pass에서 화면 공간 �
 
 ---
 
-### Phase 45: Global Illumination — DDGI (Dynamic Diffuse GI)
+### Phase 44: Global Illumination — DDGI (Dynamic Diffuse GI)
 **목표**: 씬 전역 동적 간접광 시뮬레이션. Irradiance Probe 기반 DDGI 구현.
 
 1. **Probe Grid**: 씬 AABB 내 3D Grid(예: 8×4×8 = 256 Probe) 배치
 2. **Probe Update**:
-   - DXR 사용 가능 시: 각 Probe에서 구면 방향으로 Radiance Ray 발사 (Phase 46 연동)
+   - DXR 사용 가능 시: 각 Probe에서 구면 방향으로 Radiance Ray 발사 (Phase 45 연동)
    - DXR 미지원 시: 정적 Reflection Capture Probe로 폴백
    - Irradiance(L0) + Visibility(Depth) → Probe Texture(Octahedral Map) 저장
 3. **Probe Sampling**: 픽셀 위치 → 3D Grid → 8코너 Probe 삼선형 보간, SH2/SH3 Irradiance 샘플링
@@ -330,7 +303,7 @@ G-Buffer에 기하학 정보를 저장하고 Lighting Pass에서 화면 공간 �
 
 ---
 
-### Phase 46: DXR Hybrid Ray Tracing
+### Phase 45: DXR Hybrid Ray Tracing
 **목표**: DirectX 12 Raytracing(DXR) API로 Ray-Traced Shadow·Reflection·GI 구현.
 Rasterization과 Ray Tracing을 Hybrid 방식으로 결합, PCF Shadow/SSR 대비 최고 품질 달성.
 
@@ -341,15 +314,15 @@ Rasterization과 Ray Tracing을 Hybrid 방식으로 결합, PCF Shadow/SSR 대�
    - ShaderTable: RayGen/Miss/HitGroup 테이블 빌드 및 업로드
 2. **Ray-Traced Shadow**: Directional/Point/Spot 광원별 Shadow Ray, 반투명 AnyHit, PCF 대체
 3. **Ray-Traced Reflection**: G-Buffer Normal+Roughness → 반사 Ray, Cone Sampling, 재귀 1~2레벨
-4. **GI 연동**: Phase 45 DDGI Probe Update에 DXR Ray 활용
-5. **Denoiser 연동**: Phase 48 Neural Denoiser 또는 Temporal Accumulation Denoiser
+4. **GI 연동**: Phase 44 DDGI Probe Update에 DXR Ray 활용
+5. **Denoiser 연동**: Phase 47 Neural Denoiser 또는 Temporal Accumulation Denoiser
 6. **하드웨어 감지 및 폴백**: DXR Tier 1.1 미지원 시 PCF Shadow/SSR로 자동 폴백
 
 **완료 기준**: TLAS/BLAS 빌드, RT Shadow 동작, RT Reflection 동작, DXR/Raster Hybrid 전환
 
 ---
 
-### Phase 47: Nanite-style Virtual Geometry
+### Phase 46: Nanite-style Virtual Geometry
 **목표**: Cluster 기반 GPU-Driven LOD 시스템. Meshlet 렌더링으로 극단적 폴리곤 밀도 처리.
 
 1. **Meshlet 분할**: ~128삼각형 단위 Meshlet 생성 (DirectX MeshShader 활용)
@@ -366,7 +339,7 @@ Rasterization과 Ray Tracing을 Hybrid 방식으로 결합, PCF Shadow/SSR 대�
 
 ---
 
-### Phase 48: Neural Upscaling (DLSS/FSR) + Neural Denoising
+### Phase 47: Neural Upscaling (DLSS/FSR) + Neural Denoising
 **목표**: AI/ML 기반 업스케일링으로 저해상도 렌더링 + 고품질 출력. Ray-Traced 노이즈 제거.
 
 1. **FSR 3 (AMD FidelityFX Super Resolution)**:
@@ -384,8 +357,8 @@ Rasterization과 Ray Tracing을 Hybrid 방식으로 결합, PCF Shadow/SSR 대�
 
 ---
 
-### Phase 49: Phase 03 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
-**목표**: Phase 33~48에서 추가된 모든 고급 렌더링 기법의 코드 품질 점검, 성능 최적화,
+### Phase 48: Phase 03 코드 리뷰, 최적화, 버그 수정 & 아키텍처 문서화
+**목표**: Phase 32~47에서 추가된 모든 고급 렌더링 기법의 코드 품질 점검, 성능 최적화,
 버그 수정, 그리고 전체 엔진 아키텍처를 반영한 최종 문서(`ARCHITECTURE.md`) 완성.
 
 1. **코드 리뷰**:
@@ -414,7 +387,7 @@ Rasterization과 Ray Tracing을 Hybrid 방식으로 결합, PCF Shadow/SSR 대�
    - FSR/DLSS Motion Vector 스케일 불일치 수정
 
 4. **아키텍처 문서화** (`ARCHITECTURE.md` 완성):
-   - 전체 렌더 파이프라인 다이어그램 (Phase 01 ~ Phase 48 누적 아키텍처)
+   - 전체 렌더 파이프라인 다이어그램 (Phase 01 ~ Phase 47 누적 아키텍처)
    - 렌더 패스 순서 및 리소스 의존성 (Shadow → G-Buffer → Lighting → Post → TAA → Upscale)
    - 주요 모듈 간 의존성 (Engine / Renderer / SceneGraph / RHI / Asset / Lighting)
    - G-Buffer 레이아웃, Descriptor Heap 구조, Root Signature 레지스터 맵
@@ -437,33 +410,31 @@ Rasterization과 Ray Tracing을 Hybrid 방식으로 결합, PCF Shadow/SSR 대�
 ```
 Phase 31 (Phase 02 Backup)
     │
-    └── Phase 32 (RRScenePreprocessor: .rrscene 전처리 도구) ← Phase 03 시작
-            │
-            ├── Phase 33 (Occlusion Culling: Hi-Z GPU + Compute 인프라) ──┐
-            ├── Phase 34 (Point Light Cube Map Shadowing) ─────────────────┤
-            ├── Phase 35 (Skeletal Animation) ─────────────────────────────┤
-            │       └── Phase 36 (RRScenePreprocessor 확장: Skeletal 지원) ──┤
-            │                                                               │
-            └──────────────────────────────────── Phase 37 (Deferred Rendering) ─┘
+    ├── Phase 32 (Occlusion Culling: Hi-Z GPU + Compute 인프라) ──────────────────┐
+    ├── Phase 33 (Point Light Cube Map Shadowing) ─────────────────────────────────┤
+    └── Phase 34 (Skeletal Animation) ─────────────────────────────────────────────┤
+            └── Phase 35 (RRScenePreprocessor: .rrscene + Skeletal 통합) ──────────┤
+                                                                                    │
+                                              Phase 36 (Deferred Rendering) ────────┘
                                                              │
-                                              Phase 38 (HDR Pipeline + Tone Mapping)
+                                              Phase 37 (HDR Pipeline + Tone Mapping)
                                                              │
-                                    ┌───────── Phase 39 (SSAO) ──────────────────┐
-                                    │         Phase 40 (Bloom + PP 파이프라인)    │
-                                    │         Phase 41 (TAA) ─────────────────────┤
-                                    │         Phase 42 (Motion Blur + DoF) ───────┤
-                                    │         Phase 43 (SSR + Refraction) ─────────┤
-                                    │         Phase 44 (SSSSS) ────────────────────┤
+                                    ┌───────── Phase 38 (SSAO) ──────────────────┐
+                                    │         Phase 39 (Bloom + PP 파이프라인)    │
+                                    │         Phase 40 (TAA) ─────────────────────┤
+                                    │         Phase 41 (Motion Blur + DoF) ───────┤
+                                    │         Phase 42 (SSR + Refraction) ─────────┤
+                                    │         Phase 43 (SSSSS) ────────────────────┤
                                     │                                              │
-                                    └──────────────────────── Phase 45 (DDGI/GI) ──┤
+                                    └──────────────────────── Phase 44 (DDGI/GI) ──┤
                                                                        │           │
-                                                        Phase 46 (DXR Hybrid RT) ──┘
+                                                        Phase 45 (DXR Hybrid RT) ──┘
                                                                        │
-                                                        Phase 47 (Nanite: Virtual Geometry)
+                                                        Phase 46 (Nanite: Virtual Geometry)
                                                                        │
-                                                        Phase 48 (Neural Upscaling + Denoising)
+                                                        Phase 47 (Neural Upscaling + Denoising)
                                                                        │
-                                                        Phase 49 (코드 리뷰 + 최적화 + 버그 수정 + ARCHITECTURE.md)
+                                                        Phase 48 (코드 리뷰 + 최적화 + 버그 수정 + ARCHITECTURE.md)
 ```
 
 ## Phase 03 리스크 & 대응
@@ -478,4 +449,3 @@ Phase 31 (Phase 02 Backup)
 | Nanite Mesh Shader 미지원 (구형 GPU) | Feature Level 확인, 미지원 시 기존 LODSelector + DrawIndexedInstanced 폴백 |
 | FSR/DLSS SDK 버전 관리 | vcpkg 또는 서브모듈로 SDK 버전 고정, 업데이트 시 통합 테스트 |
 | Neural Denoiser latency (1프레임 딜레이) | Temporal Denoiser는 1프레임 레이턴시 허용 (RT Shadow/Reflection 결과에는 용인 범위) |
-
