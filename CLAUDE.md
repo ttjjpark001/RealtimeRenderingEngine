@@ -340,6 +340,6 @@ glTF/GLB/FBX 씬을 엔진 전용 바이너리(`.rrscene`)로 변환하여 이�
 
 상세 설계: `PLAN.md` / 구현 프롬프트: `PROMPT.md`
 
-> **Phase 02 Backup 정책**: `Phase 02 Backup/` 폴더 안의 파일은 절대 수정하지 않는다.
+> **Backup 정책**: `Phase 01 Backup/` 및 `Phase 02 Backup/` 폴더 안의 파일은 절대 참조하거나 수정하지 않는다. 어떠한 작업에서도 이 폴더들을 건드리지 않는다.
 
 **다음 구현 대상**: Phase 32 — RRScenePreprocessor (`.rrscene` 파이프라인 + CLI 도구)
