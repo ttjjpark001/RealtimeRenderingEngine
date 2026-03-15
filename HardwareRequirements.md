@@ -79,6 +79,94 @@ Phase 01 ~ Phase 49 전 구간을 구현·실행하기 위한 하드웨어 요�
 
 ---
 
+## ASUS Dual GeForce RTX 5060 Ti 16GB 분석 (2026-03-15 추가)
+
+> ASUS Dual GeForce RTX™ 5060 Ti 16GB GDDR7 OC Edition (PCIe 5.0, DLSS 4, HDMI 2.1b, DisplayPort 2.1b)
+
+### 사양
+
+| 항목 | 값 |
+|------|-----|
+| GPU 아키텍처 | NVIDIA Blackwell (GB206) |
+| VRAM | 16 GB GDDR7 |
+| GPU 메모리 대역폭 | ~448 GB/s |
+| DirectX Feature Level | 12_2 |
+| Shader Model | 6.9 |
+| DXR (Ray Tracing) | ✅ Tier 1.1 (4세대 RT 코어) |
+| Mesh Shader (SM 6.5) | ✅ DirectX 12 Ultimate |
+| DLSS | ✅ DLSS 4 (4세대 Tensor 코어, Multi Frame Generation 지원) |
+| PCIe | 5.0 |
+
+### Phase 03 전 기능 적합성 평가
+
+| Phase | 핵심 기능 | 요구 사항 | RTX 5060 Ti |
+|-------|----------|----------|-------------|
+| Phase 32 | RRScenePreprocessor | CPU 작업 주도 | ✅ |
+| Phase 33 | Hi-Z GPU Occlusion Culling | Compute Shader (UAV) | ✅ |
+| Phase 34 | Cube Map Shadow (Point Light) | TextureCube DSV/SRV | ✅ |
+| Phase 35~36 | Skeletal Animation | 일반 D3D12 | ✅ |
+| Phase 37 | Deferred Rendering (G-Buffer MRT) | MRT 4장 동시 | ✅ |
+| Phase 38 | HDR + Tone Mapping | Compute + R16G16B16A16_FLOAT | ✅ |
+| Phase 39 | SSAO | Compute (Hemisphere Kernel) | ✅ |
+| Phase 40 | Bloom + Post-Processing | Compute + Ping-Pong Buffer | ✅ |
+| Phase 41 | TAA | Motion Vector RT + History Buffer | ✅ |
+| Phase 42 | Motion Blur + DoF | Compute (Tile Max Velocity, CoC) | ✅ |
+| Phase 43 | SSR + Refraction | Hi-Z Raymarching (Compute) | ✅ |
+| Phase 44 | SSSSS | Compute (Separable Gaussian) | ✅ |
+| Phase 45 | DDGI (GI Probe) | Compute + Texture2DArray | ✅ |
+| **Phase 46** | **DXR Hybrid Ray Tracing** | **DXR Tier 1.1 필수** | ✅ **(4세대 RT 코어)** |
+| **Phase 47** | **Nanite-style Mesh Shader** | **SM 6.5 Mesh/Amplification Shader** | ✅ **(DirectX 12 Ultimate)** |
+| **Phase 48** | **DLSS 4 + Neural Denoising** | **DLSS: NVIDIA RTX 전용** | ✅ **(DLSS 4 네이티브 지원)** |
+| Phase 49 | 최종 벤치마크 (Sponza + Bistro 60fps) | Full Phase 03 파이프라인 | ✅ 여유 있음 |
+
+### VRAM 여유도 (16 GB GDDR7 기준, 1080p)
+
+Phase 03 최대 동시 버퍼 사용량 (Deferred + DXR + DLSS 풀 파이프라인):
+
+| 항목 | 예상 용량 |
+|------|---------|
+| G-Buffer 3장 + HDR RT (1080p) | ~100~200 MB |
+| Shadow Maps (Directional 4096² + Cube Map 4개) | ~300 MB |
+| Hi-Z Mip chain, SSAO, Bloom, TAA History, Motion Blur, SSR | ~200 MB |
+| DDGI Probe Textures (256 Probe) | ~50~100 MB |
+| TLAS/BLAS (DXR 가속 구조, Sponza+Bistro 규모) | ~500 MB~1 GB |
+| 씬 메시 + 텍스처 (Sponza 52 MB + Bistro) | ~2~3 GB |
+| DLSS 4 업스케일 버퍼, Denoiser History | ~200 MB |
+| **총합** | **~3~5 GB** |
+
+> **16 GB GDDR7** 기준 총합의 3배 이상 여유. Bistro + Sponza 동시 로딩, 4K 해상도 전환에도 VRAM 부족 없음.
+
+### Phase별 현실적 실행 가능성 요약
+
+| Phase 범위 | 가능 여부 | 비고 |
+|-----------|----------|------|
+| Phase 32-36 (전처리, Hi-Z, CubeMap, 애니) | ✅ 완전 동작 | 4세대 Compute 인프라, 고성능 |
+| Phase 37-44 (Deferred + 포스트) | ✅ 완전 동작 | 1080p/1440p 모두 여유 |
+| Phase 45 (DDGI) | ✅ 완전 동작 | Probe 텍스처 + G-Buffer 동시에 여유 |
+| Phase 46 (DXR) | ✅ **하드웨어 완전 검증 가능** | 4세대 RT 코어, Tier 1.1 네이티브 |
+| Phase 47 (Mesh Shader) | ✅ **하드웨어 완전 검증 가능** | DirectX 12 Ultimate (SM 6.9) |
+| Phase 48 (DLSS 4 + FSR 3 + NRD) | ✅ **DLSS 4 네이티브, NRD SDK 지원** | RTX Tensor 코어 기반 DLSS 4 풀 지원 |
+| Phase 49 (벤치마크: Sponza+Bistro 60fps) | ✅ DLSS 없이도 달성, DLSS 활성 시 여유 | — |
+
+### 기존 권장 사양 대비 위치
+
+| 항목 | 최소 (RTX 2060) | 권장 (RTX 3060 12 GB) | **RTX 5060 Ti 16 GB** |
+|------|----------------|----------------------|----------------------|
+| DXR | Tier 1.0 | Tier 1.1 | ✅ Tier 1.1 (4세대) |
+| Mesh Shader | ✅ | ✅ | ✅ |
+| VRAM | 8 GB | 12 GB | **16 GB** |
+| DLSS | DLSS 2 | DLSS 3 | **DLSS 4** |
+| Phase 46 RT 성능 | 느림 | 보통 | **충분~여유** |
+| Phase 49 60fps 목표 | ⚠️ 빠듯 | ✅ 가능 | ✅ **여유** |
+
+### 결론
+
+RTX 5060 Ti 16 GB는 Phase 03(Phase 32~49) **전 기능을 제약 없이 구현·검증**할 수 있는 하드웨어다.
+특히 Phase 46(DXR), Phase 47(Mesh Shader), Phase 48(DLSS 4) 세 가지 핵심 고급 기능 모두 네이티브 하드웨어 지원으로 fallback 없이 완전 검증 가능하다.
+16 GB GDDR7 VRAM은 Phase 49 풀 파이프라인 기준 3배 이상 여유가 있어, 4K 해상도나 Bistro+Sponza 동시 로딩 등 극단적인 시나리오에서도 VRAM 부족이 발생하지 않는다.
+
+---
+
 ## Mac Mini M4 분석 (Metal 재작성 시나리오)
 
 > **전제**: 현재 코드베이스(Win32 + DirectX 12 + HLSL)를 macOS(AppKit + Metal + MSL)로 전면 재작성하는 경우의 하드웨어 가능성 분석.
