@@ -1,6 +1,6 @@
 # 잔여 구현 항목 정리
 
-> 최종 업데이트: 2026-03-14 (Phase 30 완료 — 전체 91개 테스트 통과 확인)
+> 최종 업데이트: 2026-03-14 (Phase 30 코드 작업 전체 완료 — 런타임 검증 항목 별도 정리)
 
 ---
 
@@ -26,12 +26,6 @@ Phase 26 구현 후 발견된 Bistro 씬 렌더링 버그들. **현재 코드에
 | TRANSIENT_DESCRIPTORS 32768 | 8c62105 | Bistro 551 mesh × 17 = 9,367 때문에 증가. Sponza(~103 mesh)는 2,048 이하면 충분. 증가 자체는 무해하지만 Bistro 전용 스케일링. |
 | PERSISTENT_DESCRIPTORS 2048 | 8c62105 | 유사하게 Bistro 텍스처 수 기준 증가. 소형 씬은 512로도 충분. |
 
-**임시 방편 → Phase 30에서 수정 완료**
-
-| 수정 내용 | 커밋 | 비고 |
-|-----------|------|------|
-| 전역 CullMode=NONE + SV_IsFrontFace | be6be78 | ✅ Phase 30(7b949bf)에서 Material.doubleSided 기반 PSO 분기로 교체 완료 (RM-11) |
-
 **일반적으로 필요한 수정 (모든 씬에 유효)**
 
 | 수정 내용 | 커밋 | 이유 |
@@ -56,30 +50,20 @@ Phase 26 구현 후 발견된 Bistro 씬 렌더링 버그들. **현재 코드에
    - 확인 필요: 외부 바닥 → 기둥 접촉면 → 계단/경사 지붕 → 원거리 가로등 → 실내외 개구부
    - SceneSettings.md에 최종 DepthBias/SlopeScaledDepthBias/해상도 값 미기록
 
-3. ~~**doubleSided PSO 분기**~~ — ✅ Phase 30 완료: CullMode=BACK (단면) / CullMode=NONE (양면) PSO 분기 구현
-
 ---
 
-### Phase 30 — 통합 & 검증, 코드 리뷰, 아키텍처 문서화
+### 런타임 검증 필요 항목 (Phase 30)
 
-Phase 27~29 완료 후 전체 파이프라인 연결 및 검증, 코드 품질 점검, UX 개선, 아키텍처 문서화.
+코드 작업은 모두 완료되었으나 프로그램을 직접 실행하여 확인해야 하는 항목.
 
-| 작업 | 설명 |
-|------|------|
-| 12단계 파이프라인 통합 | Scene Graph 순회 → Frustum → Occlusion → LOD → Light Cull → Instance Batching → Texture Streaming → CB 갱신 → Material 정렬 → Front-to-Back → Shadow Pass → Main Pass |
-| DebugHUD 전체 항목 | VRAM 사용량, 스트리밍 리소스 수, 드로우콜 수 추가 |
-| 대형 씬 벤치마크 | Sponza, Bistro 로딩 + Full PBR + Shadows + 모든 최적화 활성 상태에서 60fps 목표 |
-| 5단계 렌더링 모드 전체 확인 | Wireframe / Solid / Base Color / Full PBR / Full PBR+Shadows |
-| ~~전체 테스트 통과 확인~~ | ✅ 완료: 91/91 통과 (TextureTest TearDown use-after-free 수정 포함) |
-| 전체 코드 리뷰 | Dead code 제거, include 정리, 네이밍 일관성 검증 |
-| PBR.hlsl CalcShadow X4000 경고 | FXC 컴파일러 한계 (비교 샘플러 + 동적 cbuffer 인덱스). Texture2DArray로의 리팩터링 또는 FXC 업데이트로 재검토 |
-| ~~glTF doubleSided PSO 분기 (RM-11)~~ | ✅ 완료: Material.doubleSided 기반 4종 PSO 분기 (CullMode=BACK/NONE × Opaque/AlphaBlend) |
-| GPU 리소스 해제 누락 검사 | Fence 대기 후 해제 보장, ComPtr 사용 일관성 |
-| ~~Shadow Map SRV 누수 정리~~ | ✅ 완료: m_shadowSrvsAllocated 플래그로 RecreateShadowMaps() 시 SRV 재사용 |
-| PIX / 타임스탬프 쿼리 프로파일링 | 병목 구간 식별 및 최적화 |
-| ~~드래그 앤 드롭 씬 로딩~~ | ✅ 기구현: WM_DROPFILES → SetDropFileCallback → Engine::LoadScene() |
-| ~~Camera 중클릭 패닝~~ | ✅ 기구현: WM_MBUTTONDOWN + SetMiddleDragCallback → Camera::MoveRight/MoveUp |
-| ~~`ARCHITECTURE.md` 작성~~ | ✅ 완료: 전체 엔진 구조, 모듈 의존성, PSO 목록, 렌더 파이프라인, 셰이더 등 |
+| 항목 | 확인 방법 |
+|------|----------|
+| 대형 씬 벤치마크 | Sponza/Bistro 로딩 → Full PBR+Shadows + 모든 최적화 ON → 60fps 목표 확인 |
+| 5단계 렌더링 모드 전체 동작 | Render 메뉴: Wireframe → Solid → Base Color → Full PBR → Full PBR+Shadows 순서로 육안 검증 |
+| PIX / 타임스탬프 쿼리 프로파일링 | PIX for Windows 또는 D3D12 Timestamp Query로 Shadow Pass·Main Pass 병목 측정 |
+| D3D12 Debug Layer 경고 0건 확인 | Debug 빌드 실행 → Output 창에서 D3D12 WARNING/ERROR 없음 확인 |
+| 메모리 누수 점검 | Shutdown 후 D3D12 Live Object 리포트에서 미해제 리소스 없음 확인 |
+| 윈도우 리사이즈 / 모드 전환 안정성 | 800×450 → 드래그 리사이즈 → Full Screen → Esc 복귀 사이클 반복 확인 |
 
 ---
 
@@ -128,7 +112,7 @@ CPU Readback 간이 방식을 거치지 않고 GPU Hi-Z 방식으로 바로 구�
 | GPU-side AABB 비교 | AABB 8코너 → NDC → screen-space min/max, 최적 Mip 레벨 샘플링, 근거리 Z 비교 |
 | Readback + Fence 동기화 | GPU 판정 결과 → Readback Buffer → CPU 읽기 (1프레임 레이턴시) |
 | `occlusionCulledNodes` 통계 | CullStats 반영, DebugHUD 표시 |
-| Optimization 메뉴 항목 추가 | `ID_OPTIM_OCCLUSION_CULL = 8004` (Win32Menu + Engine 콜백 연결) |
+| Optimization 메뉴 항목 추가 | `ID_OPTIM_OCCLUSION_CULL = 8005` (Win32Menu + Engine 콜백 연결 — `8004`는 MipMap 토글에서 사용 중) |
 
 ---
 
@@ -409,5 +393,4 @@ Phase 49    Phase 03 코드 리뷰 + 최적화 + 버그 수정 + ARCHITECTURE.md
 
 ## 기타 메모
 
-- **PBR.hlsl CalcShadow X4000 경고**: FXC 컴파일러 한계 — 비교 샘플러(`SamplerComparisonState`)와 동적 cbuffer 인덱스 조합 quirk. Phase 30에서 `Texture2DArray` 방식으로 리팩터링 검토.
-- **Occlusion Culling Optimization 메뉴 항목**: Phase 33 구현 시 `ID_OPTIM_OCCLUSION_CULL = 8004` 추가.
+- **Occlusion Culling Optimization 메뉴 항목**: Phase 33 구현 시 `ID_OPTIM_OCCLUSION_CULL = 8005` 추가 (`8004`는 MipMap 토글에서 사용 중).
