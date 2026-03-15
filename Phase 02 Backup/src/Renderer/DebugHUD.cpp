@@ -1,0 +1,146 @@
+#include "Renderer/DebugHUD.h"
+#include "RHI/RHIContext.h"
+#include <cstdio>
+
+namespace RRE
+{
+
+void DebugHUD::Update(float deltaTime, const RenderStats& stats)
+{
+    m_lastStats = stats;
+
+    m_fpsAccumulator += deltaTime;
+    m_frameCount++;
+
+    if (m_fpsAccumulator >= kFPSUpdateInterval)
+    {
+        m_displayFPS = static_cast<float>(m_frameCount) / m_fpsAccumulator;
+        m_fpsAccumulator = 0.0f;
+        m_frameCount = 0;
+    }
+}
+
+void DebugHUD::Render(IRHIContext& context)
+{
+    const DirectX::XMFLOAT4 green = { 0.0f, 1.0f, 0.0f, 1.0f };
+
+    char buf[128];
+    int y = 10;
+    constexpr int x = 10;
+    constexpr int lineHeight = 20;
+
+    snprintf(buf, sizeof(buf), "FPS: %.1f", m_displayFPS);
+    context.DrawText(x, y, buf, green);
+    y += lineHeight;
+
+    snprintf(buf, sizeof(buf), "Resolution: %ux%u", m_lastStats.width, m_lastStats.height);
+    context.DrawText(x, y, buf, green);
+    y += lineHeight;
+
+    // Determine aspect ratio label
+    float ar = m_lastStats.aspectRatio;
+    const char* arLabel = "";
+    if (ar > 1.76f && ar < 1.78f) arLabel = " (16:9)";
+    else if (ar > 1.59f && ar < 1.61f) arLabel = " (16:10)";
+    else if (ar > 1.32f && ar < 1.34f) arLabel = " (4:3)";
+
+    snprintf(buf, sizeof(buf), "Aspect Ratio: %.2f%s", ar, arLabel);
+    context.DrawText(x, y, buf, green);
+    y += lineHeight;
+
+    snprintf(buf, sizeof(buf), "Polys (scene):    %u", m_lastStats.totalPolygons);
+    context.DrawText(x, y, buf, green);
+    y += lineHeight;
+
+    snprintf(buf, sizeof(buf), "Polys (rendered): %u", m_lastStats.renderedPolygons);
+    context.DrawText(x, y, buf, green);
+    y += lineHeight;
+
+    float polyPerSecM = m_lastStats.polygonsPerSec / 1000000.0f;
+    snprintf(buf, sizeof(buf), "Poly/sec: %.1fM", polyPerSecM);
+    context.DrawText(x, y, buf, green);
+    y += lineHeight;
+
+    snprintf(buf, sizeof(buf), "Render: %s", m_lastStats.renderModeName);
+    context.DrawText(x, y, buf, green);
+    y += lineHeight;
+
+    snprintf(buf, sizeof(buf), "Nodes: %u  Meshes: %u",
+        m_lastStats.totalNodes, m_lastStats.totalMeshNodes);
+    context.DrawText(x, y, buf, green);
+    y += lineHeight;
+
+    // Culling / LOD stats (Phase 23)
+    snprintf(buf, sizeof(buf), "Visible: %u  Culled: %u",
+        m_lastStats.visibleNodes, m_lastStats.frustumCulledNodes);
+    context.DrawText(x, y, buf, green);
+    y += lineHeight;
+
+    snprintf(buf, sizeof(buf), "Lights: %u active  %u culled",
+        m_lastStats.activeLights, m_lastStats.culledLights);
+    context.DrawText(x, y, buf, green);
+    y += lineHeight;
+
+    // Texture streaming / VRAM stats (Phase 27/29)
+    if (m_lastStats.vramBudgetMB > 0)
+    {
+        const DirectX::XMFLOAT4 vramColor = m_lastStats.vramPressure
+            ? DirectX::XMFLOAT4{ 1.0f, 0.3f, 0.0f, 1.0f }  // orange: high pressure
+            : green;
+        snprintf(buf, sizeof(buf), "VRAM: %lluMB / %lluMB%s",
+            m_lastStats.vramUsedMB, m_lastStats.vramBudgetMB,
+            m_lastStats.vramPressure ? " !" : "");
+        context.DrawText(x, y, buf, vramColor);
+        y += lineHeight;
+    }
+    if (m_lastStats.trackedTextures > 0)
+    {
+        snprintf(buf, sizeof(buf), "Textures: %u", m_lastStats.trackedTextures);
+        context.DrawText(x, y, buf, green);
+        y += lineHeight;
+    }
+    // Instancing stats (Phase 29)
+    if (m_lastStats.opaqueBatches > 0)
+    {
+        snprintf(buf, sizeof(buf), "Batches: %u  Instances: %u",
+            m_lastStats.opaqueBatches, m_lastStats.totalInstances);
+        context.DrawText(x, y, buf, green);
+        y += lineHeight;
+    }
+
+    // Light info (conditional)
+    if (m_lastStats.showLightInfo)
+    {
+        snprintf(buf, sizeof(buf), "Light: %s", m_lastStats.lightColorName);
+        context.DrawText(x, y, buf, green);
+        y += lineHeight;
+
+        snprintf(buf, sizeof(buf), "Light Pos: (%.1f, %.1f, %.1f)",
+            m_lastStats.lightPosition.x, m_lastStats.lightPosition.y, m_lastStats.lightPosition.z);
+        context.DrawText(x, y, buf, green);
+        y += lineHeight;
+    }
+
+    // Camera info (conditional)
+    if (m_lastStats.showCameraInfo)
+    {
+        snprintf(buf, sizeof(buf), "Camera: %s", m_lastStats.projectionModeName);
+        context.DrawText(x, y, buf, green);
+        y += lineHeight;
+
+        snprintf(buf, sizeof(buf), "Cam Pos: (%.1f, %.1f, %.1f)",
+            m_lastStats.cameraPosition.x, m_lastStats.cameraPosition.y, m_lastStats.cameraPosition.z);
+        context.DrawText(x, y, buf, green);
+        y += lineHeight;
+
+        snprintf(buf, sizeof(buf), "Cam Dir: (%.1f, %.1f, %.1f)",
+            m_lastStats.cameraDirection.x, m_lastStats.cameraDirection.y, m_lastStats.cameraDirection.z);
+        context.DrawText(x, y, buf, green);
+        y += lineHeight;
+
+        snprintf(buf, sizeof(buf), "FOV: %.1f%c", m_lastStats.fovDegrees, 0xB0);
+        context.DrawText(x, y, buf, green);
+    }
+}
+
+} // namespace RRE

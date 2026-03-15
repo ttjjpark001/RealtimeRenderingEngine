@@ -25,3 +25,6 @@ vcpkg_installed/
 
 # Large test assets (too large for git, download separately)
 assets/test-models/Bistro/
+
+# Phase 02 Backup assets — 루트 assets/와 동일 내용이므로 이중 추적 방지
+Phase 02 Backup/assets/
