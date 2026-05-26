@@ -227,6 +227,8 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | SM-11 | PCF는 Shadow Map 텍셀 오프셋 기반으로 주변 샘플을 비교·평균한다 | P0 |
 | SM-12 | 그림자가 있는 영역은 해당 광원의 diffuse+specular 기여가 차단된다 (ambient는 유지) | P0 |
 | SM-13 | 여러 광원의 그림자가 독립적으로 계산된다 (광원별 Shadow Map) | P0 |
+| SM-14 | Directional Light에 Cascaded Shadow Maps(CSM, 3 cascade)를 적용하여 근거리-원거리 그림자 품질을 개선한다 | P1 |
+| SM-15 | PCSS(Percentage Closer Soft Shadows)를 구현하여 차폐물 거리에 따른 접촉 경화 그림자(Contact Hardening)를 표현한다 | P1 |
 
 ### 3.18 셰이더 확장 (Cook-Torrance BRDF)
 | ID | 요구사항 | 우선순위 |

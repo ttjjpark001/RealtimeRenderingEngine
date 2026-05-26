@@ -58,11 +58,14 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 
 ---
 
-## Prompt 33: Point Light Cube Map Shadowing
+## Prompt 33: Shadow Quality — Cube Map Shadow + CSM + PCSS
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 33 섹션을 참조하여 Phase 33을 구현하라.
-이 단계는 castShadow = true인 Point Light에 대해 Omnidirectional Shadow Map(TextureCube)을 구현한다.
+이 단계는 세 가지 그림자 품질 개선을 함께 구현한다:
+Part A — Point Light Cube Map Shadow, Part B — CSM, Part C — PCSS.
+
+=== Part A: Point Light Cube Map Shadow ===
 
 1. TextureCube D3D12 리소스를 생성한다.
    - D3D12Context에 Point light 전용 Cube Shadow Map 리소스를 추가한다.
@@ -109,8 +112,56 @@ PRD.md, PLAN.md, CLAUDE.md의 Phase 33 섹션을 참조하여 Phase 33을 구현
    - LightCuller와 연동: shadow casting Point light도 거리 기반 culling 적용
    - DebugHUD에 Cube Shadow Pass 수 표시
 
-빌드하여 모든 테스트가 통과하고, Sponza 씬에서 횃불 위치(castShadow=true Point light)의
-구면 그림자가 정상 렌더링되는지 확인하라.
+=== Part B: CSM (Cascaded Shadow Maps) ===
+
+7. Cascade Frustum을 분할한다.
+   - 카메라 Frustum을 N=3 구간으로 분할한다.
+   - Practical Split Scheme 적용: split_i = λ·log_split + (1-λ)·uniform_split (λ=0.5)
+     · log_split_i     = near × (far/near)^(i/N)
+     · uniform_split_i = near + (far-near) × (i/N)
+   - 각 cascade에 m_shadowMaps[0~2] 할당 (기존 Directional Shadow Map 슬롯 재활용)
+   - m_shadowMaps[3~]: Spot/Point Cube Map 용도 유지
+
+8. Cascade별 Shadow Depth Pass를 구현한다.
+   - Directional Light 1개당 cascade 3 pass 실행 (기존 1 pass → 3 pass로 확장)
+   - 각 cascade의 Ortho 범위:
+     · cascade frustum 코너 8개를 광원 뷰 공간으로 변환 → AABB min/max 계산
+     · Ortho width/height = AABB 범위, near/far = AABB Z 범위 + slack
+   - ShadowConstants.lightViewProj[0~2]에 cascade별 lightViewProj 저장
+   - ShadowCB(b3)에 cascade split depth 배열 추가: float cascadeSplits[3] (view-space Z 경계값)
+
+9. HLSL PBR.hlsl에 Cascade 선택 로직을 추가한다.
+   - 픽셀의 view-space depth를 cascadeSplits[0~2]와 비교하여 cascade 인덱스 결정
+   - 해당 cascade의 lightViewProj로 shadow UV 계산 후 m_shadowMaps[cascadeIdx] 샘플링
+   - Blend band (cascade 경계 10% 구간): 인접 cascade 간 PCF 비율 보간으로 경계선 제거
+   - 디버그 뷰: Render 메뉴 옵션으로 cascade 색상 시각화 (0=적, 1=녹, 2=청)
+
+=== Part C: PCSS (Percentage Closer Soft Shadows) ===
+
+10. Blocker Search를 구현한다.
+    - 픽셀의 shadow UV 주변을 searchWidth 반경으로 샘플링한다.
+      searchWidth = lightSize × (receiver_depth - cascadeNear) / receiver_depth
+    - 차폐 텍셀(shadow map depth < receiver_depth)의 평균 depth(d_blocker) 계산
+    - 차폐 텍셀이 없으면 shadow factor = 1.0으로 early-out
+
+11. Penumbra Width를 계산하고 가변 커널 PCF를 수행한다.
+    - penumbraWidth = (receiver_depth - d_blocker) / d_blocker × lightSize
+      lightSize 기본값: sceneDiagonal × 0.02
+    - penumbraWidth에 비례하는 반경으로 PCF 수행:
+      · 16~32개 Poisson Disk 샘플 (블루노이즈 회전: noise texture 또는 frame counter 기반)
+      · 최소 반경: PCF 3×3 기존 텍셀 오프셋 크기, 최대: shadow texel 9개 반경
+    - CSM 각 cascade에 동일 PCSS 로직 적용
+
+12. PCSS 성능 제어를 추가한다.
+    - Optimization 메뉴에 "PCSS" on/off 토글 추가 (ID_OPTIM_PCSS 신규 정의)
+      off 시: 기존 PCF 3×3 고정 커널 폴백
+    - DebugHUD에 Shadow Mode 표시 (PCF 3×3 / PCSS)
+    - lightSize 파라미터를 런타임 조절 가능하도록 Shadow 메뉴에 노출
+
+빌드하여 모든 테스트가 통과하고 다음을 확인하라:
+- Sponza: 횃불 위치(castShadow=true Point light) 구면 그림자 정상 렌더링
+- Bistro: CSM cascade 색상 디버그 뷰에서 3단계 구분 확인, 원거리 그림자 품질 개선
+- PCSS on/off 전환 시 접촉 경화(Contact Hardening) 그림자 차이 확인
 ```
 
 ---

@@ -44,8 +44,12 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 
 ---
 
-### Phase 33: Point Light Cube Map Shadowing
-**목표**: `castShadow = true`인 Point Light에 대해 6면 Cube Map 기반 Omnidirectional Shadow Map 구현.
+### Phase 33: Shadow Quality — Cube Map Shadow + CSM + PCSS
+**목표**: (1) `castShadow = true`인 Point Light에 대해 6면 Cube Map 기반 Omnidirectional Shadow Map 구현,
+(2) Directional Light에 Cascaded Shadow Maps(CSM) 적용으로 근거리-원거리 그림자 품질 개선,
+(3) PCSS(Percentage Closer Soft Shadows)로 접촉 경화 그림자 구현.
+
+#### Part A: Point Light Cube Map Shadow
 
 1. **TextureCube D3D12 리소스 생성**:
    - `TEXTURE2D_ARRAY` (ArraySize=6, `DXGI_FORMAT_D32_FLOAT`) 리소스 생성
@@ -71,7 +75,45 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
    - LightCuller와 연동: shadow casting Point light도 거리 기반 culling 적용
    - DebugHUD에 Cube Shadow Pass 수 표시
 
-**완료 기준**: Point light `castShadow = true` 설정 시 구면 그림자 정상 렌더링, PCF 적용으로 경계 부드러움, Sponza 횃불 위치에 그림자 확인 가능
+#### Part B: CSM (Cascaded Shadow Maps)
+
+6. **Cascade Frustum 분할**:
+   - 카메라 Frustum을 N=3 구간으로 분할 (near→c0→c1→far)
+   - Practical Split Scheme: `split_i = λ·log_split + (1-λ)·uniform_split` (λ=0.5 기본값)
+   - 각 cascade에 독립 Orthographic Shadow Map(DXGI_FORMAT_D32_FLOAT) 할당
+   - `m_shadowMaps[0~2]`: cascade 0~2, `m_shadowMaps[3~]`: Spot/Point 용도 유지
+
+7. **Cascade별 Shadow Depth Pass**:
+   - Directional Light 1개당 cascade 수만큼 Shadow Depth Pass 실행 (3 pass)
+   - 각 cascade Ortho 범위: cascade frustum AABB를 광원 뷰 공간에서 계산
+   - `ShadowConstants.lightViewProj[0~2]`에 cascade 행렬 저장
+   - `ShadowCB`에 cascade split depth (view-space Z) 배열 추가
+
+8. **HLSL 확장 — Cascade 선택 및 블렌딩**:
+   - PBR.hlsl: 픽셀의 view-space depth로 cascade 인덱스 결정
+   - 인접 cascade 경계 blend band: PCF 비율 보간으로 경계선 제거
+   - 디버그 뷰: cascade 색상 시각화 (cascade 0=적, 1=녹, 2=청)
+
+#### Part C: PCSS (Percentage Closer Soft Shadows)
+
+9. **Blocker Search**:
+   - 픽셀 주변 Shadow Map을 searchWidth 반경으로 샘플링 → 차폐 텍셀 평균 depth(d_blocker) 계산
+   - `searchWidth = lightSize × (receiver_depth - nearPlane) / receiver_depth`
+
+10. **Penumbra Width 계산**:
+    - `penumbraWidth = (receiver_depth - d_blocker) / d_blocker × lightSize`
+    - `lightSize`: Directional Light 가상 광원 크기 파라미터 (기본값: sceneDiagonal × 0.02)
+
+11. **가변 커널 PCF**:
+    - penumbraWidth에 비례하는 반경으로 PCF 수행 (최소 3×3, 최대 9×9)
+    - Poisson Disk 샘플 패턴 사용 (16~32 샘플, 블루노이즈 회전으로 밴딩 제거)
+    - CSM 각 cascade에 동일 PCSS 적용
+
+12. **성능 제어**:
+    - Optimization 메뉴에 PCSS on/off 토글 추가 (off 시 기존 PCF 3×3 폴백)
+    - DebugHUD에 Shadow Mode 표시 (PCF / PCSS)
+
+**완료 기준**: Point Light Cube Map 구면 그림자 동작(Sponza 횃불 확인), CSM 3 cascade 전환 디버그 색상 시각화 확인(Bistro 원거리 그림자 품질 개선), PCSS on/off 시 접촉 경화 그림자 비교 가능
 
 ---
 
@@ -346,8 +388,9 @@ Rasterization과 Ray Tracing을 Hybrid 방식으로 결합, PCF Shadow/SSR 대�
    - FidelityFX SDK 연동: Color Buffer + Depth + Motion Vector → FSR3 업스케일 출력
    - Quality Mode 메뉴: Quality / Balanced / Performance / Ultra Performance
    - 렌더 해상도: 출력 해상도의 50%/67%/75%로 설정 가능
-2. **DLSS 3 (NVIDIA DLSS) — 선택적**:
+2. **DLSS 4 (NVIDIA DLSS) — 선택적**:
    - NVIDIA Streamline SDK 연동 (RTX 하드웨어 전용), 미지원 시 FSR로 자동 폴백
+   - RTX 5060 Ti(Blackwell) 기준 DLSS 4 네이티브 지원 (4세대 Tensor 코어)
 3. **Neural Denoising**:
    - 옵션 A: NRD (NVIDIA Real-time Denoising) SDK 연동 (Relax/Reblur 알고리즘)
    - 옵션 B: 자체 Temporal Accumulation Denoiser (모멘트 기반 분산 추정 + Bilateral Filter)
