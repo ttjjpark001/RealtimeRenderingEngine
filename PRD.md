@@ -162,8 +162,8 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | G-07 | Material이 참조하는 텍스처(albedo, normal, roughness, metallic 등)를 비동기로 로드하여 엔진 전용 GPU 리소스(Texture 객체)로 변환·저장한다 | P0 |
 | G-07a | 비동기 텍스처 로딩 중에도 렌더링이 중단되지 않는다 (폴백 텍스처 또는 factor 값으로 렌더링) | P0 |
 | G-07b | embedded(glTF 내장) 및 external(외부 파일) 텍스처 이미지를 모두 지원한다 (PNG, JPEG 등) | P0 |
-| G-08 | Node transform 애니메이션(translation, rotation, scale 키프레임)을 로딩한다 | Phase 35 |
-| G-09 | Skeletal animation(bone/skin)을 로딩한다 | Phase 35 |
+| G-08 | Node transform 애니메이션(translation, rotation, scale 키프레임)을 로딩한다 | Phase 34 |
+| G-09 | Skeletal animation(bone/skin)을 로딩한다 | Phase 34 |
 | G-10 | 대형 씬(Sponza, Bistro 등)을 로딩하여 렌더링할 수 있다 | P0 |
 | G-11 | "File" 메뉴의 "Open Scene..." 항목을 선택하면 파일 다이얼로그(GetOpenFileName)가 열린다 | P0 |
 | G-12 | 파일 다이얼로그에서 glTF/GLB 파일을 선택하면 해당 씬을 로드하여 화면에 렌더링한다 | P0 |
@@ -388,7 +388,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 > 지연 렌더링(Deferred Shading), 포스트 프로세싱, 레이 트레이싱, 신경망 업스케일링 등
 > 최신 실시간 렌더링 기법을 단계적으로 추가한다.
 
-### 3.22 Occlusion Culling — Hi-Z GPU (Phase 33)
+### 3.22 Occlusion Culling — Hi-Z GPU (Phase 32)
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
 | HC-01 | Compute Shader 인프라(D3D12ComputePipeline, Dispatch, UAV)를 구축한다 | P0 |
@@ -399,7 +399,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | HC-06 | DebugHUD에 `occlusionCulledNodes` 수를 표시한다 | P0 |
 | HC-07 | "Optimization" 메뉴에 Occlusion Culling on/off 토글 항목을 추가한다 (ID_OPTIM_OCCLUSION_CULL) | P0 |
 
-### 3.23 Point Light Cube Map Shadowing (Phase 34)
+### 3.23 Point Light Cube Map Shadowing (Phase 33)
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
 | CS-01 | `castShadow = true`인 Point Light에 대해 TextureCube(TEXTURE2D_ARRAY, ArraySize=6) 기반 Omnidirectional Shadow Map을 생성한다 | P0 |
@@ -409,9 +409,9 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | CS-05 | LightCuller와 연동하여 shadow casting Point Light에도 거리 기반 컬링을 적용한다 | P1 |
 | CS-06 | DebugHUD에 Cube Shadow Pass 수를 표시한다 | P1 |
 
-### 3.24 Skeletal Animation (Phase 35)
+### 3.24 Skeletal Animation (Phase 34)
 
-> G-08/G-09 요구사항(3.13 절)은 Phase 35에서 구현되며, 아래는 세부 요구사항이다.
+> G-08/G-09 요구사항(3.13 절)은 Phase 34에서 구현되며, 아래는 세부 요구사항이다.
 
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
@@ -422,7 +422,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | SA-05 | Vertex 구조체에 joints(XMUSHORT4), weights(XMFLOAT4)를 추가하고 D3D12 Input Layout을 갱신한다 | P0 |
 | SA-06 | "Animation" 메뉴에서 클립 선택 및 재생 속도 조절이 가능하다 | P1 |
 
-### 3.25 RRScenePreprocessor 스켈레탈 확장 (Phase 36)
+### 3.25 RRScenePreprocessor 스켈레탈 확장 (Phase 35)
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
 | RP-01 | `.rrscene` 포맷을 v2로 확장하여 Skeleton Section(본 계층 + inverseBindMatrix)과 Animation Section(TRS 키프레임)을 추가한다 | P0 |
@@ -430,7 +430,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | RP-03 | RRScenePreprocessor가 glTF bone/skin/animation 데이터를 `.rrscene` v2로 직렬화한다 | P0 |
 | RP-04 | 렌더링 앱이 `.rrscene` v2에서 Skeleton/AnimationClip을 복원하고 즉시 애니메이션을 재생한다 | P0 |
 
-### 3.26 Deferred Rendering — G-Buffer (Phase 37)
+### 3.26 Deferred Rendering — G-Buffer (Phase 36)
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
 | DR-01 | G-Buffer MRT 4개를 생성한다: RT0(Albedo+Metallic, R8G8B8A8_UNORM_SRGB), RT1(Normal+Roughness, R16G16B16A16_FLOAT), RT2(Emissive+AO, R8G8B8A8_UNORM), Depth(D32_FLOAT) | P0 |
@@ -439,7 +439,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | DR-04 | Alpha Blend 메시는 기존 Forward 방식으로 HDR RT에 합성한다 (Forward+ 투명 패스 유지) | P0 |
 | DR-05 | "Render" 메뉴에 G-Buffer 시각화 뷰 모드(Albedo/Normal/MetalRoughness/Depth)를 추가한다 | P1 |
 
-### 3.27 HDR Pipeline + Tone Mapping (Phase 38)
+### 3.27 HDR Pipeline + Tone Mapping (Phase 37)
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
 | HDR-01 | Lighting Pass 출력을 R16G16B16A16_FLOAT HDR 렌더 타겟에 기록한다 | P0 |
@@ -448,7 +448,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | HDR-04 | Tone Mapping 결과를 SwapChain(R8G8B8A8_UNORM_SRGB)으로 출력한다 | P0 |
 | HDR-05 | DebugHUD에 Tone Mapping 모드, 평균 Luminance, EV 노출값을 표시한다 | P1 |
 
-### 3.28 SSAO (Screen Space Ambient Occlusion) (Phase 39)
+### 3.28 SSAO (Screen Space Ambient Occlusion) (Phase 38)
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
 | AO-01 | R8_UNORM SSAO Buffer를 생성하고 Hemisphere Sample Kernel(16~64개) + 노이즈 텍스처로 Raw AO를 계산한다 | P0 |
@@ -456,7 +456,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | AO-03 | Lighting Pass에서 AO를 Ambient Light에 곱하여 적용한다 | P0 |
 | AO-04 | "Optimization" 메뉴에서 SSAO on/off 토글과 AO Buffer 시각화 뷰를 제공한다 | P1 |
 
-### 3.29 Bloom + Post-Processing (Phase 40)
+### 3.29 Bloom + Post-Processing (Phase 39)
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
 | PP-01 | Ping-Pong Buffer(HDR RT 2개 교대 사용) 기반 Post-Processing 프레임워크를 구현한다 | P0 |
@@ -464,7 +464,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | PP-03 | Dual Kawase Blur Pyramid(6단계 다운샘플→업샘플)로 Bloom 레이어를 생성하고 HDR RT에 Additive Blend로 합성한다 | P0 |
 | PP-04 | Bloom on/off, 임계값, Intensity를 메뉴에서 조정할 수 있다 | P1 |
 
-### 3.30 TAA (Temporal Anti-Aliasing) (Phase 41)
+### 3.30 TAA (Temporal Anti-Aliasing) (Phase 40)
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
 | TAA-01 | Halton Sequence(8~16프레임, base 2/3)로 투영 행렬에 서브픽셀 Jitter를 적용한다 | P0 |
@@ -472,14 +472,14 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | TAA-03 | TAA Resolve Pass에서 Current Frame + Reprojected History Buffer를 블렌딩하고 Variance Clipping으로 고스팅을 억제한다 | P0 |
 | TAA-04 | "Render" 메뉴에서 TAA/MSAA/None을 전환할 수 있다 | P1 |
 
-### 3.31 Motion Blur + Depth of Field (Phase 42)
+### 3.31 Motion Blur + Depth of Field (Phase 41)
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
 | MB-01 | Tile-based Max Velocity를 계산하여 속도 방향으로 N샘플 평균하는 Per-Object Motion Blur를 구현한다 | P0 |
 | MB-02 | Depth → CoC(Circle of Confusion) 반경 계산 기반 Bokeh Depth of Field를 구현한다 | P0 |
 | MB-03 | Focus Distance, F-Number, Focal Length를 메뉴에서 조정할 수 있다 | P1 |
 
-### 3.32 SSR + Refraction (Phase 43)
+### 3.32 SSR + Refraction (Phase 42)
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
 | SSR-01 | G-Buffer Normal+Depth에서 반사 Ray Direction을 계산하고 Hi-Z Raymarching으로 교차점을 탐색한다 | P0 |
@@ -487,14 +487,14 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | SSR-03 | SSR miss 시 Environment Map Cubemap으로 폴백한다 | P0 |
 | SSR-04 | Alpha Blend 오브젝트에 IOR 기반 UV 오프셋으로 Refraction을 적용한다 | P1 |
 
-### 3.33 Screen Space Subsurface Scattering (Phase 44)
+### 3.33 Screen Space Subsurface Scattering (Phase 43)
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
 | SSSSS-01 | Material에 `subsurfaceColor(float3)` + `scatterWidth(float)` 파라미터를 추가한다 | P0 |
 | SSSSS-02 | Stencil 마스크로 SSS/비-SSS 픽셀을 분리하고, 6-weight Gaussian Kernel × RGB 3채널로 Separable 2패스(수평→수직) SSS Pass를 구현한다 (R > G > B 확산 폭) | P0 |
 | SSSSS-03 | SSS on/off 토글 및 RGB 채널별 확산 폭 파라미터를 메뉴에서 조정할 수 있다 | P1 |
 
-### 3.34 Global Illumination — DDGI (Phase 45)
+### 3.34 Global Illumination — DDGI (Phase 44)
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
 | GI-01 | 씬 AABB 내에 3D Grid 기반 Irradiance Probe(기본 8×4×8 = 256개)를 배치한다 | P0 |
@@ -503,7 +503,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | GI-04 | 픽셀 위치에서 주변 8개 Probe를 삼선형 보간하여 Indirect Diffuse를 계산하고 Lighting Pass에 통합한다 | P0 |
 | GI-05 | 디버그 뷰에서 Probe 위치와 Irradiance를 시각화할 수 있다 | P1 |
 
-### 3.35 DXR Hybrid Ray Tracing (Phase 46)
+### 3.35 DXR Hybrid Ray Tracing (Phase 45)
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
 | RT-01 | DXR PSO(RayGen/ClosestHit/Miss/AnyHit 셰이더), BLAS(메시별), TLAS(씬 전체 인스턴스)를 구성한다 | P0 |
@@ -513,7 +513,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | RT-05 | DXR Tier 1.1 미지원 시 PCF Shadow Map / SSR / 정적 DDGI Probe로 자동 폴백한다 | P0 |
 | RT-06 | 런타임에 D3D12_FEATURE_D3D12_OPTIONS5로 DXR Tier를 감지하고 DebugHUD에 표시한다 | P0 |
 
-### 3.36 Nanite-style Virtual Geometry (Phase 47)
+### 3.36 Nanite-style Virtual Geometry (Phase 46)
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
 | VG-01 | 메시를 ~128삼각형 단위 Meshlet으로 분할하고 Meshlet별 바운딩 스피어와 노말 Cone을 계산한다 | P0 |
@@ -523,7 +523,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 | VG-05 | Compute Shader가 DrawArgs Buffer를 생성하고 `ExecuteIndirect()`로 GPU-Driven 렌더링을 수행한다 | P0 |
 | VG-06 | 디버그 뷰에서 Meshlet별 색상 시각화와 LOD 레벨 시각화를 제공한다 | P1 |
 
-### 3.37 Neural Upscaling + Neural Denoising (Phase 48)
+### 3.37 Neural Upscaling + Neural Denoising (Phase 47)
 | ID | 요구사항 | 우선순위 |
 |----|----------|----------|
 | NU-01 | AMD FidelityFX SDK(FSR 3)를 연동하여 Color Buffer + Depth + Motion Vector 기반 업스케일을 구현한다 | P0 |
