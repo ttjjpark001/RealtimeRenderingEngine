@@ -2,7 +2,7 @@
 // Tests each AABB against the Hi-Z buffer, writing 0=visible or 1=occluded per node.
 // 1-frame latency: results dispatched in frame N are read by CPU in frame N+1.
 // Uses conservative MAX-filter Hi-Z: an object is culled only if its nearest NDC depth
-// exceeds the Hi-Z MAX in the sampled region (guaranteed behind all occluders).
+// exceeds the Hi-Z MAX across all 4 corners of its screen footprint.
 
 struct NodeAABB
 {
@@ -85,12 +85,20 @@ void CSMain(uint3 tid : SV_DispatchThreadID)
     float uvMinY = clamp(1.0f - (maxNdcY * 0.5f + 0.5f), 0.0f, 1.0f);
     float uvMaxY = clamp(1.0f - (minNdcY * 0.5f + 0.5f), 0.0f, 1.0f);
 
+    // Footprint outside screen — treat as visible (conservative)
+    if (uvMinX >= 1.0f || uvMaxX <= 0.0f || uvMinY >= 1.0f || uvMaxY <= 0.0f)
+    {
+        g_results[idx] = 0u;
+        return;
+    }
+
     // Screen-space extent of the AABB in pixels
     float pixW = (uvMaxX - uvMinX) * (float)screenWidth;
     float pixH = (uvMaxY - uvMinY) * (float)screenHeight;
     float maxExtent = max(pixW, pixH);
 
-    // Select Hi-Z mip: mip = floor(log2(maxExtent)), clamped to valid range
+    // Select Hi-Z mip: mip = floor(log2(maxExtent)), clamped to valid range.
+    // At this mip each texel covers ~maxExtent pixels, so the footprint spans ~1-2 texels.
     uint mipLevels;
     {
         uint dummyW, dummyH;
@@ -100,23 +108,38 @@ void CSMain(uint3 tid : SV_DispatchThreadID)
     if (maxExtent > 1.0f)
         mipLevel = (int)clamp(floor(log2(maxExtent)), 0.0f, (float)(mipLevels - 1));
 
-    // Sample Hi-Z at the chosen mip level (load at AABB screen-space center)
+    // Get Hi-Z dimensions at the chosen mip
     uint hizW, hizH, dummy;
     g_hiz.GetDimensions((uint)mipLevel, hizW, hizH, dummy);
 
-    float sampleU = (uvMinX + uvMaxX) * 0.5f;
-    float sampleV = (uvMinY + uvMaxY) * 0.5f;
-    uint2 sampleXY = uint2(
-        (uint)clamp(sampleU * (float)hizW, 0.0f, (float)(hizW - 1)),
-        (uint)clamp(sampleV * (float)hizH, 0.0f, (float)(hizH - 1))
-    );
+    float hizWf = (float)hizW;
+    float hizHf = (float)hizH;
 
-    float hiZDepth = g_hiz.Load(int3(sampleXY, mipLevel));
+    // Sample Hi-Z at all 4 corners of the AABB screen footprint and take MAX.
+    // Using MAX of 4 samples ensures: if any part of the footprint is open (far/background),
+    // the test correctly says NOT occluded (conservative, avoids false positives).
+    float2 uvCorners[4] = {
+        float2(uvMinX, uvMinY),
+        float2(uvMaxX, uvMinY),
+        float2(uvMinX, uvMaxY),
+        float2(uvMaxX, uvMaxY)
+    };
+
+    float maxHiZ = 0.0f;
+    [unroll]
+    for (int j = 0; j < 4; j++)
+    {
+        uint2 xy = uint2(
+            (uint)clamp(uvCorners[j].x * hizWf, 0.0f, hizWf - 1.0f),
+            (uint)clamp(uvCorners[j].y * hizHf, 0.0f, hizHf - 1.0f)
+        );
+        maxHiZ = max(maxHiZ, g_hiz.Load(int3(xy, mipLevel)));
+    }
 
     // Clamp nearest NDC depth to [0,1] (D3D12: near=0, far=1)
     float nearDepth = clamp(minNdcZ, 0.0f, 1.0f);
 
-    // Occluded if the nearest point of the AABB is farther than the Hi-Z MAX occluder
-    // nearDepth > hiZDepth → AABB is behind all geometry in this region
-    g_results[idx] = (nearDepth > hiZDepth) ? 1u : 0u;
+    // Occluded only if the AABB nearest point is farther than the MAX Hi-Z across all 4 corners.
+    // This ensures the entire footprint is covered by closer geometry before culling.
+    g_results[idx] = (nearDepth > maxHiZ) ? 1u : 0u;
 }

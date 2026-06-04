@@ -70,9 +70,9 @@ void DebugHUD::Render(IRHIContext& context)
     context.DrawText(x, y, buf, green);
     y += lineHeight;
 
-    // Culling / LOD stats (Phase 23)
-    snprintf(buf, sizeof(buf), "Visible: %u  Culled: %u",
-        m_lastStats.visibleNodes, m_lastStats.frustumCulledNodes);
+    // Culling / LOD stats (Phase 23/32)
+    snprintf(buf, sizeof(buf), "Visible: %u  Frustum Culled: %u  Occlusion Culled: %u",
+        m_lastStats.visibleNodes, m_lastStats.frustumCulledNodes, m_lastStats.occlusionCulledNodes);
     context.DrawText(x, y, buf, green);
     y += lineHeight;
 

@@ -22,11 +22,12 @@ struct RenderStats
     uint32 totalNodes = 0;
     uint32 totalMeshNodes = 0;
 
-    // Culling / LOD statistics (Phase 23)
-    uint32 visibleNodes       = 0;
-    uint32 frustumCulledNodes = 0;
-    uint32 activeLights       = 0;
-    uint32 culledLights       = 0;
+    // Culling / LOD statistics (Phase 23/32)
+    uint32 visibleNodes          = 0;
+    uint32 frustumCulledNodes    = 0;
+    uint32 occlusionCulledNodes  = 0;
+    uint32 activeLights          = 0;
+    uint32 culledLights          = 0;
 
     // Light info (Phase 9)
     bool showLightInfo = false;

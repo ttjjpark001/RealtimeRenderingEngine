@@ -418,10 +418,11 @@ void Engine::Update(float deltaTime)
 
             // Culling / LOD statistics (Phase 23)
             CullStats cs = m_renderer->GetLastCullStats();
-            stats.visibleNodes       = cs.visibleNodes;
-            stats.frustumCulledNodes = cs.frustumCulledNodes;
-            stats.activeLights       = cs.activeLights;
-            stats.culledLights       = cs.culledLights;
+            stats.visibleNodes          = cs.visibleNodes;
+            stats.frustumCulledNodes    = cs.frustumCulledNodes;
+            stats.occlusionCulledNodes  = cs.occlusionCulledNodes;
+            stats.activeLights          = cs.activeLights;
+            stats.culledLights          = cs.culledLights;
         }
 
         // Texture streaming stats + VRAM pressure (Phase 27/29)
