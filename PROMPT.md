@@ -4,7 +4,7 @@
 
 ---
 
-## Prompt 32: Occlusion Culling — Hi-Z GPU
+## Prompt 32: Occlusion Culling — Hi-Z GPU ✅
 
 ```
 PRD.md, PLAN.md(Phase 32), CLAUDE.md를 참조하여 Phase 32를 구현하라.

@@ -14,7 +14,7 @@
 
 ---
 
-### Phase 32: Occlusion Culling — Hi-Z GPU
+### Phase 32: Occlusion Culling — Hi-Z GPU ✅
 **목표**: 현재 P0 스텁(항상 false)인 `OcclusionCuller`를 GPU Hi-Z 방식으로 완전 구현.
 CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 현재 엔진에 Compute Shader 인프라가 없으므로, 먼저 인프라를 구축한 뒤 Hi-Z를 구현한다.
