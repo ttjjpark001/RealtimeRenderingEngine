@@ -110,6 +110,7 @@
     <ClCompile Include="smoke\test_CBPool.cpp" />
     <ClCompile Include="unit\test_FrustumCuller.cpp" />
     <ClCompile Include="unit\test_LightCuller.cpp" />
+    <ClCompile Include="unit\test_OcclusionCuller.cpp" />
     <ClCompile Include="$(SolutionDir)src\Asset\SceneLoader.cpp" />
     <ClCompile Include="$(SolutionDir)src\Asset\Texture.cpp" />
     <ClCompile Include="$(SolutionDir)src\Asset\TextureCache.cpp" />
@@ -120,6 +121,7 @@
     <ClCompile Include="$(SolutionDir)src\RHI\D3D12\D3D12Buffer.cpp" />
     <ClCompile Include="$(SolutionDir)src\RHI\D3D12\D3D12PipelineState.cpp" />
     <ClCompile Include="$(SolutionDir)src\RHI\D3D12\D3D12CBPool.cpp" />
+    <ClCompile Include="$(SolutionDir)src\RHI\D3D12\D3D12ComputePipeline.cpp" />
     <ClCompile Include="$(SolutionDir)src\Renderer\Renderer.cpp" />
     <ClCompile Include="$(SolutionDir)src\Renderer\FrustumCuller.cpp" />
     <ClCompile Include="$(SolutionDir)src\Renderer\OcclusionCuller.cpp" />
