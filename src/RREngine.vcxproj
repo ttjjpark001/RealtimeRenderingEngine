@@ -112,6 +112,7 @@
     <ClCompile Include="RHI\D3D12\D3D12Buffer.cpp" />
     <ClCompile Include="RHI\D3D12\D3D12PipelineState.cpp" />
     <ClCompile Include="RHI\D3D12\D3D12CBPool.cpp" />
+    <ClCompile Include="RHI\D3D12\D3D12ComputePipeline.cpp" />
     <ClCompile Include="Renderer\Renderer.cpp" />
     <ClCompile Include="Renderer\DebugHUD.cpp" />
     <ClCompile Include="Renderer\FrustumCuller.cpp" />
@@ -144,6 +145,7 @@
     <ClInclude Include="RHI\D3D12\D3D12Buffer.h" />
     <ClInclude Include="RHI\D3D12\D3D12PipelineState.h" />
     <ClInclude Include="RHI\D3D12\D3D12CBPool.h" />
+    <ClInclude Include="RHI\D3D12\D3D12ComputePipeline.h" />
     <ClInclude Include="Renderer\Vertex.h" />
     <ClInclude Include="Renderer\Mesh.h" />
     <ClInclude Include="Renderer\Renderer.h" />
@@ -210,6 +212,24 @@
 "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T ps_5_1 /E PSMain /O2 /Fo "$(OutDir)Shaders\Wireframe_PS.cso" "%(FullPath)"</Command>
       <Outputs>$(OutDir)Shaders\Wireframe_VS.cso;$(OutDir)Shaders\Wireframe_PS.cso</Outputs>
       <Message>Compiling Wireframe HLSL shaders (VS + PS)...</Message>
+    </CustomBuild>
+    <CustomBuild Include="Shaders\HiZDownsample.hlsl">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">if not exist "$(OutDir)Shaders" mkdir "$(OutDir)Shaders"
+"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T cs_5_1 /E CSMain /Zi /Od /Fo "$(OutDir)Shaders\HiZDownsample_CS.cso" "%(FullPath)"</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">if not exist "$(OutDir)Shaders" mkdir "$(OutDir)Shaders"
+"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T cs_5_1 /E CSMain /O2 /Fo "$(OutDir)Shaders\HiZDownsample_CS.cso" "%(FullPath)"</Command>
+      <Outputs>$(OutDir)Shaders\HiZDownsample_CS.cso</Outputs>
+      <Message>Compiling HiZDownsample compute shader...</Message>
+    </CustomBuild>
+    <CustomBuild Include="Shaders\OcclusionTest.hlsl">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">if not exist "$(OutDir)Shaders" mkdir "$(OutDir)Shaders"
+"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T cs_5_1 /E CSMain /Zi /Od /Fo "$(OutDir)Shaders\OcclusionTest_CS.cso" "%(FullPath)"</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">if not exist "$(OutDir)Shaders" mkdir "$(OutDir)Shaders"
+"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T cs_5_1 /E CSMain /O2 /Fo "$(OutDir)Shaders\OcclusionTest_CS.cso" "%(FullPath)"</Command>
+      <Outputs>$(OutDir)Shaders\OcclusionTest_CS.cso</Outputs>
+      <Message>Compiling OcclusionTest compute shader...</Message>
     </CustomBuild>
   </ItemGroup>
 

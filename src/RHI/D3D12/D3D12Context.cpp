@@ -133,6 +133,24 @@ bool D3D12Context::Initialize(ID3D12Device* device)
     // Initialize view-projection to identity
     DirectX::XMStoreFloat4x4(&m_viewProjection, DirectX::XMMatrixIdentity());
 
+    // Hi-Z Occlusion Culling (Phase 32): create root signatures, pipelines, buffers
+    CreateHiZRootSignatures(device);
+    CreateHiZOcclusionBuffers(device);
+
+    // Load precompiled compute shaders
+    {
+        wchar_t exePath[MAX_PATH];
+        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+        std::wstring exeDir(exePath);
+        exeDir = exeDir.substr(0, exeDir.find_last_of(L"\\") + 1);
+
+        std::wstring hizCso       = exeDir + L"Shaders\\HiZDownsample_CS.cso";
+        std::wstring occCso       = exeDir + L"Shaders\\OcclusionTest_CS.cso";
+
+        m_hizPipeline.Initialize(device, hizCso.c_str(), m_hizRootSignature.Get());
+        m_occlusionTestPipeline.Initialize(device, occCso.c_str(), m_occlusionRootSignature.Get());
+    }
+
     return true;
 }
 
@@ -1195,23 +1213,28 @@ void D3D12Context::CreateDepthBuffer(uint32 width, uint32 height)
     if (width == 0 || height == 0)
         return;
 
+    m_viewportWidth  = width;
+    m_viewportHeight = height;
+
     m_depthBuffer.Reset();
 
     D3D12_HEAP_PROPERTIES heapProps = {};
     heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
 
+    // R32_TYPELESS allows both DSV (D32_FLOAT) and SRV (R32_FLOAT) views —
+    // the SRV view is used to copy depth into the Hi-Z mip chain (Phase 32).
     D3D12_RESOURCE_DESC depthDesc = {};
     depthDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     depthDesc.Width = width;
     depthDesc.Height = height;
     depthDesc.DepthOrArraySize = 1;
     depthDesc.MipLevels = 1;
-    depthDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    depthDesc.Format = DXGI_FORMAT_R32_TYPELESS;
     depthDesc.SampleDesc.Count = 1;
     depthDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
 
     D3D12_CLEAR_VALUE clearValue = {};
-    clearValue.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    clearValue.Format = DXGI_FORMAT_D32_FLOAT;
     clearValue.DepthStencil.Depth = 1.0f;
 
     m_device->CreateCommittedResource(
@@ -1222,13 +1245,571 @@ void D3D12Context::CreateDepthBuffer(uint32 width, uint32 height)
         &clearValue,
         IID_PPV_ARGS(&m_depthBuffer));
 
-    // Create DSV
+    // DSV with D32_FLOAT view of the typeless resource
     D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
-    dsvDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
     dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
     m_dsvHeap.Reset();
     D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = m_dsvHeap.Allocate();
     m_device->CreateDepthStencilView(m_depthBuffer.Get(), &dsvDesc, dsvHandle);
+
+    // SRV for Hi-Z copy (R32_FLOAT view) — allocated once, overwritten on resize
+    CreateDepthSRV();
+
+    // Recreate Hi-Z buffer at new resolution
+    if (m_hizRootSignature)   // root signatures exist → pipelines initialized
+        CreateHiZBuffer(width, height);
+}
+
+// ---------------------------------------------------------------------------
+// Hi-Z Occlusion Culling (Phase 32) — private helpers
+// ---------------------------------------------------------------------------
+
+void D3D12Context::CreateHiZRootSignatures(ID3D12Device* device)
+{
+    // ---- HiZ Downsample Root Signature ----
+    // Slot 0: 8 root constants (b0: srcW, srcH, dstW, dstH, isFirstMip + padding)
+    // Slot 1: Descriptor table [1 SRV at t0]
+    // Slot 2: Descriptor table [1 UAV at u0]
+    {
+        D3D12_ROOT_PARAMETER params[3] = {};
+
+        // Slot 0: root constants
+        params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        params[0].Constants.ShaderRegister = 0;
+        params[0].Constants.RegisterSpace  = 0;
+        params[0].Constants.Num32BitValues = 8;
+        params[0].ShaderVisibility         = D3D12_SHADER_VISIBILITY_ALL;
+
+        // Slot 1: SRV table (t0)
+        D3D12_DESCRIPTOR_RANGE srvRange = {};
+        srvRange.RangeType          = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+        srvRange.NumDescriptors     = 1;
+        srvRange.BaseShaderRegister = 0;
+        srvRange.RegisterSpace      = 0;
+        srvRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+        params[1].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        params[1].DescriptorTable.NumDescriptorRanges = 1;
+        params[1].DescriptorTable.pDescriptorRanges   = &srvRange;
+        params[1].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_ALL;
+
+        // Slot 2: UAV table (u0)
+        D3D12_DESCRIPTOR_RANGE uavRange = {};
+        uavRange.RangeType          = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+        uavRange.NumDescriptors     = 1;
+        uavRange.BaseShaderRegister = 0;
+        uavRange.RegisterSpace      = 0;
+        uavRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+        params[2].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        params[2].DescriptorTable.NumDescriptorRanges = 1;
+        params[2].DescriptorTable.pDescriptorRanges   = &uavRange;
+        params[2].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_ALL;
+
+        D3D12_ROOT_SIGNATURE_DESC rsDesc = {};
+        rsDesc.NumParameters = 3;
+        rsDesc.pParameters   = params;
+        rsDesc.Flags         = D3D12_ROOT_SIGNATURE_FLAG_NONE;
+
+        Microsoft::WRL::ComPtr<ID3DBlob> blob, errBlob;
+        D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+            &blob, &errBlob);
+        device->CreateRootSignature(0, blob->GetBufferPointer(),
+            blob->GetBufferSize(), IID_PPV_ARGS(&m_hizRootSignature));
+    }
+
+    // ---- OcclusionTest Root Signature ----
+    // Slot 0: 20 root constants (b0: viewProj[16] + nodeCount,screenW,screenH,pad)
+    // Slot 1: Descriptor table [1 SRV at t0] (AABB StructuredBuffer)
+    // Slot 2: Descriptor table [1 SRV at t1] (Hi-Z Texture2D)
+    // Slot 3: Descriptor table [1 UAV at u0] (result RWStructuredBuffer)
+    {
+        D3D12_ROOT_PARAMETER params[4] = {};
+
+        // Slot 0: root constants (viewProj=16 floats + 4 uints = 20)
+        params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        params[0].Constants.ShaderRegister = 0;
+        params[0].Constants.RegisterSpace  = 0;
+        params[0].Constants.Num32BitValues = 20;
+        params[0].ShaderVisibility         = D3D12_SHADER_VISIBILITY_ALL;
+
+        // Slot 1: SRV table t0 (AABB)
+        D3D12_DESCRIPTOR_RANGE aabbRange = {};
+        aabbRange.RangeType          = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+        aabbRange.NumDescriptors     = 1;
+        aabbRange.BaseShaderRegister = 0;   // t0
+        aabbRange.RegisterSpace      = 0;
+        aabbRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+        params[1].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        params[1].DescriptorTable.NumDescriptorRanges = 1;
+        params[1].DescriptorTable.pDescriptorRanges   = &aabbRange;
+        params[1].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_ALL;
+
+        // Slot 2: SRV table t1 (Hi-Z)
+        D3D12_DESCRIPTOR_RANGE hizRange = {};
+        hizRange.RangeType          = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+        hizRange.NumDescriptors     = 1;
+        hizRange.BaseShaderRegister = 1;   // t1
+        hizRange.RegisterSpace      = 0;
+        hizRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+        params[2].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        params[2].DescriptorTable.NumDescriptorRanges = 1;
+        params[2].DescriptorTable.pDescriptorRanges   = &hizRange;
+        params[2].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_ALL;
+
+        // Slot 3: UAV table u0 (results)
+        D3D12_DESCRIPTOR_RANGE resultRange = {};
+        resultRange.RangeType          = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+        resultRange.NumDescriptors     = 1;
+        resultRange.BaseShaderRegister = 0;   // u0
+        resultRange.RegisterSpace      = 0;
+        resultRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+        params[3].ParameterType                       = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        params[3].DescriptorTable.NumDescriptorRanges = 1;
+        params[3].DescriptorTable.pDescriptorRanges   = &resultRange;
+        params[3].ShaderVisibility                    = D3D12_SHADER_VISIBILITY_ALL;
+
+        D3D12_ROOT_SIGNATURE_DESC rsDesc = {};
+        rsDesc.NumParameters = 4;
+        rsDesc.pParameters   = params;
+        rsDesc.Flags         = D3D12_ROOT_SIGNATURE_FLAG_NONE;
+
+        Microsoft::WRL::ComPtr<ID3DBlob> blob, errBlob;
+        D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+            &blob, &errBlob);
+        device->CreateRootSignature(0, blob->GetBufferPointer(),
+            blob->GetBufferSize(), IID_PPV_ARGS(&m_occlusionRootSignature));
+    }
+}
+
+void D3D12Context::CreateHiZOcclusionBuffers(ID3D12Device* device)
+{
+    // ---- AABB upload buffer (persistently mapped) ----
+    {
+        D3D12_HEAP_PROPERTIES heap = {};
+        heap.Type = D3D12_HEAP_TYPE_UPLOAD;
+
+        D3D12_RESOURCE_DESC desc = {};
+        desc.Dimension        = D3D12_RESOURCE_DIMENSION_BUFFER;
+        desc.Width            = sizeof(GPUOcclusionAABB) * MAX_OCCLUSION_NODES;
+        desc.Height           = 1;
+        desc.DepthOrArraySize = 1;
+        desc.MipLevels        = 1;
+        desc.Format           = DXGI_FORMAT_UNKNOWN;
+        desc.SampleDesc.Count = 1;
+        desc.Layout           = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+
+        device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+            D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+            IID_PPV_ARGS(&m_occlusionAABBBuffer));
+
+        m_occlusionAABBBuffer->Map(0, nullptr, &m_occlusionAABBMapped);
+    }
+
+    // ---- Occlusion result buffer (UAV, Default heap) ----
+    {
+        D3D12_HEAP_PROPERTIES heap = {};
+        heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+
+        D3D12_RESOURCE_DESC desc = {};
+        desc.Dimension        = D3D12_RESOURCE_DIMENSION_BUFFER;
+        desc.Width            = sizeof(uint32) * MAX_OCCLUSION_NODES;
+        desc.Height           = 1;
+        desc.DepthOrArraySize = 1;
+        desc.MipLevels        = 1;
+        desc.Format           = DXGI_FORMAT_UNKNOWN;
+        desc.SampleDesc.Count = 1;
+        desc.Layout           = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        desc.Flags            = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+        device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+            D3D12_RESOURCE_STATE_COMMON, nullptr,
+            IID_PPV_ARGS(&m_occlusionResultBuffer));
+    }
+
+    // ---- Readback buffer (persistently mapped) ----
+    {
+        D3D12_HEAP_PROPERTIES heap = {};
+        heap.Type = D3D12_HEAP_TYPE_READBACK;
+
+        D3D12_RESOURCE_DESC desc = {};
+        desc.Dimension        = D3D12_RESOURCE_DIMENSION_BUFFER;
+        desc.Width            = sizeof(uint32) * MAX_OCCLUSION_NODES;
+        desc.Height           = 1;
+        desc.DepthOrArraySize = 1;
+        desc.MipLevels        = 1;
+        desc.Format           = DXGI_FORMAT_UNKNOWN;
+        desc.SampleDesc.Count = 1;
+        desc.Layout           = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+
+        device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+            D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+            IID_PPV_ARGS(&m_occlusionReadbackBuffer));
+
+        void* ptr = nullptr;
+        D3D12_RANGE readRange = { 0, sizeof(uint32) * MAX_OCCLUSION_NODES };
+        m_occlusionReadbackBuffer->Map(0, &readRange, &ptr);
+        m_occlusionReadbackMapped = static_cast<const uint32*>(ptr);
+    }
+
+    // Allocate AABB SRV + result UAV descriptors (once)
+    if (!m_occlusionBuffersAllocated)
+    {
+        // AABB StructuredBuffer SRV
+        m_occlusionAABBSrvCpu = m_cbvSrvHeap.AllocatePersistent();
+        m_occlusionAABBSrvGpu = m_cbvSrvHeap.GetGPUHandleForCPU(m_occlusionAABBSrvCpu);
+
+        // Result RWStructuredBuffer UAV
+        m_occlusionResultUavCpu = m_cbvSrvHeap.AllocatePersistent();
+        m_occlusionResultUavGpu = m_cbvSrvHeap.GetGPUHandleForCPU(m_occlusionResultUavCpu);
+
+        m_occlusionBuffersAllocated = true;
+    }
+
+    // Create AABB SRV
+    {
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+        srvDesc.Format                          = DXGI_FORMAT_UNKNOWN;
+        srvDesc.ViewDimension                   = D3D12_SRV_DIMENSION_BUFFER;
+        srvDesc.Shader4ComponentMapping         = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.Buffer.FirstElement             = 0;
+        srvDesc.Buffer.NumElements              = MAX_OCCLUSION_NODES;
+        srvDesc.Buffer.StructureByteStride      = sizeof(GPUOcclusionAABB);
+        srvDesc.Buffer.Flags                    = D3D12_BUFFER_SRV_FLAG_NONE;
+        device->CreateShaderResourceView(m_occlusionAABBBuffer.Get(), &srvDesc, m_occlusionAABBSrvCpu);
+    }
+
+    // Create result UAV
+    {
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+        uavDesc.Format                           = DXGI_FORMAT_UNKNOWN;
+        uavDesc.ViewDimension                    = D3D12_UAV_DIMENSION_BUFFER;
+        uavDesc.Buffer.FirstElement              = 0;
+        uavDesc.Buffer.NumElements               = MAX_OCCLUSION_NODES;
+        uavDesc.Buffer.StructureByteStride       = sizeof(uint32);
+        uavDesc.Buffer.CounterOffsetInBytes      = 0;
+        uavDesc.Buffer.Flags                     = D3D12_BUFFER_UAV_FLAG_NONE;
+        device->CreateUnorderedAccessView(m_occlusionResultBuffer.Get(), nullptr, &uavDesc,
+            m_occlusionResultUavCpu);
+    }
+}
+
+void D3D12Context::CreateHiZBuffer(uint32 width, uint32 height)
+{
+    // Calculate mip count: floor(log2(max(W,H))) + 1
+    uint32 maxDim = (std::max)(width, height);
+    uint32 mipCount = 1;
+    while ((maxDim >> mipCount) > 0) mipCount++;
+    mipCount = (std::min)(mipCount, MAX_HIZ_MIPS);
+
+    m_hizMipCount = mipCount;
+    m_hizWidth    = width;
+    m_hizHeight   = height;
+
+    m_hizBuffer.Reset();
+
+    D3D12_HEAP_PROPERTIES heap = {};
+    heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+
+    D3D12_RESOURCE_DESC desc = {};
+    desc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    desc.Width            = width;
+    desc.Height           = height;
+    desc.DepthOrArraySize = 1;
+    desc.MipLevels        = static_cast<UINT16>(mipCount);
+    desc.Format           = DXGI_FORMAT_R32_FLOAT;
+    desc.SampleDesc.Count = 1;
+    desc.Flags            = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+    m_device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
+        IID_PPV_ARGS(&m_hizBuffer));
+
+    // Allocate per-mip descriptors once; overwrite on resize
+    if (!m_hizDescriptorsAllocated)
+    {
+        for (uint32 i = 0; i < MAX_HIZ_MIPS; i++)
+        {
+            m_hizUavCpu[i]    = m_cbvSrvHeap.AllocatePersistent();
+            m_hizUavGpu[i]    = m_cbvSrvHeap.GetGPUHandleForCPU(m_hizUavCpu[i]);
+            m_hizSrvMipCpu[i] = m_cbvSrvHeap.AllocatePersistent();
+            m_hizSrvMipGpu[i] = m_cbvSrvHeap.GetGPUHandleForCPU(m_hizSrvMipCpu[i]);
+        }
+        m_hizSrvAllCpu = m_cbvSrvHeap.AllocatePersistent();
+        m_hizSrvAllGpu = m_cbvSrvHeap.GetGPUHandleForCPU(m_hizSrvAllCpu);
+        m_hizDescriptorsAllocated = true;
+    }
+
+    // Per-mip UAVs (write)
+    for (uint32 mip = 0; mip < mipCount; mip++)
+    {
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+        uavDesc.Format                  = DXGI_FORMAT_R32_FLOAT;
+        uavDesc.ViewDimension           = D3D12_UAV_DIMENSION_TEXTURE2D;
+        uavDesc.Texture2D.MipSlice      = mip;
+        uavDesc.Texture2D.PlaneSlice    = 0;
+        m_device->CreateUnorderedAccessView(m_hizBuffer.Get(), nullptr, &uavDesc, m_hizUavCpu[mip]);
+    }
+
+    // Per-mip SRVs (read during downsample)
+    for (uint32 mip = 0; mip < mipCount; mip++)
+    {
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+        srvDesc.Format                        = DXGI_FORMAT_R32_FLOAT;
+        srvDesc.ViewDimension                 = D3D12_SRV_DIMENSION_TEXTURE2D;
+        srvDesc.Texture2D.MostDetailedMip     = mip;
+        srvDesc.Texture2D.MipLevels           = 1;
+        srvDesc.Texture2D.PlaneSlice          = 0;
+        srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+        srvDesc.Shader4ComponentMapping       = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        m_device->CreateShaderResourceView(m_hizBuffer.Get(), &srvDesc, m_hizSrvMipCpu[mip]);
+    }
+
+    // All-mips SRV (for OcclusionTest shader)
+    {
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+        srvDesc.Format                        = DXGI_FORMAT_R32_FLOAT;
+        srvDesc.ViewDimension                 = D3D12_SRV_DIMENSION_TEXTURE2D;
+        srvDesc.Texture2D.MostDetailedMip     = 0;
+        srvDesc.Texture2D.MipLevels           = mipCount;
+        srvDesc.Texture2D.PlaneSlice          = 0;
+        srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+        srvDesc.Shader4ComponentMapping       = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        m_device->CreateShaderResourceView(m_hizBuffer.Get(), &srvDesc, m_hizSrvAllCpu);
+    }
+}
+
+void D3D12Context::CreateDepthSRV()
+{
+    if (!m_depthBuffer) return;
+
+    if (!m_depthSrvAllocated)
+    {
+        m_depthSrvCpu = m_cbvSrvHeap.AllocatePersistent();
+        m_depthSrvGpu = m_cbvSrvHeap.GetGPUHandleForCPU(m_depthSrvCpu);
+        m_depthSrvAllocated = true;
+    }
+
+    // R32_FLOAT view of the R32_TYPELESS depth buffer — readable in CS
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.Format                        = DXGI_FORMAT_R32_FLOAT;
+    srvDesc.ViewDimension                 = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Texture2D.MostDetailedMip     = 0;
+    srvDesc.Texture2D.MipLevels           = 1;
+    srvDesc.Texture2D.PlaneSlice          = 0;
+    srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
+    srvDesc.Shader4ComponentMapping       = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    m_device->CreateShaderResourceView(m_depthBuffer.Get(), &srvDesc, m_depthSrvCpu);
+}
+
+// ---------------------------------------------------------------------------
+// Hi-Z Occlusion Culling (Phase 32) — public API
+// ---------------------------------------------------------------------------
+
+void D3D12Context::BuildHiZAndDispatchOcclusionTest(
+    const GPUOcclusionAABB* aabbs, uint32 nodeCount,
+    const DirectX::XMFLOAT4X4& viewProjTransposed)
+{
+    if (!m_hizPipeline.IsValid() || !m_occlusionTestPipeline.IsValid())
+        return;
+    if (!m_hizBuffer || nodeCount == 0)
+        return;
+
+    uint32 clampedCount = (std::min)(nodeCount, MAX_OCCLUSION_NODES);
+
+    // Upload AABB data
+    memcpy(m_occlusionAABBMapped, aabbs, sizeof(GPUOcclusionAABB) * clampedCount);
+
+    auto* cmd = m_commandList.Get();
+
+    // Set the CBV_SRV_UAV heap for compute (same heap used by graphics)
+    ID3D12DescriptorHeap* heaps[] = { m_cbvSrvHeap.GetHeap() };
+    cmd->SetDescriptorHeaps(1, heaps);
+
+    // ---- Step 1: Transition depth buffer DEPTH_WRITE → NON_PIXEL_SHADER_RESOURCE ----
+    {
+        D3D12_RESOURCE_BARRIER b = {};
+        b.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        b.Transition.pResource   = m_depthBuffer.Get();
+        b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        b.Transition.StateBefore = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+        b.Transition.StateAfter  = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        cmd->ResourceBarrier(1, &b);
+    }
+
+    // ---- Step 2: Build Hi-Z mip chain ----
+    cmd->SetComputeRootSignature(m_hizRootSignature.Get());
+    cmd->SetPipelineState(m_hizPipeline.GetPSO());
+
+    // Mip 0: 1:1 copy from depth buffer SRV → Hi-Z UAV mip 0
+    {
+        uint32 c[8] = { m_hizWidth, m_hizHeight, m_hizWidth, m_hizHeight, 1u, 0u, 0u, 0u };
+        cmd->SetComputeRoot32BitConstants(0, 8, c, 0);
+        cmd->SetComputeRootDescriptorTable(1, m_depthSrvGpu);    // t0: depth SRV
+        cmd->SetComputeRootDescriptorTable(2, m_hizUavGpu[0]);   // u0: Hi-Z mip 0 UAV
+        uint32 gx = (m_hizWidth  + 7) / 8;
+        uint32 gy = (m_hizHeight + 7) / 8;
+        cmd->Dispatch(gx, gy, 1);
+    }
+
+    // Mips 1..N: 2x2 max-filter downsample
+    uint32 srcW = m_hizWidth, srcH = m_hizHeight;
+    for (uint32 mip = 1; mip < m_hizMipCount; mip++)
+    {
+        uint32 dstW = (std::max)(1u, srcW >> 1);
+        uint32 dstH = (std::max)(1u, srcH >> 1);
+
+        // UAV barrier: ensure mip N-1 write is visible before reading as SRV
+        {
+            D3D12_RESOURCE_BARRIER uavB = {};
+            uavB.Type            = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+            uavB.UAV.pResource   = m_hizBuffer.Get();
+            cmd->ResourceBarrier(1, &uavB);
+        }
+
+        // Transition mip N-1: UAV → NON_PIXEL_SHADER_RESOURCE (read)
+        {
+            D3D12_RESOURCE_BARRIER b = {};
+            b.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            b.Transition.pResource   = m_hizBuffer.Get();
+            b.Transition.Subresource = mip - 1;
+            b.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            b.Transition.StateAfter  = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+            cmd->ResourceBarrier(1, &b);
+        }
+
+        uint32 c[8] = { srcW, srcH, dstW, dstH, 0u, 0u, 0u, 0u };
+        cmd->SetComputeRoot32BitConstants(0, 8, c, 0);
+        cmd->SetComputeRootDescriptorTable(1, m_hizSrvMipGpu[mip - 1]); // t0: prev mip SRV
+        cmd->SetComputeRootDescriptorTable(2, m_hizUavGpu[mip]);         // u0: cur mip UAV
+        uint32 gx = (dstW + 7) / 8;
+        uint32 gy = (dstH + 7) / 8;
+        cmd->Dispatch(gx, gy, 1);
+
+        // Transition mip N-1 back: NON_PIXEL_SHADER_RESOURCE → UAV
+        {
+            D3D12_RESOURCE_BARRIER b = {};
+            b.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            b.Transition.pResource   = m_hizBuffer.Get();
+            b.Transition.Subresource = mip - 1;
+            b.Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+            b.Transition.StateAfter  = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            cmd->ResourceBarrier(1, &b);
+        }
+
+        srcW = dstW;
+        srcH = dstH;
+    }
+
+    // ---- Step 3: Transition depth buffer back → DEPTH_WRITE ----
+    {
+        D3D12_RESOURCE_BARRIER b = {};
+        b.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        b.Transition.pResource   = m_depthBuffer.Get();
+        b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        b.Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        b.Transition.StateAfter  = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+        cmd->ResourceBarrier(1, &b);
+    }
+
+    // ---- Step 4: Transition last Hi-Z mip UAV barrier + all Hi-Z → SHADER_RESOURCE ----
+    {
+        D3D12_RESOURCE_BARRIER uavB = {};
+        uavB.Type          = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+        uavB.UAV.pResource = m_hizBuffer.Get();
+        cmd->ResourceBarrier(1, &uavB);
+    }
+    {
+        D3D12_RESOURCE_BARRIER b = {};
+        b.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        b.Transition.pResource   = m_hizBuffer.Get();
+        b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        b.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        b.Transition.StateAfter  = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        cmd->ResourceBarrier(1, &b);
+    }
+
+    // ---- Step 5: Transition result buffer → UAV ----
+    {
+        D3D12_RESOURCE_BARRIER b = {};
+        b.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        b.Transition.pResource   = m_occlusionResultBuffer.Get();
+        b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        b.Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
+        b.Transition.StateAfter  = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        cmd->ResourceBarrier(1, &b);
+    }
+
+    // ---- Step 6: Dispatch OcclusionTest ----
+    {
+        cmd->SetComputeRootSignature(m_occlusionRootSignature.Get());
+        cmd->SetPipelineState(m_occlusionTestPipeline.GetPSO());
+
+        // 20 root constants: viewProj (16 floats) + nodeCount, screenW, screenH, pad (4 uints)
+        uint32 rc[20];
+        memcpy(&rc[0], &viewProjTransposed, 64);  // 16 floats
+        rc[16] = clampedCount;
+        rc[17] = m_viewportWidth;
+        rc[18] = m_viewportHeight;
+        rc[19] = 0u;
+        cmd->SetComputeRoot32BitConstants(0, 20, rc, 0);
+
+        cmd->SetComputeRootDescriptorTable(1, m_occlusionAABBSrvGpu);  // t0: AABB
+        cmd->SetComputeRootDescriptorTable(2, m_hizSrvAllGpu);         // t1: Hi-Z
+        cmd->SetComputeRootDescriptorTable(3, m_occlusionResultUavGpu); // u0: results
+
+        uint32 groups = (clampedCount + 63) / 64;
+        cmd->Dispatch(groups, 1, 1);
+    }
+
+    // ---- Step 7: Transition result UAV → COPY_SOURCE, copy to readback ----
+    {
+        D3D12_RESOURCE_BARRIER b = {};
+        b.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        b.Transition.pResource   = m_occlusionResultBuffer.Get();
+        b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        b.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        b.Transition.StateAfter  = D3D12_RESOURCE_STATE_COPY_SOURCE;
+        cmd->ResourceBarrier(1, &b);
+    }
+    cmd->CopyBufferRegion(m_occlusionReadbackBuffer.Get(), 0,
+        m_occlusionResultBuffer.Get(), 0, sizeof(uint32) * clampedCount);
+
+    // ---- Step 8: Transition resources back to their resting states ----
+    // Hi-Z → UAV (ready for next frame's downsample)
+    {
+        D3D12_RESOURCE_BARRIER b = {};
+        b.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        b.Transition.pResource   = m_hizBuffer.Get();
+        b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        b.Transition.StateBefore = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        b.Transition.StateAfter  = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        cmd->ResourceBarrier(1, &b);
+    }
+    // Result buffer → COMMON (for next frame's UAV transition from COMMON)
+    {
+        D3D12_RESOURCE_BARRIER b = {};
+        b.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        b.Transition.pResource   = m_occlusionResultBuffer.Get();
+        b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        b.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+        b.Transition.StateAfter  = D3D12_RESOURCE_STATE_COMMON;
+        cmd->ResourceBarrier(1, &b);
+    }
+
+    m_lastOcclusionNodeCount = clampedCount;
+}
+
+const uint32* D3D12Context::ReadOcclusionResults(uint32& outNodeCount) const
+{
+    outNodeCount = m_lastOcclusionNodeCount;
+    if (outNodeCount == 0 || !m_occlusionReadbackMapped)
+        return nullptr;
+    return m_occlusionReadbackMapped;
 }
 
 } // namespace RRE

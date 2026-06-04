@@ -15,6 +15,7 @@
 #include "RHI/D3D12/D3D12PipelineState.h"
 #include "RHI/D3D12/D3D12DescriptorHeap.h"
 #include "RHI/D3D12/D3D12CBPool.h"
+#include "RHI/D3D12/D3D12ComputePipeline.h"
 
 namespace RRE
 {
@@ -128,6 +129,14 @@ struct ShadowPassConstants
     // world is no longer stored here; supplied via per-instance vertex stream
 };  // Total: 64 bytes → 256 aligned
 static_assert(sizeof(ShadowPassConstants) <= 256, "ShadowPassConstants exceeds 256-byte CB slot");
+
+// Per-node AABB data uploaded to GPU for occlusion testing.
+// Matches the HLSL NodeAABB struct in OcclusionTest.hlsl.
+struct GPUOcclusionAABB
+{
+    float centerX, centerY, centerZ, pad0;
+    float extentX, extentY, extentZ, pad1;
+};
 
 class Material;
 class TextureCache;
@@ -257,6 +266,25 @@ public:
     void WaitForGPU();
     void CreateDepthBuffer(uint32 width, uint32 height);
 
+    // Viewport dimensions (set during CreateDepthBuffer)
+    uint32 GetViewportWidth()  const { return m_viewportWidth; }
+    uint32 GetViewportHeight() const { return m_viewportHeight; }
+
+    // Hi-Z Occlusion Culling (Phase 32)
+    static constexpr uint32 MAX_OCCLUSION_NODES = 8192; // max nodes per occlusion test frame
+
+    // Call at end of RenderScene (after all rendering, before EndFrame).
+    // Builds the Hi-Z mip chain from the current depth buffer, then dispatches
+    // the GPU occlusion test. Results (1-frame latency) are read next frame.
+    void BuildHiZAndDispatchOcclusionTest(
+        const GPUOcclusionAABB* aabbs, uint32 nodeCount,
+        const DirectX::XMFLOAT4X4& viewProjTransposed);
+
+    // Read occlusion results from the previous frame's GPU test (call after WaitForGPU).
+    // Returns a pointer to a uint32 array (0=visible, 1=occluded) of outNodeCount elements.
+    // Valid until the next BuildHiZAndDispatchOcclusionTest call.
+    const uint32* ReadOcclusionResults(uint32& outNodeCount) const;
+
 private:
     void FlushTextCommands();
 
@@ -376,6 +404,68 @@ private:
     // Queued text commands
     std::vector<TextCommand> m_textCommands;
     bool m_d2dInitialized = false;
+
+    // -------------------------------------------------------------------------
+    // Hi-Z Occlusion Culling (Phase 32)
+    // -------------------------------------------------------------------------
+    static constexpr uint32 MAX_HIZ_MIPS        = 13;   // covers up to 4096x4096
+
+    // Viewport size (stored on CreateDepthBuffer, used by occlusion dispatch)
+    uint32 m_viewportWidth  = 0;
+    uint32 m_viewportHeight = 0;
+
+    // Hi-Z texture (R32_FLOAT, ALLOW_UNORDERED_ACCESS, multi-mip)
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_hizBuffer;
+    uint32 m_hizMipCount = 0;
+    uint32 m_hizWidth    = 0;
+    uint32 m_hizHeight   = 0;
+
+    // Per-mip UAV (write each mip during downsample)
+    D3D12_CPU_DESCRIPTOR_HANDLE m_hizUavCpu[MAX_HIZ_MIPS] = {};
+    D3D12_GPU_DESCRIPTOR_HANDLE m_hizUavGpu[MAX_HIZ_MIPS] = {};
+    // Per-mip SRV (read a specific mip during downsample)
+    D3D12_CPU_DESCRIPTOR_HANDLE m_hizSrvMipCpu[MAX_HIZ_MIPS] = {};
+    D3D12_GPU_DESCRIPTOR_HANDLE m_hizSrvMipGpu[MAX_HIZ_MIPS] = {};
+    // All-mips SRV (read in OcclusionTest shader)
+    D3D12_CPU_DESCRIPTOR_HANDLE m_hizSrvAllCpu = {};
+    D3D12_GPU_DESCRIPTOR_HANDLE m_hizSrvAllGpu = {};
+    bool m_hizDescriptorsAllocated = false;
+
+    // Depth buffer SRV (R32_FLOAT view of R32_TYPELESS depth buffer, for Hi-Z mip 0 copy)
+    D3D12_CPU_DESCRIPTOR_HANDLE m_depthSrvCpu = {};
+    D3D12_GPU_DESCRIPTOR_HANDLE m_depthSrvGpu = {};
+    bool m_depthSrvAllocated = false;
+
+    // AABB upload buffer (Upload heap, persistently mapped) — one GPUOcclusionAABB per node
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_occlusionAABBBuffer;
+    void*                                   m_occlusionAABBMapped = nullptr;
+    D3D12_CPU_DESCRIPTOR_HANDLE             m_occlusionAABBSrvCpu = {};
+    D3D12_GPU_DESCRIPTOR_HANDLE             m_occlusionAABBSrvGpu = {};
+
+    // Occlusion result buffer (Default heap, UAV — one uint32 per node)
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_occlusionResultBuffer;
+    D3D12_CPU_DESCRIPTOR_HANDLE             m_occlusionResultUavCpu = {};
+    D3D12_GPU_DESCRIPTOR_HANDLE             m_occlusionResultUavGpu = {};
+    bool m_occlusionBuffersAllocated = false;
+
+    // Readback buffer (Readback heap, persistently mapped — one uint32 per node)
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_occlusionReadbackBuffer;
+    const uint32*                           m_occlusionReadbackMapped = nullptr;
+    uint32                                  m_lastOcclusionNodeCount  = 0;
+
+    // Compute root signatures
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_hizRootSignature;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_occlusionRootSignature;
+
+    // Compute PSOs
+    D3D12ComputePipeline m_hizPipeline;
+    D3D12ComputePipeline m_occlusionTestPipeline;
+
+    // Hi-Z helper methods
+    void CreateHiZRootSignatures(ID3D12Device* device);
+    void CreateHiZOcclusionBuffers(ID3D12Device* device);
+    void CreateHiZBuffer(uint32 width, uint32 height);
+    void CreateDepthSRV();
 };
 
 } // namespace RRE

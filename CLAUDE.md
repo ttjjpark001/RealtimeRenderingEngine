@@ -342,4 +342,11 @@ glTF/GLB/FBX 씬을 엔진 전용 바이너리(`.rrscene`)로 변환하여 이�
 
 > **Backup 정책**: `Phase 01 Backup/` 및 `Phase 02 Backup/` 폴더 안의 파일은 절대 참조하거나 수정하지 않는다. 어떠한 작업에서도 이 폴더들을 건드리지 않는다.
 
-**다음 구현 대상**: Phase 32 — Occlusion Culling (Hi-Z GPU + Compute Shader 인프라)
+**Phase 32 완료**: Occlusion Culling (Hi-Z GPU + Compute Shader 인프라)
+- Hi-Z Buffer (R32_FLOAT 멀티밉, MAX 필터 다운샘플) + GPU Occlusion Test Compute Shader
+- Depth Buffer 포맷 변경: D24_UNORM_S8_UINT → R32_TYPELESS (DSV=D32_FLOAT, SRV=R32_FLOAT)
+- D3D12ComputePipeline 클래스 신규 추가 (HiZDownsample.hlsl, OcclusionTest.hlsl)
+- 1-frame latency 설계: Frame N GPU dispatch → Frame N+1 CPU readback 반영
+- Optimization 메뉴 ID_OPTIM_OCCLUSION_CULL(8005) 연동 완료
+
+**다음 구현 대상**: Phase 33 — CSM (Cascaded Shadow Maps) 또는 PCSS

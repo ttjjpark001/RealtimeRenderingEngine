@@ -54,6 +54,17 @@ void Renderer::SetMipMappingEnabled(bool enabled)
         m_context->SetMipMappingEnabled(enabled);
 }
 
+void Renderer::SetOcclusionCullingEnabled(bool enabled)
+{
+    m_occlusionCullingEnabled = enabled;
+    if (!enabled)
+    {
+        m_occlusionCuller.ClearResults();
+        m_hizNodeList.clear();
+        m_hizNodeOrder.clear();
+    }
+}
+
 void Renderer::ClearMeshCache()
 {
     m_meshCache.clear();      // frees GPU buffers
@@ -81,6 +92,18 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
 {
     if (!m_context)
         return;
+
+    // -----------------------------------------------------------------------
+    // Hi-Z Occlusion Culling: read results from previous frame (1-frame latency)
+    // -----------------------------------------------------------------------
+    if (m_occlusionCullingEnabled)
+    {
+        uint32 nodeCount = 0;
+        const uint32* results = m_context->ReadOcclusionResults(nodeCount);
+        if (results && nodeCount > 0 && nodeCount <= m_hizNodeOrder.size())
+            m_occlusionCuller.UpdateResults(m_hizNodeOrder.data(), results, nodeCount);
+    }
+    m_hizNodeList.clear();   // collect fresh list this frame
 
     // -----------------------------------------------------------------------
     // Build world-space frustum for this frame
@@ -288,7 +311,8 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
             DirectX::BoundingBox worldAABB = node->GetWorldAABB();
             if (m_frustumCullingEnabled && !m_frustumCuller.IsVisible(worldAABB))
             { m_lastCullStats.frustumCulledNodes++; return; }
-            if (m_occlusionCuller.IsOccluded(worldAABB, viewProj))
+            if (m_occlusionCullingEnabled) m_hizNodeList.push_back({ node, worldAABB });
+            if (m_occlusionCullingEnabled && m_occlusionCuller.IsOccluded(node))
             { m_lastCullStats.occlusionCulledNodes++; return; }
 
             XMVECTOR objCenter = XMLoadFloat3(&worldAABB.Center);
@@ -322,7 +346,8 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
             DirectX::BoundingBox worldAABB = node->GetWorldAABB();
             if (m_frustumCullingEnabled && !m_frustumCuller.IsVisible(worldAABB))
             { m_lastCullStats.frustumCulledNodes++; return; }
-            if (m_occlusionCuller.IsOccluded(worldAABB, viewProj))
+            if (m_occlusionCullingEnabled) m_hizNodeList.push_back({ node, worldAABB });
+            if (m_occlusionCullingEnabled && m_occlusionCuller.IsOccluded(node))
             { m_lastCullStats.occlusionCulledNodes++; return; }
 
             XMVECTOR objCenter = XMLoadFloat3(&worldAABB.Center);
@@ -428,7 +453,7 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
 
             DirectX::BoundingBox worldAABB = node->GetWorldAABB();
             if (m_frustumCullingEnabled && !m_frustumCuller.IsVisible(worldAABB)) return;
-            if (m_occlusionCuller.IsOccluded(worldAABB, viewProj)) return;
+            if (m_occlusionCullingEnabled && m_occlusionCuller.IsOccluded(node)) return;
 
             XMVECTOR objCenter = XMLoadFloat3(&worldAABB.Center);
             XMVECTOR camV      = XMLoadFloat3(&camPos);
@@ -461,6 +486,44 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
             m_lastCullStats.renderedPolygons += dc.drawMesh->GetPolygonCount();
             m_lastCullStats.visibleNodes++;
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Hi-Z Occlusion Culling: dispatch GPU test for next frame (1-frame latency)
+    // -----------------------------------------------------------------------
+    if (m_occlusionCullingEnabled && m_context && !m_hizNodeList.empty())
+    {
+        uint32 count = (std::min)(
+            static_cast<uint32>(m_hizNodeList.size()),
+            static_cast<uint32>(D3D12Context::MAX_OCCLUSION_NODES));
+
+        // Build GPU AABB array and matching node order
+        std::vector<GPUOcclusionAABB> aabbs;
+        aabbs.reserve(count);
+        m_hizNodeOrder.clear();
+        m_hizNodeOrder.reserve(count);
+
+        for (uint32 i = 0; i < count; i++)
+        {
+            const auto& hn = m_hizNodeList[i];
+            GPUOcclusionAABB a;
+            a.centerX = hn.aabb.Center.x;
+            a.centerY = hn.aabb.Center.y;
+            a.centerZ = hn.aabb.Center.z;
+            a.pad0    = 0.0f;
+            a.extentX = hn.aabb.Extents.x;
+            a.extentY = hn.aabb.Extents.y;
+            a.extentZ = hn.aabb.Extents.z;
+            a.pad1    = 0.0f;
+            aabbs.push_back(a);
+            m_hizNodeOrder.push_back(hn.node);
+        }
+
+        // Upload transposed viewProj (same convention as graphics CBVs)
+        XMFLOAT4X4 vpT;
+        XMStoreFloat4x4(&vpT, XMMatrixTranspose(viewProj));
+
+        m_context->BuildHiZAndDispatchOcclusionTest(aabbs.data(), count, vpT);
     }
 }
 

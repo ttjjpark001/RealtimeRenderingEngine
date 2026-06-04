@@ -43,6 +43,7 @@ constexpr UINT ID_OPTIM_LOD              = 8001;
 constexpr UINT ID_OPTIM_FRUSTUM_CULL     = 8002;
 constexpr UINT ID_OPTIM_LIGHT_CULL       = 8003;
 constexpr UINT ID_OPTIM_MIPMAP           = 8004;
+constexpr UINT ID_OPTIM_OCCLUSION_CULL   = 8005;
 
 class Win32Menu
 {
@@ -59,10 +60,11 @@ public:
     using FileBistroCallback = std::function<void()>;
     using CameraFitToSceneCallback = std::function<void()>;
     using RenderModeCallback = std::function<void(uint32 mode)>;
-    using LODToggleCallback          = std::function<void()>;
-    using FrustumCullToggleCallback  = std::function<void()>;
-    using LightCullToggleCallback    = std::function<void()>;
-    using MipMapToggleCallback       = std::function<void()>;
+    using LODToggleCallback              = std::function<void()>;
+    using FrustumCullToggleCallback      = std::function<void()>;
+    using LightCullToggleCallback        = std::function<void()>;
+    using MipMapToggleCallback           = std::function<void()>;
+    using OcclusionCullToggleCallback    = std::function<void()>;
 
     Win32Menu() = default;
     ~Win32Menu() = default;
@@ -87,6 +89,7 @@ public:
     void SetFrustumCullToggleCallback(FrustumCullToggleCallback cb)   { m_frustumCullToggleCallback = std::move(cb); }
     void SetLightCullToggleCallback(LightCullToggleCallback cb)       { m_lightCullToggleCallback = std::move(cb); }
     void SetMipMapToggleCallback(MipMapToggleCallback cb)             { m_mipMapToggleCallback = std::move(cb); }
+    void SetOcclusionCullToggleCallback(OcclusionCullToggleCallback cb) { m_occlusionCullToggleCallback = std::move(cb); }
 
 private:
     HWND m_hwnd = nullptr;
@@ -110,10 +113,11 @@ private:
     FileBistroCallback m_fileBistroCallback;
     CameraFitToSceneCallback m_cameraFitToSceneCallback;
     RenderModeCallback m_renderModeCallback;
-    LODToggleCallback         m_lodToggleCallback;
-    FrustumCullToggleCallback m_frustumCullToggleCallback;
-    LightCullToggleCallback   m_lightCullToggleCallback;
-    MipMapToggleCallback      m_mipMapToggleCallback;
+    LODToggleCallback              m_lodToggleCallback;
+    FrustumCullToggleCallback      m_frustumCullToggleCallback;
+    LightCullToggleCallback        m_lightCullToggleCallback;
+    MipMapToggleCallback           m_mipMapToggleCallback;
+    OcclusionCullToggleCallback    m_occlusionCullToggleCallback;
 };
 
 } // namespace RRE

@@ -80,6 +80,9 @@ public:
     void SetFrustumCullingEnabled(bool enabled) { m_frustumCullingEnabled = enabled; }
     bool IsFrustumCullingEnabled() const        { return m_frustumCullingEnabled; }
 
+    void SetOcclusionCullingEnabled(bool enabled);
+    bool IsOcclusionCullingEnabled() const      { return m_occlusionCullingEnabled; }
+
     void SetLightCullingEnabled(bool enabled)   { m_lightCullingEnabled = enabled; }
     bool IsLightCullingEnabled() const          { return m_lightCullingEnabled; }
 
@@ -116,6 +119,7 @@ private:
     bool          m_lodEnabled             = false;
     bool          m_mipMappingEnabled      = true;
     bool          m_frustumCullingEnabled  = true;
+    bool          m_occlusionCullingEnabled = false;
     bool          m_lightCullingEnabled    = true;
     bool          m_vramPressure           = false;
     float         m_sceneDiagonal          = 10.0f;
@@ -132,6 +136,11 @@ private:
     // Instance batching: groups same-mesh+material nodes into single draw calls
     InstanceBatcher m_opaqueBatcher;
     InstanceBatcher m_alphaMaskBatcher;
+
+    // Hi-Z Occlusion Culling (Phase 32) — node lists used across frames
+    struct HiZNode { SceneNode* node; DirectX::BoundingBox aabb; };
+    std::vector<HiZNode>    m_hizNodeList;    // frustum-visible nodes this frame → next frame's test
+    std::vector<SceneNode*> m_hizNodeOrder;   // node order submitted in previous frame's test
 
     CullStats m_lastCullStats;
 };

@@ -211,6 +211,10 @@ bool Engine::Initialize(const EngineInitParams& params)
         if (m_renderer)
             m_renderer->SetMipMappingEnabled(!m_renderer->IsMipMappingEnabled());
     });
+    m_menu->SetOcclusionCullToggleCallback([this]() {
+        if (m_renderer)
+            m_renderer->SetOcclusionCullingEnabled(!m_renderer->IsOcclusionCullingEnabled());
+    });
 
     // Create debug HUD
     m_debugHUD = std::make_unique<DebugHUD>();
