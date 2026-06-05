@@ -265,12 +265,46 @@ int GetCascadeIndex(float3 worldPos)
 
 float CalcShadowCSM(uint baseIdx, float3 worldPos, float3 biasedPos)
 {
-    // Pre-initialize result so FXC dataflow can prove it is always assigned.
     float result    = 1.0f;
-    int  cascadeIdx = GetCascadeIndex(worldPos);
-    uint shadowIdx  = baseIdx + (uint)cascadeIdx;
-    if (shadowIdx < shadowMapCount)
-        result = CalcShadow(shadowIdx, biasedPos);
+    float viewDepth = dot(worldPos - CameraPosition, normalize(cameraForward));
+
+    // 10% blend band at each cascade boundary to eliminate hard seams
+    float band01 = cascadeSplitDepths.x * 0.1f;
+    float band12 = (cascadeSplitDepths.y - cascadeSplitDepths.x) * 0.1f;
+
+    if (viewDepth < cascadeSplitDepths.x - band01)
+    {
+        if (baseIdx < shadowMapCount)
+            result = CalcShadow(baseIdx, biasedPos);
+    }
+    else if (viewDepth < cascadeSplitDepths.x)
+    {
+        // Blend cascade 0 → 1
+        float t  = saturate((viewDepth - (cascadeSplitDepths.x - band01)) / band01);
+        float s0 = 1.0f, s1 = 1.0f;
+        if (baseIdx     < shadowMapCount) s0 = CalcShadow(baseIdx,     biasedPos);
+        if (baseIdx + 1 < shadowMapCount) s1 = CalcShadow(baseIdx + 1, biasedPos);
+        result = lerp(s0, s1, t);
+    }
+    else if (viewDepth < cascadeSplitDepths.y - band12)
+    {
+        if (baseIdx + 1 < shadowMapCount)
+            result = CalcShadow(baseIdx + 1, biasedPos);
+    }
+    else if (viewDepth < cascadeSplitDepths.y)
+    {
+        // Blend cascade 1 → 2
+        float t  = saturate((viewDepth - (cascadeSplitDepths.y - band12)) / band12);
+        float s1 = 1.0f, s2 = 1.0f;
+        if (baseIdx + 1 < shadowMapCount) s1 = CalcShadow(baseIdx + 1, biasedPos);
+        if (baseIdx + 2 < shadowMapCount) s2 = CalcShadow(baseIdx + 2, biasedPos);
+        result = lerp(s1, s2, t);
+    }
+    else
+    {
+        if (baseIdx + 2 < shadowMapCount)
+            result = CalcShadow(baseIdx + 2, biasedPos);
+    }
     return result;
 }
 

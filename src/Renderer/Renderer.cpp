@@ -388,7 +388,7 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
         shadowConst.shadowMapCount = shadowIdx;
         shadowConst.csmDebugView   = m_csmDebugView ? 1u : 0u;
         shadowConst.pcssEnabled    = m_pcssEnabled  ? 1u : 0u;
-        shadowConst.lightSize      = m_sceneDiagonal * 0.02f;
+        shadowConst.lightSize      = m_sceneDiagonal * 0.02f * m_lightSizeMultiplier;
 
         // Restore main back-buffer RTV/DSV/viewport after all shadow passes
         m_context->RestoreMainRenderTarget();

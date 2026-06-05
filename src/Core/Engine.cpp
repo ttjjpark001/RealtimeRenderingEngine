@@ -227,6 +227,10 @@ bool Engine::Initialize(const EngineInitParams& params)
         if (m_renderer)
             m_renderer->SetPCSSEnabled(!m_renderer->IsPCSSEnabled());
     });
+    m_menu->SetPCSSLightSizeCallback([this](float multiplier) {
+        if (m_renderer)
+            m_renderer->SetLightSizeMultiplier(multiplier);
+    });
 
     // Create debug HUD
     m_debugHUD = std::make_unique<DebugHUD>();

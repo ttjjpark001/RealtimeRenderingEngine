@@ -90,6 +90,10 @@ bool Win32Menu::Initialize(HWND hwnd)
     AppendMenuW(m_optimMenu, MF_STRING | MF_CHECKED, ID_OPTIM_CSM,            L"CSM (Cascaded Shadow Maps)");
     AppendMenuW(m_optimMenu, MF_STRING,              ID_OPTIM_CSM_DEBUG,      L"CSM Debug View");
     AppendMenuW(m_optimMenu, MF_STRING,              ID_OPTIM_PCSS,           L"PCSS (Soft Shadows)");
+    AppendMenuW(m_optimMenu, MF_SEPARATOR,           0,                       nullptr);
+    AppendMenuW(m_optimMenu, MF_STRING,              ID_OPTIM_PCSS_SIZE_SMALL,  L"PCSS Light Size: Small (0.5x)");
+    AppendMenuW(m_optimMenu, MF_STRING | MF_CHECKED, ID_OPTIM_PCSS_SIZE_NORMAL, L"PCSS Light Size: Normal (1.0x)");
+    AppendMenuW(m_optimMenu, MF_STRING,              ID_OPTIM_PCSS_SIZE_LARGE,  L"PCSS Light Size: Large (2.0x)");
     AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_optimMenu), L"Optimization");
 
     SetMenu(hwnd, m_menuBar);
@@ -292,6 +296,21 @@ bool Win32Menu::HandleCommand(WPARAM wParam)
         CheckMenuItem(m_optimMenu, ID_OPTIM_PCSS,
             MF_BYCOMMAND | ((state & MF_CHECKED) ? MF_UNCHECKED : MF_CHECKED));
         if (m_pcssToggleCallback) m_pcssToggleCallback();
+        return true;
+    }
+
+    case ID_OPTIM_PCSS_SIZE_SMALL:
+    case ID_OPTIM_PCSS_SIZE_NORMAL:
+    case ID_OPTIM_PCSS_SIZE_LARGE:
+    {
+        CheckMenuRadioItem(m_optimMenu,
+            ID_OPTIM_PCSS_SIZE_SMALL, ID_OPTIM_PCSS_SIZE_LARGE, id, MF_BYCOMMAND);
+        if (m_pcssLightSizeCallback)
+        {
+            float mult = (id == ID_OPTIM_PCSS_SIZE_SMALL) ? 0.5f
+                       : (id == ID_OPTIM_PCSS_SIZE_LARGE) ? 2.0f : 1.0f;
+            m_pcssLightSizeCallback(mult);
+        }
         return true;
     }
 

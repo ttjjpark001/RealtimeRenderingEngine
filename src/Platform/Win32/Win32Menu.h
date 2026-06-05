@@ -47,6 +47,9 @@ constexpr UINT ID_OPTIM_OCCLUSION_CULL   = 8005;
 constexpr UINT ID_OPTIM_CSM              = 8006;
 constexpr UINT ID_OPTIM_CSM_DEBUG        = 8007;
 constexpr UINT ID_OPTIM_PCSS             = 8008;
+constexpr UINT ID_OPTIM_PCSS_SIZE_SMALL  = 8009;
+constexpr UINT ID_OPTIM_PCSS_SIZE_NORMAL = 8010;
+constexpr UINT ID_OPTIM_PCSS_SIZE_LARGE  = 8011;
 
 class Win32Menu
 {
@@ -71,6 +74,7 @@ public:
     using CSMToggleCallback              = std::function<void()>;
     using CSMDebugToggleCallback         = std::function<void()>;
     using PCSSToggleCallback             = std::function<void()>;
+    using PCSSLightSizeCallback          = std::function<void(float multiplier)>;
 
     Win32Menu() = default;
     ~Win32Menu() = default;
@@ -99,6 +103,7 @@ public:
     void SetCSMToggleCallback(CSMToggleCallback cb)                     { m_csmToggleCallback = std::move(cb); }
     void SetCSMDebugToggleCallback(CSMDebugToggleCallback cb)           { m_csmDebugToggleCallback = std::move(cb); }
     void SetPCSSToggleCallback(PCSSToggleCallback cb)                   { m_pcssToggleCallback = std::move(cb); }
+    void SetPCSSLightSizeCallback(PCSSLightSizeCallback cb)             { m_pcssLightSizeCallback = std::move(cb); }
 
 private:
     HWND m_hwnd = nullptr;
@@ -130,6 +135,7 @@ private:
     CSMToggleCallback              m_csmToggleCallback;
     CSMDebugToggleCallback         m_csmDebugToggleCallback;
     PCSSToggleCallback             m_pcssToggleCallback;
+    PCSSLightSizeCallback          m_pcssLightSizeCallback;
 };
 
 } // namespace RRE
