@@ -163,7 +163,8 @@ Part A — Point Light Cube Map Shadow, Part B — CSM, Part C — PCSS.
     - Optimization 메뉴에 "PCSS" on/off 토글 추가 (ID_OPTIM_PCSS 신규 정의)
       off 시: 기존 PCF 3×3 고정 커널 폴백
     - DebugHUD에 Shadow Mode 표시 (PCF 3×3 / PCSS)
-    - lightSize 파라미터를 런타임 조절 가능하도록 Shadow 메뉴에 노출
+    - lightSize 파라미터를 Optimization 메뉴에 Small(0.5×) / Normal(1.0×) / Large(2.0×) 프리셋으로 노출
+      (별도 Shadow 메뉴 대신 Optimization 메뉴에 통합)
 
 빌드하여 모든 테스트가 통과하고 다음을 확인하라:
 - Sponza: 횃불 위치(castShadow=true Point light) 구면 그림자 정상 렌더링
