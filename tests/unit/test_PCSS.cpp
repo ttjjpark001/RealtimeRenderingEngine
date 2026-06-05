@@ -121,8 +121,10 @@ TEST(PCSS_ShadowConstants, FieldOffsets_MatchHLSLLayout)
 {
     // After cameraForward(12) + _padFwd(4) at offset 544 → row ends at 560
     // pcssEnabled(4) at 560, lightSize(4) at 564, _padPCSS[2](8) at 568
-    EXPECT_EQ(offsetof(ShadowConstants, pcssEnabled), 560u);
-    EXPECT_EQ(offsetof(ShadowConstants, lightSize),   564u);
+    EXPECT_EQ(offsetof(ShadowConstants, pcssEnabled),        560u);
+    EXPECT_EQ(offsetof(ShadowConstants, lightSize),          564u);
+    EXPECT_EQ(offsetof(ShadowConstants, cubeShadowFarPlane), 568u);
+    EXPECT_EQ(offsetof(ShadowConstants, shadowNearNorm),     572u);
 }
 
 TEST(PCSS_ShadowConstants, LightSize_DefaultIsZero)
