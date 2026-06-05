@@ -73,6 +73,8 @@ bool Win32Menu::Initialize(HWND hwnd)
     AppendMenuW(m_renderMenu, MF_STRING, ID_RENDER_BASECOLOR, L"Base Color Only");
     AppendMenuW(m_renderMenu, MF_STRING, ID_RENDER_FULL_PBR, L"Full PBR");
     AppendMenuW(m_renderMenu, MF_STRING, ID_RENDER_FULL_PBR_SHADOW, L"Full PBR + Shadows");
+    AppendMenuW(m_renderMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m_renderMenu, MF_STRING, ID_RENDER_CSM_DEBUG, L"CSM Cascade Debug View");
     AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_renderMenu), L"Render");
 
     // Default check: Full PBR + Shadows
@@ -88,7 +90,6 @@ bool Win32Menu::Initialize(HWND hwnd)
     AppendMenuW(m_optimMenu, MF_STRING | MF_CHECKED,  ID_OPTIM_OCCLUSION_CULL, L"Occlusion Culling (Hi-Z)");
     AppendMenuW(m_optimMenu, MF_SEPARATOR,           0,                       nullptr);
     AppendMenuW(m_optimMenu, MF_STRING | MF_CHECKED, ID_OPTIM_CSM,            L"CSM (Cascaded Shadow Maps)");
-    AppendMenuW(m_optimMenu, MF_STRING,              ID_OPTIM_CSM_DEBUG,      L"CSM Debug View");
     AppendMenuW(m_optimMenu, MF_STRING | MF_CHECKED,  ID_OPTIM_PCSS,           L"PCSS (Soft Shadows)");
     AppendMenuW(m_optimMenu, MF_SEPARATOR,           0,                       nullptr);
     AppendMenuW(m_optimMenu, MF_STRING,              ID_OPTIM_PCSS_SIZE_SMALL,  L"PCSS Light Size: Small (0.5x)");
@@ -281,10 +282,10 @@ bool Win32Menu::HandleCommand(WPARAM wParam)
         return true;
     }
 
-    case ID_OPTIM_CSM_DEBUG:
+    case ID_RENDER_CSM_DEBUG:
     {
-        UINT state = GetMenuState(m_optimMenu, ID_OPTIM_CSM_DEBUG, MF_BYCOMMAND);
-        CheckMenuItem(m_optimMenu, ID_OPTIM_CSM_DEBUG,
+        UINT state = GetMenuState(m_renderMenu, ID_RENDER_CSM_DEBUG, MF_BYCOMMAND);
+        CheckMenuItem(m_renderMenu, ID_RENDER_CSM_DEBUG,
             MF_BYCOMMAND | ((state & MF_CHECKED) ? MF_UNCHECKED : MF_CHECKED));
         if (m_csmDebugToggleCallback) m_csmDebugToggleCallback();
         return true;

@@ -38,6 +38,7 @@ constexpr UINT ID_RENDER_SOLID           = 7002;
 constexpr UINT ID_RENDER_BASECOLOR       = 7003;
 constexpr UINT ID_RENDER_FULL_PBR        = 7004;
 constexpr UINT ID_RENDER_FULL_PBR_SHADOW = 7005;
+constexpr UINT ID_RENDER_CSM_DEBUG       = 7006;
 
 constexpr UINT ID_OPTIM_LOD              = 8001;
 constexpr UINT ID_OPTIM_FRUSTUM_CULL     = 8002;
@@ -45,7 +46,6 @@ constexpr UINT ID_OPTIM_LIGHT_CULL       = 8003;
 constexpr UINT ID_OPTIM_MIPMAP           = 8004;
 constexpr UINT ID_OPTIM_OCCLUSION_CULL   = 8005;
 constexpr UINT ID_OPTIM_CSM              = 8006;
-constexpr UINT ID_OPTIM_CSM_DEBUG        = 8007;
 constexpr UINT ID_OPTIM_PCSS             = 8008;
 constexpr UINT ID_OPTIM_PCSS_SIZE_SMALL  = 8009;
 constexpr UINT ID_OPTIM_PCSS_SIZE_NORMAL = 8010;
