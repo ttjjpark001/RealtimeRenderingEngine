@@ -97,7 +97,7 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
    - LightCuller와 연동: shadow casting Point light도 거리 기반 culling 적용
    - DebugHUD에 Cube Shadow Pass 수 표시
 
-#### Part B: CSM (Cascaded Shadow Maps)
+#### Part B: CSM (Cascaded Shadow Maps) ✅
 
 6. **Cascade Frustum 분할**:
    - 카메라 Frustum을 N=3 구간으로 분할 (near→c0→c1→far)
@@ -116,7 +116,7 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
    - 인접 cascade 경계 blend band: PCF 비율 보간으로 경계선 제거
    - 디버그 뷰: cascade 색상 시각화 (cascade 0=적, 1=녹, 2=청)
 
-#### Part C: PCSS (Percentage Closer Soft Shadows)
+#### Part C: PCSS (Percentage Closer Soft Shadows) ✅
 
 9. **Blocker Search**:
    - 픽셀 주변 Shadow Map을 searchWidth 반경으로 샘플링 → 차폐 텍셀 평균 depth(d_blocker) 계산
@@ -137,7 +137,7 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 
 **완료 기준**: Point Light Cube Map 구면 그림자 동작(Sponza 횃불 확인), CSM 3 cascade 전환 디버그 색상 시각화 확인(Bistro 원거리 그림자 품질 개선), PCSS on/off 시 접촉 경화 그림자 비교 가능, Spot Light 그림자 정상 렌더링
 
-#### Part D: Spot Light Shadow
+#### Part D: Spot Light Shadow ✅
 
 13. **Perspective 투영 Shadow Map**:
     - `castShadow = true`인 Spot Light에 대해 기존 Texture2D Shadow Map 슬롯 재사용
