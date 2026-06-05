@@ -202,6 +202,17 @@
       <Outputs>$(OutDir)Shaders\ShadowDepth_VS.cso</Outputs>
       <Message>Compiling ShadowDepth HLSL shader (VS only)...</Message>
     </CustomBuild>
+    <CustomBuild Include="Shaders\CubeShadowDepth.hlsl">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">if not exist "$(OutDir)Shaders" mkdir "$(OutDir)Shaders"
+"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T vs_5_1 /E VSMain /Zi /Od /Fo "$(OutDir)Shaders\CubeShadowDepth_VS.cso" "%(FullPath)"
+"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T ps_5_1 /E PSMain /Zi /Od /Fo "$(OutDir)Shaders\CubeShadowDepth_PS.cso" "%(FullPath)"</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">if not exist "$(OutDir)Shaders" mkdir "$(OutDir)Shaders"
+"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T vs_5_1 /E VSMain /O2 /Fo "$(OutDir)Shaders\CubeShadowDepth_VS.cso" "%(FullPath)"
+"$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\fxc.exe" /nologo /T ps_5_1 /E PSMain /O2 /Fo "$(OutDir)Shaders\CubeShadowDepth_PS.cso" "%(FullPath)"</Command>
+      <Outputs>$(OutDir)Shaders\CubeShadowDepth_VS.cso;$(OutDir)Shaders\CubeShadowDepth_PS.cso</Outputs>
+      <Message>Compiling CubeShadowDepth HLSL shaders (VS + PS)...</Message>
+    </CustomBuild>
     <CustomBuild Include="Shaders\Wireframe.hlsl">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">if not exist "$(OutDir)Shaders" mkdir "$(OutDir)Shaders"

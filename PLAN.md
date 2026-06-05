@@ -65,8 +65,8 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 - Optimization 메뉴 PCSS on/off(8008) 토글, DebugHUD Shadow Mode 표시 (PCF/PCSS)
 - 유닛 테스트 12개 (PenumbraWidth 5, FilterRadius 4, ShadowConstants 3) — Debug/Release 모두 통과
 
-#### Part A: Point Light Cube Map Shadow
-> **Part A 작업 시 함께 처리할 항목 (Part C 미완 사항)**:
+#### Part A: Point Light Cube Map Shadow ✅
+> ~~Part A 작업 시 함께 처리할 항목~~: 완료됨
 > - PCSS Blocker Search 반경을 perspective-aware 공식으로 교체:
 >   `searchWidth = lightSize × (receiver_depth - nearPlane) / receiver_depth`
 >   (현재: `lightSize * shadowTexelSize` 고정 — Point Light perspective 투영 시 필요)

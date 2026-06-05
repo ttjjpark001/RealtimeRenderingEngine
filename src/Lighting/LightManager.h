@@ -33,14 +33,22 @@ public:
     LightConstants BuildFilteredLightConstants(
         const std::vector<uint32_t>& activeIndices) const;
 
-    // Get count of shadow-casting lights (after the most recent Build*Constants call)
-    uint32 GetShadowCasterCount() const { return m_shadowCasterCount; }
+    // Texture2D shadow casters (Directional/Spot)
+    uint32 GetShadowCasterCount() const      { return m_shadowCasterCount; }
+    // TextureCube shadow casters (Point light)
+    uint32 GetPointShadowCasterCount() const { return m_pointShadowCasterCount; }
 
-    void Clear() { m_lights.clear(); m_shadowCasterCount = 0; }
+    void Clear()
+    {
+        m_lights.clear();
+        m_shadowCasterCount = 0;
+        m_pointShadowCasterCount = 0;
+    }
 
 private:
     std::vector<Light> m_lights;
-    mutable uint32 m_shadowCasterCount = 0;
+    mutable uint32 m_shadowCasterCount      = 0;
+    mutable uint32 m_pointShadowCasterCount = 0;
 };
 
 } // namespace RRE

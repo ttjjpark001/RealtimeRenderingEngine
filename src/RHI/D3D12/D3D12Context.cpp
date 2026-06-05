@@ -362,10 +362,16 @@ void D3D12Context::Shutdown()
     m_pipelineState.Shutdown();
     m_depthBuffer.Reset();
 
-    // Release shadow map resources
+    // Release shadow map resources (Directional/Spot)
     for (uint32 i = 0; i < MAX_SHADOW_MAPS; i++)
         m_shadowMaps[i].Reset();
     m_shadowMapsCreated = false;
+
+    // Release cube shadow map resources (Point light)
+    for (uint32 i = 0; i < MAX_POINT_SHADOW_LIGHTS; i++)
+        m_cubeShadowMaps[i].Reset();
+    m_cubeShadowDepthBuffer.Reset();
+    m_cubeShadowMapsCreated = false;
 
     // Release instance pool
     if (m_instancePool && m_instancePoolMapped)
@@ -581,7 +587,8 @@ static void BindAndDrawPBR(
     const LightConstants&, const ShadowConstants&,
     Material*, TextureCache*, int, bool,
     ID3D12PipelineState*, ID3D12RootSignature*,
-    const D3D12_CPU_DESCRIPTOR_HANDLE[8], bool);
+    const D3D12_CPU_DESCRIPTOR_HANDLE[8], bool,
+    const D3D12_CPU_DESCRIPTOR_HANDLE[4], bool);
 
 void D3D12Context::DrawPrimitivesWireframe(IRHIBuffer* vb, IRHIBuffer* ib,
     const DirectX::XMFLOAT4X4& worldMatrix)
@@ -684,7 +691,8 @@ void D3D12Context::DrawPrimitivesPBRInstanced(IRHIBuffer* vb, IRHIBuffer* ib,
         material, textureCache,
         m_renderModeInt, m_mipMappingEnabled,
         pso, m_pipelineState.GetRootSignature(),
-        m_shadowSrvCpu, m_shadowMapsCreated);
+        m_shadowSrvCpu, m_shadowMapsCreated,
+        m_cubeShadowSrvCpu, m_cubeShadowMapsCreated);
 }
 
 void D3D12Context::SetShadowMapSize(uint32 size)
@@ -769,6 +777,220 @@ void D3D12Context::CreateShadowMaps()
 
     m_shadowSrvsAllocated = true;
     m_shadowMapsCreated = true;
+}
+
+void D3D12Context::CreateCubeShadowMaps()
+{
+    if (m_cubeShadowMapsCreated || !m_device) return;
+
+    // RTV heap: MAX_POINT_SHADOW_LIGHTS × CUBE_FACES = 24 descriptors
+    m_cubeShadowRtvHeap.Initialize(m_device,
+        D3D12_DESCRIPTOR_HEAP_TYPE_RTV, MAX_POINT_SHADOW_LIGHTS * CUBE_FACES);
+
+    // DSV heap: 1 shared depth buffer
+    m_cubeShadowDsvHeap.Initialize(m_device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1);
+
+    const uint32 size = m_cubeShadowMapSize;
+
+    // Shared depth buffer (D32_FLOAT) for correct occlusion during face rendering
+    {
+        D3D12_RESOURCE_DESC d = {};
+        d.Dimension          = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        d.Width = d.Height   = size;
+        d.DepthOrArraySize   = 1;
+        d.MipLevels          = 1;
+        d.Format             = DXGI_FORMAT_D32_FLOAT;
+        d.SampleDesc.Count   = 1;
+        d.Flags              = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+        D3D12_CLEAR_VALUE cv = {};
+        cv.Format            = DXGI_FORMAT_D32_FLOAT;
+        cv.DepthStencil.Depth = 1.0f;
+
+        D3D12_HEAP_PROPERTIES hp = {};
+        hp.Type = D3D12_HEAP_TYPE_DEFAULT;
+        m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &d,
+            D3D12_RESOURCE_STATE_DEPTH_WRITE, &cv,
+            IID_PPV_ARGS(&m_cubeShadowDepthBuffer));
+
+        D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
+        dsvDesc.Format        = DXGI_FORMAT_D32_FLOAT;
+        dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+        m_device->CreateDepthStencilView(m_cubeShadowDepthBuffer.Get(),
+            &dsvDesc, m_cubeShadowDsvHeap.GetCPUStart());
+    }
+
+    for (uint32 li = 0; li < MAX_POINT_SHADOW_LIGHTS; li++)
+    {
+        // TEXTURE2D_ARRAY with 6 slices, R32_FLOAT color (linear depth output)
+        D3D12_RESOURCE_DESC texDesc = {};
+        texDesc.Dimension          = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        texDesc.Width = texDesc.Height = size;
+        texDesc.DepthOrArraySize   = CUBE_FACES;
+        texDesc.MipLevels          = 1;
+        texDesc.Format             = DXGI_FORMAT_R32_FLOAT;
+        texDesc.SampleDesc.Count   = 1;
+        texDesc.Flags              = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+        D3D12_CLEAR_VALUE cv = {};
+        cv.Format            = DXGI_FORMAT_R32_FLOAT;
+        cv.Color[0]          = 1.0f;  // max linear depth
+
+        D3D12_HEAP_PROPERTIES hp = {};
+        hp.Type = D3D12_HEAP_TYPE_DEFAULT;
+        HRESULT hr = m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE,
+            &texDesc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, &cv,
+            IID_PPV_ARGS(&m_cubeShadowMaps[li]));
+        if (FAILED(hr)) return;
+
+        // 6 RTVs, one per face
+        for (uint32 face = 0; face < CUBE_FACES; face++)
+        {
+            D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
+            rtvDesc.Format                           = DXGI_FORMAT_R32_FLOAT;
+            rtvDesc.ViewDimension                    = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
+            rtvDesc.Texture2DArray.MipSlice          = 0;
+            rtvDesc.Texture2DArray.FirstArraySlice   = face;
+            rtvDesc.Texture2DArray.ArraySize         = 1;
+            m_cubeShadowRtvCpu[li][face] = m_cubeShadowRtvHeap.Allocate();
+            m_device->CreateRenderTargetView(
+                m_cubeShadowMaps[li].Get(), &rtvDesc, m_cubeShadowRtvCpu[li][face]);
+        }
+
+        // TextureCube SRV (persistent, allocated once)
+        if (!m_cubeShadowSrvsAllocated)
+        {
+            m_cubeShadowSrvCpu[li] = m_cbvSrvHeap.AllocatePersistent();
+            m_cubeShadowSrvGpu[li] = m_cbvSrvHeap.GetGPUHandleForCPU(m_cubeShadowSrvCpu[li]);
+        }
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+        srvDesc.Format                        = DXGI_FORMAT_R32_FLOAT;
+        srvDesc.ViewDimension                 = D3D12_SRV_DIMENSION_TEXTURECUBE;
+        srvDesc.Shader4ComponentMapping       = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.TextureCube.MipLevels         = 1;
+        m_device->CreateShaderResourceView(
+            m_cubeShadowMaps[li].Get(), &srvDesc, m_cubeShadowSrvCpu[li]);
+    }
+
+    m_cubeShadowSrvsAllocated = true;
+    m_cubeShadowMapsCreated   = true;
+}
+
+void D3D12Context::RecreateCubeShadowMaps()
+{
+    for (uint32 li = 0; li < MAX_POINT_SHADOW_LIGHTS; li++)
+        m_cubeShadowMaps[li].Reset();
+    m_cubeShadowDepthBuffer.Reset();
+    m_cubeShadowMapsCreated = false;
+    CreateCubeShadowMaps();
+}
+
+void D3D12Context::BeginCubeShadowPass(uint32 lightIdx, uint32 faceIdx)
+{
+    if (lightIdx >= MAX_POINT_SHADOW_LIGHTS || faceIdx >= CUBE_FACES
+        || !m_cubeShadowMapsCreated || !m_pipelineState.HasCubeShadowDepthPSO())
+        return;
+
+    // Transition this array slice: PIXEL_SHADER_RESOURCE → RENDER_TARGET
+    D3D12_RESOURCE_BARRIER barrier = {};
+    barrier.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource   = m_cubeShadowMaps[lightIdx].Get();
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    barrier.Transition.StateAfter  = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    barrier.Transition.Subresource = faceIdx;  // individual array slice
+    m_commandList->ResourceBarrier(1, &barrier);
+
+    D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_cubeShadowRtvCpu[lightIdx][faceIdx];
+    D3D12_CPU_DESCRIPTOR_HANDLE dsv = m_cubeShadowDsvHeap.GetCPUStart();
+
+    float clearColor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    m_commandList->ClearRenderTargetView(rtv, clearColor, 0, nullptr);
+    m_commandList->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+    m_commandList->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+
+    D3D12_VIEWPORT viewport = {};
+    viewport.Width = viewport.Height = static_cast<float>(m_cubeShadowMapSize);
+    viewport.MaxDepth = 1.0f;
+    m_commandList->RSSetViewports(1, &viewport);
+
+    D3D12_RECT scissor = {};
+    scissor.right = scissor.bottom = static_cast<LONG>(m_cubeShadowMapSize);
+    m_commandList->RSSetScissorRects(1, &scissor);
+
+    m_commandList->SetPipelineState(m_pipelineState.GetCubeShadowDepthPSO());
+    m_commandList->SetGraphicsRootSignature(m_pipelineState.GetRootSignature());
+    ID3D12DescriptorHeap* heaps[] = { m_cbvSrvHeap.GetHeap() };
+    m_commandList->SetDescriptorHeaps(1, heaps);
+    m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+}
+
+void D3D12Context::EndCubeShadowPass(uint32 lightIdx, uint32 faceIdx)
+{
+    if (lightIdx >= MAX_POINT_SHADOW_LIGHTS || faceIdx >= CUBE_FACES
+        || !m_cubeShadowMapsCreated)
+        return;
+
+    D3D12_RESOURCE_BARRIER barrier = {};
+    barrier.Type                   = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource   = m_cubeShadowMaps[lightIdx].Get();
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    barrier.Transition.StateAfter  = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    barrier.Transition.Subresource = faceIdx;
+    m_commandList->ResourceBarrier(1, &barrier);
+}
+
+void D3D12Context::DrawCubeShadowDepth(IRHIBuffer* vb, IRHIBuffer* ib,
+    const DirectX::XMFLOAT4X4& worldMatrix,
+    const DirectX::XMFLOAT4X4& lightViewProj,
+    const DirectX::XMFLOAT3& lightPos, float farPlane)
+{
+    DrawCubeShadowDepthInstanced(vb, ib, &worldMatrix, 1, lightViewProj, lightPos, farPlane);
+}
+
+void D3D12Context::DrawCubeShadowDepthInstanced(IRHIBuffer* vb, IRHIBuffer* ib,
+    const DirectX::XMFLOAT4X4* worlds, uint32 instanceCount,
+    const DirectX::XMFLOAT4X4& lightViewProj,
+    const DirectX::XMFLOAT3& lightPos, float farPlane)
+{
+    if (!vb || !ib || !m_pipelineState.HasCubeShadowDepthPSO() || instanceCount == 0) return;
+
+    auto* d3dVB = static_cast<D3D12Buffer*>(vb);
+    auto* d3dIB = static_cast<D3D12Buffer*>(ib);
+
+    InstanceAlloc inst = AllocateInstanceBuffer(instanceCount);
+    if (!inst.cpuPtr) return;
+    memcpy(inst.cpuPtr, worlds, instanceCount * sizeof(DirectX::XMFLOAT4X4));
+
+    CubeShadowPassConstants cb = {};
+    cb.lightViewProj = lightViewProj;
+    cb.lightPos      = lightPos;
+    cb.farPlane      = farPlane;
+
+    CBAllocation cbAlloc = m_cbPool.Allocate(sizeof(CubeShadowPassConstants));
+    if (!cbAlloc.cpuPtr) return;
+    memcpy(cbAlloc.cpuPtr, &cb, sizeof(cb));
+
+    D3D12_CPU_DESCRIPTOR_HANDLE cbvCpu = m_cbvSrvHeap.AllocateTransient();
+    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
+    cbvDesc.BufferLocation = cbAlloc.gpuAddress;
+    cbvDesc.SizeInBytes    = (sizeof(CubeShadowPassConstants) + 255) & ~255;
+    m_device->CreateConstantBufferView(&cbvDesc, cbvCpu);
+
+    m_commandList->SetGraphicsRootDescriptorTable(0, m_cbvSrvHeap.GetGPUHandleForCPU(cbvCpu));
+
+    D3D12_VERTEX_BUFFER_VIEW vbView = d3dVB->GetVertexBufferView();
+    m_commandList->IASetVertexBuffers(0, 1, &vbView);
+
+    D3D12_VERTEX_BUFFER_VIEW ibufView = {};
+    ibufView.BufferLocation = inst.gpuAddr;
+    ibufView.SizeInBytes    = instanceCount * 64u;
+    ibufView.StrideInBytes  = 64u;
+    m_commandList->IASetVertexBuffers(1, 1, &ibufView);
+
+    D3D12_INDEX_BUFFER_VIEW ibView = d3dIB->GetIndexBufferView();
+    m_commandList->IASetIndexBuffer(&ibView);
+    uint32 indexCount = d3dIB->GetSize() / sizeof(uint32);
+    m_commandList->DrawIndexedInstanced(indexCount, instanceCount, 0, 0, 0);
 }
 
 void D3D12Context::BeginShadowPass(uint32 shadowIndex)
@@ -1056,7 +1278,9 @@ static void BindAndDrawPBR(
     ID3D12PipelineState*        pso,
     ID3D12RootSignature*        rootSig,
     const D3D12_CPU_DESCRIPTOR_HANDLE shadowSrvCpu[8],
-    bool                        shadowMapsCreated)
+    bool                        shadowMapsCreated,
+    const D3D12_CPU_DESCRIPTOR_HANDLE cubeShadowSrvCpu[4],
+    bool                        cubeShadowMapsCreated)
 {
     // CB0: PerObjectPBR (viewProj + camPos — world is in instance buffer)
     CBAllocation cb0 = cbPool.Allocate(sizeof(PerObjectPBR));
@@ -1182,12 +1406,37 @@ static void BindAndDrawPBR(
     ID3D12DescriptorHeap* heaps[] = { cbvSrvHeap.GetHeap() };
     cmdList->SetDescriptorHeaps(1, heaps);
 
+    // --- 4 contiguous cube shadow map SRV descriptors (t13~t16) ---
+    D3D12_CPU_DESCRIPTOR_HANDLE cubeSrvBlockCpu = cbvSrvHeap.AllocateTransient();
+    D3D12_GPU_DESCRIPTOR_HANDLE cubeSrvBlockGpu = cbvSrvHeap.GetGPUHandleForCPU(cubeSrvBlockCpu);
+    for (int i = 1; i < 4; i++) cbvSrvHeap.AllocateTransient();
+
+    for (uint32 i = 0; i < 4; i++)
+    {
+        D3D12_CPU_DESCRIPTOR_HANDLE dst = cubeSrvBlockCpu;
+        dst.ptr += static_cast<SIZE_T>(i) * cbvDescSize;
+        if (cubeShadowMapsCreated && cubeShadowSrvCpu[i].ptr)
+        {
+            device->CopyDescriptorsSimple(1, dst, cubeShadowSrvCpu[i], D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        }
+        else
+        {
+            D3D12_SHADER_RESOURCE_VIEW_DESC nullSrv = {};
+            nullSrv.Format                    = DXGI_FORMAT_R32_FLOAT;
+            nullSrv.ViewDimension             = D3D12_SRV_DIMENSION_TEXTURECUBE;
+            nullSrv.Shader4ComponentMapping   = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            nullSrv.TextureCube.MipLevels     = 1;
+            device->CreateShaderResourceView(nullptr, &nullSrv, dst);
+        }
+    }
+
     cmdList->SetGraphicsRootDescriptorTable(0, cbv0Gpu);
     cmdList->SetGraphicsRootDescriptorTable(1, srvBlockGpu);
     cmdList->SetGraphicsRootDescriptorTable(2, cbv1Gpu);
     cmdList->SetGraphicsRootDescriptorTable(3, cbv2Gpu);
     cmdList->SetGraphicsRootDescriptorTable(4, shadowSrvBlockGpu);
     cmdList->SetGraphicsRootDescriptorTable(5, cbv3Gpu);
+    cmdList->SetGraphicsRootDescriptorTable(6, cubeSrvBlockGpu);
 
     // --- IA: vertex buffer (slot 0) + instance buffer (slot 1) ---
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);

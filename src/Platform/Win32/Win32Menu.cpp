@@ -89,7 +89,7 @@ bool Win32Menu::Initialize(HWND hwnd)
     AppendMenuW(m_optimMenu, MF_SEPARATOR,           0,                       nullptr);
     AppendMenuW(m_optimMenu, MF_STRING | MF_CHECKED, ID_OPTIM_CSM,            L"CSM (Cascaded Shadow Maps)");
     AppendMenuW(m_optimMenu, MF_STRING,              ID_OPTIM_CSM_DEBUG,      L"CSM Debug View");
-    AppendMenuW(m_optimMenu, MF_STRING,              ID_OPTIM_PCSS,           L"PCSS (Soft Shadows)");
+    AppendMenuW(m_optimMenu, MF_STRING | MF_CHECKED,  ID_OPTIM_PCSS,           L"PCSS (Soft Shadows)");
     AppendMenuW(m_optimMenu, MF_SEPARATOR,           0,                       nullptr);
     AppendMenuW(m_optimMenu, MF_STRING,              ID_OPTIM_PCSS_SIZE_SMALL,  L"PCSS Light Size: Small (0.5x)");
     AppendMenuW(m_optimMenu, MF_STRING | MF_CHECKED, ID_OPTIM_PCSS_SIZE_NORMAL, L"PCSS Light Size: Normal (1.0x)");

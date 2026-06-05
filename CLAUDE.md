@@ -363,4 +363,14 @@ glTF/GLB/FBX 씬을 엔진 전용 바이너리(`.rrscene`)로 변환하여 이�
 - Optimization 메뉴 ID_OPTIM_PCSS(8008) 연동, DebugHUD Shadow Mode 표시 (PCF/PCSS)
 - 유닛 테스트 12개 (tests/unit/test_PCSS.cpp) — Debug/Release 모두 통과
 
-**다음 구현 대상**: Phase 33 Part A — Point Light Cube Map Shadow
+**Phase 33 Part A 완료**: Point Light Cube Map Shadow
+- TextureCube(TEXTURE2D_ARRAY × 4, R32_FLOAT) + DSV/SRV 생성
+- CubeShadowDepth.hlsl: 선형 depth(dist/farPlane) 출력 VS+PS
+- 6-pass 렌더링 (D3D12 TextureCube face 순서: +X/-X/+Y/-Y/+Z/-Z)
+- Root Signature param 6 (t13~t16) 추가, DrawPBR 내부 바인딩 확장
+- GPULightData.shadowType (0=Texture2D, 1=TextureCube) 추가
+- HLSL: SamplePointShadow + shadow 분기 (Point/Directional/Spot)
+- PCSS 기본값 ON, DebugHUD Cube Shadow Pass 수 표시
+- 유닛 테스트 13개 (test_PointShadow.cpp) — Debug/Release 모두 통과
+
+**다음 구현 대상**: Phase 34 — Skeletal Animation

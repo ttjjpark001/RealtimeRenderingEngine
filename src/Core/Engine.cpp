@@ -435,7 +435,9 @@ void Engine::Update(float deltaTime)
             if (modeIdx >= 0 && modeIdx <= 4)
                 stats.renderModeName = modeNames[modeIdx];
 
-            stats.shadowModeName = m_renderer->IsPCSSEnabled() ? "PCSS" : "PCF";
+            stats.shadowModeName    = m_renderer->IsPCSSEnabled() ? "PCSS" : "PCF";
+            stats.cubeShadowPasses  = m_lightManager
+                ? m_lightManager->GetPointShadowCasterCount() * 6 : 0;
 
             // Culling / LOD statistics (Phase 23)
             CullStats cs = m_renderer->GetLastCullStats();

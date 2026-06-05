@@ -383,7 +383,68 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
                 m_context->EndShadowPass(shadowIdx);
                 shadowIdx++;
             }
-            // Point light: cube shadow not yet implemented — skip
+            else if (gpuLight.type == 1 && gpuLight.shadowType == 1)
+            {
+                // ----------------------------------------------------------------
+                // Point light — 6-pass TextureCube shadow (linear depth, R32_FLOAT)
+                // ----------------------------------------------------------------
+                uint32 cubeIdx = static_cast<uint32>(gpuLight.shadowMapIndex);
+                if (cubeIdx >= D3D12Context::MAX_POINT_SHADOW_LIGHTS) continue;
+
+                m_context->CreateCubeShadowMaps();
+
+                XMVECTOR lightPos = XMLoadFloat3(&gpuLight.position);
+                XMFLOAT3 lightPosF;
+                XMStoreFloat3(&lightPosF, lightPos);
+
+                float farPlane  = m_sceneDiagonal * 3.0f;
+                float nearPlane = (std::max)(m_sceneDiagonal * 0.005f, 0.05f);
+                XMMATRIX proj   = XMMatrixPerspectiveFovLH(XM_PIDIV2, 1.0f, nearPlane, farPlane);
+
+                // D3D12 TextureCube face order: +X, -X, +Y, -Y, +Z, -Z
+                static const XMFLOAT3 faceDirs[6] = {
+                    {+1,0,0}, {-1,0,0}, {0,+1,0}, {0,-1,0}, {0,0,+1}, {0,0,-1}
+                };
+                static const XMFLOAT3 faceUps[6] = {
+                    {0,+1,0}, {0,+1,0}, {0,0,-1}, {0,0,+1}, {0,+1,0}, {0,+1,0}
+                };
+
+                for (uint32 face = 0; face < 6; face++)
+                {
+                    XMVECTOR fdir = XMLoadFloat3(&faceDirs[face]);
+                    XMVECTOR fup  = XMLoadFloat3(&faceUps[face]);
+                    XMMATRIX view = XMMatrixLookAtLH(lightPos, XMVectorAdd(lightPos, fdir), fup);
+                    XMMATRIX lvp  = view * proj;
+
+                    XMFLOAT4X4 lvpFloat;
+                    XMStoreFloat4x4(&lvpFloat, XMMatrixTranspose(lvp));
+
+                    FrustumCuller faceFrustum;
+                    faceFrustum.Build(view, proj);
+
+                    m_context->BeginCubeShadowPass(cubeIdx, face);
+                    graph.Traverse([this, &lvpFloat, &faceFrustum, &lightPosF, farPlane](
+                        SceneNode* node, const XMMATRIX& worldMatrix)
+                    {
+                        Mesh* mesh = node->GetMesh();
+                        if (!mesh) return;
+                        if (m_frustumCullingEnabled &&
+                            !faceFrustum.IsVisible(node->GetWorldAABB()))
+                            return;
+                        UploadMesh(mesh);
+                        auto it = m_meshCache.find(mesh);
+                        if (it == m_meshCache.end()) return;
+                        XMFLOAT4X4 worldFloat;
+                        XMStoreFloat4x4(&worldFloat, XMMatrixTranspose(worldMatrix));
+                        m_context->DrawCubeShadowDepth(
+                            it->second.vb.get(), it->second.ib.get(),
+                            worldFloat, lvpFloat, lightPosF, farPlane);
+                    });
+                    m_context->EndCubeShadowPass(cubeIdx, face);
+                }
+                shadowConst.cubeShadowFarPlane = farPlane;
+            }
+            // Unknown type — skip
         }
         shadowConst.shadowMapCount = shadowIdx;
         shadowConst.csmDebugView   = m_csmDebugView ? 1u : 0u;

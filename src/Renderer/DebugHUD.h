@@ -47,6 +47,9 @@ struct RenderStats
     // Shadow mode info (Phase 33c)
     const char* shadowModeName = "PCF";
 
+    // Cube shadow pass count (Phase 33a)
+    uint32 cubeShadowPasses = 0;
+
     // Texture streaming stats (Phase 27)
     uint64 vramUsedMB      = 0;
     uint64 vramBudgetMB    = 0;

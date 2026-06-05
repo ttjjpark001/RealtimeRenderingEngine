@@ -28,8 +28,9 @@ struct LightData
     float3 direction;
     float innerConeAngle;
     float outerConeAngle;
-    int shadowMapIndex;   // -1 = no shadow, 0~7 = shadow map index
-    float2 _pad1;         // NOTE: must be float2, NOT float[2] — HLSL array packing pads each element to 16 bytes
+    int   shadowMapIndex;  // -1=no shadow; 0~7=Texture2D idx; 0~3=TextureCube idx
+    uint  shadowType;      // 0=Texture2D (Directional/Spot), 1=TextureCube (Point)
+    float _pad1;
 };
 
 cbuffer LightsCB : register(b1)
@@ -72,7 +73,8 @@ cbuffer ShadowCB : register(b3)
     float _padFwd;
     uint  pcssEnabled;              // 1 = PCSS active, 0 = PCF 3x3 fallback
     float lightSize;                // virtual light source size (sceneDiagonal * 0.02)
-    float2 _padPCSS;
+    float cubeShadowFarPlane;       // Point light cube shadow far plane (for depth normalisation)
+    float _padPCSS;
 };
 
 // ---------------------------------------------------------------------------
@@ -93,6 +95,12 @@ Texture2D ShadowMap4 : register(t9);
 Texture2D ShadowMap5 : register(t10);
 Texture2D ShadowMap6 : register(t11);
 Texture2D ShadowMap7 : register(t12);
+
+// Point light cube shadow maps (t13~t16) — R32_FLOAT, linear depth
+TextureCube PointShadowMap0 : register(t13);
+TextureCube PointShadowMap1 : register(t14);
+TextureCube PointShadowMap2 : register(t15);
+TextureCube PointShadowMap3 : register(t16);
 
 SamplerState LinearSampler : register(s0);
 SamplerComparisonState ShadowSampler : register(s1);
@@ -332,6 +340,27 @@ static const float2 PoissonDisk[16] =
     float2( 0.14383161f, -0.14100790f),
 };
 
+// Point light omnidirectional shadow (TextureCube, linear depth comparison)
+float SamplePointShadow(uint idx, float3 lightToPixel)
+{
+    float result       = 1.0f;
+    float receiverDist = length(lightToPixel);
+    if (cubeShadowFarPlane <= 0.0f) return result;
+
+    float receiverDepth = receiverDist / cubeShadowFarPlane;
+    float3 dir          = normalize(lightToPixel);
+
+    float storedDepth = 1.0f;
+    if      (idx == 0) storedDepth = PointShadowMap0.SampleLevel(LinearSampler, dir, 0).r;
+    else if (idx == 1) storedDepth = PointShadowMap1.SampleLevel(LinearSampler, dir, 0).r;
+    else if (idx == 2) storedDepth = PointShadowMap2.SampleLevel(LinearSampler, dir, 0).r;
+    else if (idx == 3) storedDepth = PointShadowMap3.SampleLevel(LinearSampler, dir, 0).r;
+
+    float bias = 0.02f;
+    result = (storedDepth + bias < receiverDepth) ? 0.0f : 1.0f;
+    return result;
+}
+
 // Raw depth sample (no comparison) — used by blocker search
 float SampleShadowMapRaw(uint idx, float2 uv)
 {
@@ -534,26 +563,36 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
         float3 diffuse = kD * albedo / PI;
 
         float shadowFactor = 1.0f;
-        if (lights[i].shadowMapIndex >= 0 && (uint)lights[i].shadowMapIndex < shadowMapCount)
+        if (lights[i].shadowMapIndex >= 0)
         {
-            float3 shadowPos = input.worldPos + N * shadowNormalBiasWorld;
-            uint   baseIdx   = (uint)lights[i].shadowMapIndex;
+            uint baseIdx = (uint)lights[i].shadowMapIndex;
 
-            if (pcssEnabled)
+            if (lights[i].shadowType == 1)
             {
-                // PCSS — cascade-aware for Directional lights
-                uint shadowIdx = baseIdx;
-                if (csmEnabled && lights[i].type == 0)
-                {
-                    int cascadeIdx = GetCascadeIndex(input.worldPos);
-                    shadowIdx = min(baseIdx + (uint)cascadeIdx, shadowMapCount - 1);
-                }
-                shadowFactor = CalcShadowPCSS(shadowIdx, shadowPos, input.position.xy);
+                // Point light — TextureCube linear depth shadow
+                float3 lightToPixel = input.worldPos - lights[i].position;
+                shadowFactor = SamplePointShadow(baseIdx, lightToPixel);
             }
-            else if (csmEnabled && lights[i].type == 0)
-                shadowFactor = CalcShadowCSM(baseIdx, input.worldPos, shadowPos);
-            else
-                shadowFactor = CalcShadow(baseIdx, shadowPos);
+            else if ((uint)lights[i].shadowMapIndex < shadowMapCount)
+            {
+                // Directional / Spot — Texture2D PCF/CSM/PCSS
+                float3 shadowPos = input.worldPos + N * shadowNormalBiasWorld;
+
+                if (pcssEnabled)
+                {
+                    uint shadowIdx = baseIdx;
+                    if (csmEnabled && lights[i].type == 0)
+                    {
+                        int cascadeIdx = GetCascadeIndex(input.worldPos);
+                        shadowIdx = min(baseIdx + (uint)cascadeIdx, shadowMapCount - 1);
+                    }
+                    shadowFactor = CalcShadowPCSS(shadowIdx, shadowPos, input.position.xy);
+                }
+                else if (csmEnabled && lights[i].type == 0)
+                    shadowFactor = CalcShadowCSM(baseIdx, input.worldPos, shadowPos);
+                else
+                    shadowFactor = CalcShadow(baseIdx, shadowPos);
+            }
         }
 
         Lo += (diffuse + specular) * lightColor * attenuation * NdotL * shadowFactor;

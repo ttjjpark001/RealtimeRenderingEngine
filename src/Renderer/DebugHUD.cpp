@@ -77,8 +77,16 @@ void DebugHUD::Render(IRHIContext& context)
     context.DrawText(x, y, buf, green);
     y += lineHeight;
 
-    snprintf(buf, sizeof(buf), "Lights: %u active  %u culled",
-        m_lastStats.activeLights, m_lastStats.culledLights);
+    if (m_lastStats.cubeShadowPasses > 0)
+    {
+        snprintf(buf, sizeof(buf), "Lights: %u active  %u culled  CubeShadow passes: %u",
+            m_lastStats.activeLights, m_lastStats.culledLights, m_lastStats.cubeShadowPasses);
+    }
+    else
+    {
+        snprintf(buf, sizeof(buf), "Lights: %u active  %u culled",
+            m_lastStats.activeLights, m_lastStats.culledLights);
+    }
     context.DrawText(x, y, buf, green);
     y += lineHeight;
 

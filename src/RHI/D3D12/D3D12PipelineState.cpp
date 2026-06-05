@@ -38,11 +38,18 @@ bool D3D12PipelineState::Initialize(ID3D12Device* device)
     if (LoadWireframeShaders())
         CreateWireframePipelineState(device);
 
+    // Cube Shadow Depth PSO is optional
+    if (LoadCubeShadowDepthShaders())
+        CreateCubeShadowDepthPipelineState(device);
+
     return true;
 }
 
 void D3D12PipelineState::Shutdown()
 {
+    m_cubeShadowDepthPipelineState.Reset();
+    m_cubeShadowDepthVS.Reset();
+    m_cubeShadowDepthPS.Reset();
     m_wireframePipelineState.Reset();
     m_wireframeVertexShader.Reset();
     m_wireframePixelShader.Reset();
@@ -110,7 +117,15 @@ bool D3D12PipelineState::CreateRootSignature(ID3D12Device* device)
     cbvRange3.RegisterSpace = 0;
     cbvRange3.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    D3D12_ROOT_PARAMETER rootParams[6] = {};
+    // Root Parameter 6: SRV descriptor table at register t13~t16 (Cube Shadow Maps)
+    D3D12_DESCRIPTOR_RANGE cubeShadowSrvRange = {};
+    cubeShadowSrvRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    cubeShadowSrvRange.NumDescriptors = 4;
+    cubeShadowSrvRange.BaseShaderRegister = 13;  // t13~t16
+    cubeShadowSrvRange.RegisterSpace = 0;
+    cubeShadowSrvRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_ROOT_PARAMETER rootParams[7] = {};
 
     // Param 0: CBV table (b0)
     rootParams[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -148,6 +163,12 @@ bool D3D12PipelineState::CreateRootSignature(ID3D12Device* device)
     rootParams[5].DescriptorTable.pDescriptorRanges = &cbvRange3;
     rootParams[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
+    // Param 6: SRV table (t13~t16, Cube Shadow Maps)
+    rootParams[6].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParams[6].DescriptorTable.NumDescriptorRanges = 1;
+    rootParams[6].DescriptorTable.pDescriptorRanges = &cubeShadowSrvRange;
+    rootParams[6].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
     // Static samplers
     D3D12_STATIC_SAMPLER_DESC samplers[2] = {};
 
@@ -180,7 +201,7 @@ bool D3D12PipelineState::CreateRootSignature(ID3D12Device* device)
     samplers[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     D3D12_ROOT_SIGNATURE_DESC rsDesc = {};
-    rsDesc.NumParameters = 6;
+    rsDesc.NumParameters = 7;
     rsDesc.pParameters = rootParams;
     rsDesc.NumStaticSamplers = 2;
     rsDesc.pStaticSamplers = samplers;
@@ -524,6 +545,61 @@ bool D3D12PipelineState::LoadWireframeShaders()
         return false;
 
     return true;
+}
+
+bool D3D12PipelineState::LoadCubeShadowDepthShaders()
+{
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    std::wstring exeDir(exePath);
+    exeDir = exeDir.substr(0, exeDir.find_last_of(L"\\") + 1);
+
+    std::wstring vsPath = exeDir + L"Shaders\\CubeShadowDepth_VS.cso";
+    std::wstring psPath = exeDir + L"Shaders\\CubeShadowDepth_PS.cso";
+
+    HRESULT hr = D3DReadFileToBlob(vsPath.c_str(), &m_cubeShadowDepthVS);
+    if (FAILED(hr)) return false;
+
+    hr = D3DReadFileToBlob(psPath.c_str(), &m_cubeShadowDepthPS);
+    if (FAILED(hr)) return false;
+
+    return true;
+}
+
+bool D3D12PipelineState::CreateCubeShadowDepthPipelineState(ID3D12Device* device)
+{
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+    psoDesc.pRootSignature = m_rootSignature.Get();
+
+    psoDesc.VS.pShaderBytecode = m_cubeShadowDepthVS->GetBufferPointer();
+    psoDesc.VS.BytecodeLength  = m_cubeShadowDepthVS->GetBufferSize();
+    psoDesc.PS.pShaderBytecode = m_cubeShadowDepthPS->GetBufferPointer();
+    psoDesc.PS.BytecodeLength  = m_cubeShadowDepthPS->GetBufferSize();
+
+    psoDesc.InputLayout.pInputElementDescs = INSTANCED_VERTEX_INPUT_LAYOUT;
+    psoDesc.InputLayout.NumElements        = INSTANCED_VERTEX_INPUT_LAYOUT_COUNT;
+
+    psoDesc.RasterizerState.FillMode              = D3D12_FILL_MODE_SOLID;
+    psoDesc.RasterizerState.CullMode              = D3D12_CULL_MODE_BACK;
+    psoDesc.RasterizerState.FrontCounterClockwise = FALSE;
+    psoDesc.RasterizerState.DepthClipEnable       = TRUE;
+
+    psoDesc.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_RED;
+
+    psoDesc.DepthStencilState.DepthEnable    = TRUE;
+    psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+    psoDesc.DepthStencilState.DepthFunc      = D3D12_COMPARISON_FUNC_LESS;
+    psoDesc.DepthStencilState.StencilEnable  = FALSE;
+    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+
+    psoDesc.SampleMask            = UINT_MAX;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.NumRenderTargets      = 1;
+    psoDesc.RTVFormats[0]         = DXGI_FORMAT_R32_FLOAT;
+    psoDesc.SampleDesc.Count      = 1;
+
+    HRESULT hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_cubeShadowDepthPipelineState));
+    return SUCCEEDED(hr);
 }
 
 bool D3D12PipelineState::CreateWireframePipelineState(ID3D12Device* device)

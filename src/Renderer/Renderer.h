@@ -139,7 +139,7 @@ private:
     bool          m_vramPressure           = false;
     bool          m_csmEnabled             = true;
     bool          m_csmDebugView           = false;
-    bool          m_pcssEnabled            = false;
+    bool          m_pcssEnabled            = true;
     float         m_lightSizeMultiplier    = 1.0f;
     float         m_sceneDiagonal          = 10.0f;
     DirectX::XMFLOAT3 m_sceneCenter        = { 0.f, 0.f, 0.f };

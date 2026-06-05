@@ -29,6 +29,8 @@ public:
     bool HasPBRAlphaBlendDoubleSidedPSO() const { return m_pbrAlphaBlendDoubleSidedPipelineState != nullptr; }
     ID3D12PipelineState* GetWireframePSO() const { return m_wireframePipelineState.Get(); }
     bool HasWireframePSO() const { return m_wireframePipelineState != nullptr; }
+    ID3D12PipelineState* GetCubeShadowDepthPSO() const { return m_cubeShadowDepthPipelineState.Get(); }
+    bool HasCubeShadowDepthPSO() const { return m_cubeShadowDepthPipelineState != nullptr; }
 
 private:
     bool CreateRootSignature(ID3D12Device* device);
@@ -43,6 +45,8 @@ private:
     bool CreatePBRAlphaBlendDoubleSidedPipelineState(ID3D12Device* device);
     bool LoadWireframeShaders();
     bool CreateWireframePipelineState(ID3D12Device* device);
+    bool LoadCubeShadowDepthShaders();
+    bool CreateCubeShadowDepthPipelineState(ID3D12Device* device);
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rootSignature;
 
@@ -73,6 +77,11 @@ private:
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_wireframePipelineState;
     Microsoft::WRL::ComPtr<ID3DBlob> m_wireframeVertexShader;
     Microsoft::WRL::ComPtr<ID3DBlob> m_wireframePixelShader;
+
+    // Cube Shadow Depth PSO (VS+PS, R32_FLOAT color output, linear depth)
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_cubeShadowDepthPipelineState;
+    Microsoft::WRL::ComPtr<ID3DBlob> m_cubeShadowDepthVS;
+    Microsoft::WRL::ComPtr<ID3DBlob> m_cubeShadowDepthPS;
 };
 
 } // namespace RRE

@@ -75,8 +75,9 @@ struct GPULightData
     DirectX::XMFLOAT3 direction; // 12
     float innerConeAngle;         // 4
     float outerConeAngle;         // 4
-    int32 shadowMapIndex;         // 4  (-1 = no shadow, 0~7 = shadow map index)
-    float _pad1[2];               // 8
+    int32 shadowMapIndex;         // 4  (-1=no shadow, 0~7=Texture2D idx, 0~3=TextureCube idx)
+    uint32 shadowType;            // 4  (0=Texture2D Directional/Spot, 1=TextureCube Point)
+    float _pad1;                  // 4
 };  // 80 bytes per light
 
 // Lights constant buffer (b1)
@@ -125,7 +126,8 @@ struct ShadowConstants
     float _padFwd;                                        // 4
     uint32 pcssEnabled;                                   // 4   PCSS 활성 여부
     float  lightSize;                                     // 4   가상 광원 크기 (sceneDiagonal * 0.02)
-    float  _padPCSS[2];                                   // 8
+    float  cubeShadowFarPlane;                            // 4   Point light cube shadow far plane
+    float  _padPCSS;                                      // 4
 };  // Total: 576 bytes → 768 aligned (256 * 3)
 static_assert(sizeof(ShadowConstants) <= 768, "ShadowConstants exceeds 768-byte CB slot");
 
@@ -136,6 +138,15 @@ struct ShadowPassConstants
     // world is no longer stored here; supplied via per-instance vertex stream
 };  // Total: 64 bytes → 256 aligned
 static_assert(sizeof(ShadowPassConstants) <= 256, "ShadowPassConstants exceeds 256-byte CB slot");
+
+// Cube shadow depth pass CB (b0) — lightViewProj + lightPos + farPlane
+struct CubeShadowPassConstants
+{
+    DirectX::XMFLOAT4X4 lightViewProj;   // 64
+    DirectX::XMFLOAT3   lightPos;        // 12
+    float               farPlane;        // 4
+};  // Total: 80 bytes → 256 aligned
+static_assert(sizeof(CubeShadowPassConstants) <= 256, "CubeShadowPassConstants exceeds 256-byte CB slot");
 
 // Per-node AABB data uploaded to GPU for occlusion testing.
 // Matches the HLSL NodeAABB struct in OcclusionTest.hlsl.
@@ -226,24 +237,38 @@ public:
 
     // Shadow mapping methods
     void CreateShadowMaps();
-    // Set desired shadow map resolution and recreate resources (call after WaitForGPU).
-    // Size is clamped to [512, 4096] and rounded to a power of two.
     void SetShadowMapSize(uint32 size);
     uint32 GetShadowMapSize() const { return m_shadowMapSize; }
     void RecreateShadowMaps();
     void BeginShadowPass(uint32 shadowIndex);
     void EndShadowPass(uint32 shadowIndex);
-    // Restore main back-buffer RTV + DSV + viewport after all shadow passes
     void RestoreMainRenderTarget();
-    // Shadow depth — single instance (creates 1-element instance buffer internally)
     void DrawShadowDepth(IRHIBuffer* vb, IRHIBuffer* ib,
         const DirectX::XMFLOAT4X4& worldMatrix,
         const DirectX::XMFLOAT4X4& lightViewProj);
-
-    // Shadow depth — instanced batch
     void DrawShadowDepthInstanced(IRHIBuffer* vb, IRHIBuffer* ib,
         const DirectX::XMFLOAT4X4* worlds, uint32 instanceCount,
         const DirectX::XMFLOAT4X4& lightViewProj);
+
+    static constexpr uint32 MAX_POINT_SHADOW_LIGHTS = 4;
+    static constexpr uint32 CUBE_FACES              = 6;
+
+    // Point light cube shadow map methods (Phase 33a)
+    void CreateCubeShadowMaps();
+    void RecreateCubeShadowMaps();
+    uint32 GetCubeShadowMapSize() const { return m_cubeShadowMapSize; }
+    // Begin/End render pass into one face of a cube shadow map
+    void BeginCubeShadowPass(uint32 lightIdx, uint32 faceIdx);
+    void EndCubeShadowPass(uint32 lightIdx, uint32 faceIdx);
+    // Draw geometry into the active cube face (linear depth output)
+    void DrawCubeShadowDepth(IRHIBuffer* vb, IRHIBuffer* ib,
+        const DirectX::XMFLOAT4X4& worldMatrix,
+        const DirectX::XMFLOAT4X4& lightViewProj,
+        const DirectX::XMFLOAT3& lightPos, float farPlane);
+    void DrawCubeShadowDepthInstanced(IRHIBuffer* vb, IRHIBuffer* ib,
+        const DirectX::XMFLOAT4X4* worlds, uint32 instanceCount,
+        const DirectX::XMFLOAT4X4& lightViewProj,
+        const DirectX::XMFLOAT3& lightPos, float farPlane);
 
     // IRHIContext interface
     void BeginFrame() override;
@@ -343,14 +368,26 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> m_depthBuffer;
     D3D12DescriptorHeap m_dsvHeap;
 
-    // Shadow map resources
+    // Shadow map resources (Directional / Spot — Texture2D, D32_FLOAT)
     Microsoft::WRL::ComPtr<ID3D12Resource> m_shadowMaps[MAX_SHADOW_MAPS];
     D3D12DescriptorHeap m_shadowDsvHeap;
     D3D12_CPU_DESCRIPTOR_HANDLE m_shadowSrvCpu[MAX_SHADOW_MAPS] = {};
     D3D12_GPU_DESCRIPTOR_HANDLE m_shadowSrvGpu[MAX_SHADOW_MAPS] = {};
     bool m_shadowMapsCreated   = false;
-    bool m_shadowSrvsAllocated = false;  // persistent SRV slots allocated once; reused on resize
-    uint32 m_shadowMapSize     = 1024;  // runtime-configurable resolution
+    bool m_shadowSrvsAllocated = false;
+    uint32 m_shadowMapSize     = 1024;
+
+    // Point light cube shadow map resources (Phase 33a — R32_FLOAT color, linear depth)
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_cubeShadowMaps[MAX_POINT_SHADOW_LIGHTS];
+    D3D12DescriptorHeap m_cubeShadowRtvHeap;  // 24 RTVs (4 lights × 6 faces)
+    D3D12_CPU_DESCRIPTOR_HANDLE m_cubeShadowRtvCpu[MAX_POINT_SHADOW_LIGHTS][CUBE_FACES] = {};
+    D3D12_CPU_DESCRIPTOR_HANDLE m_cubeShadowSrvCpu[MAX_POINT_SHADOW_LIGHTS] = {};
+    D3D12_GPU_DESCRIPTOR_HANDLE m_cubeShadowSrvGpu[MAX_POINT_SHADOW_LIGHTS] = {};
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_cubeShadowDepthBuffer; // shared D32 depth
+    D3D12DescriptorHeap m_cubeShadowDsvHeap;  // 1 DSV
+    bool m_cubeShadowMapsCreated   = false;
+    bool m_cubeShadowSrvsAllocated = false;
+    uint32 m_cubeShadowMapSize     = 512;
 
     // Constant buffer pool (replaces fixed 16-slot CB)
     D3D12CBPool m_cbPool;

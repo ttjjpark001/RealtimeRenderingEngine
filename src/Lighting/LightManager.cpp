@@ -25,7 +25,8 @@ LightConstants LightManager::BuildLightConstants() const
         (std::min)(m_lights.size(), static_cast<size_t>(MAX_PBR_LIGHTS)));
     constants.numActiveLights = count;
 
-    uint32 shadowIdx = 0;
+    uint32 shadowIdx = 0;   // Texture2D (Directional/Spot)
+    uint32 cubeIdx   = 0;   // TextureCube (Point)
     for (uint32 i = 0; i < count; i++)
     {
         const Light& src = m_lights[i];
@@ -41,20 +42,28 @@ LightConstants LightManager::BuildLightConstants() const
         dst.direction = src.direction;
         dst.innerConeAngle = src.innerConeAngle;
         dst.outerConeAngle = src.outerConeAngle;
+        dst.shadowType = 0;
+        dst.shadowMapIndex = -1;
 
-        // Assign shadow map index for castShadow lights (max 8)
-        if (src.castShadow && shadowIdx < MAX_SHADOW_MAPS)
+        if (src.castShadow)
         {
-            dst.shadowMapIndex = static_cast<int32>(shadowIdx);
-            shadowIdx++;
-        }
-        else
-        {
-            dst.shadowMapIndex = -1;
+            if (src.type == LightType::Point && cubeIdx < 4u)
+            {
+                dst.shadowType     = 1;  // TextureCube
+                dst.shadowMapIndex = static_cast<int32>(cubeIdx);
+                cubeIdx++;
+            }
+            else if (src.type != LightType::Point && shadowIdx < MAX_SHADOW_MAPS)
+            {
+                dst.shadowType     = 0;  // Texture2D
+                dst.shadowMapIndex = static_cast<int32>(shadowIdx);
+                shadowIdx++;
+            }
         }
     }
 
-    m_shadowCasterCount = shadowIdx;
+    m_shadowCasterCount      = shadowIdx;
+    m_pointShadowCasterCount = cubeIdx;
     return constants;
 }
 
@@ -68,6 +77,7 @@ LightConstants LightManager::BuildFilteredLightConstants(
     constants.numActiveLights = count;
 
     uint32 shadowIdx = 0;
+    uint32 cubeIdx   = 0;
     for (uint32 i = 0; i < count; i++)
     {
         uint32_t srcIdx = activeIndices[i];
@@ -87,19 +97,28 @@ LightConstants LightManager::BuildFilteredLightConstants(
         dst.direction = src.direction;
         dst.innerConeAngle = src.innerConeAngle;
         dst.outerConeAngle = src.outerConeAngle;
+        dst.shadowType     = 0;
+        dst.shadowMapIndex = -1;
 
-        if (src.castShadow && shadowIdx < MAX_SHADOW_MAPS)
+        if (src.castShadow)
         {
-            dst.shadowMapIndex = static_cast<int32>(shadowIdx);
-            shadowIdx++;
-        }
-        else
-        {
-            dst.shadowMapIndex = -1;
+            if (src.type == LightType::Point && cubeIdx < 4u)
+            {
+                dst.shadowType     = 1;
+                dst.shadowMapIndex = static_cast<int32>(cubeIdx);
+                cubeIdx++;
+            }
+            else if (src.type != LightType::Point && shadowIdx < MAX_SHADOW_MAPS)
+            {
+                dst.shadowType     = 0;
+                dst.shadowMapIndex = static_cast<int32>(shadowIdx);
+                shadowIdx++;
+            }
         }
     }
 
-    m_shadowCasterCount = shadowIdx;
+    m_shadowCasterCount      = shadowIdx;
+    m_pointShadowCasterCount = cubeIdx;
     return constants;
 }
 
