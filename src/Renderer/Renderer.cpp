@@ -450,6 +450,9 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
         shadowConst.csmDebugView   = m_csmDebugView ? 1u : 0u;
         shadowConst.pcssEnabled    = m_pcssEnabled  ? 1u : 0u;
         shadowConst.lightSize      = m_sceneDiagonal * 0.02f * m_lightSizeMultiplier;
+        float shadowFarZ           = min(camera.GetFarPlane(), m_sceneDiagonal * 3.0f);
+        shadowConst.shadowNearNorm = (shadowFarZ > 0.f)
+            ? camera.GetNearPlane() / shadowFarZ : 0.f;
 
         // Restore main back-buffer RTV/DSV/viewport after all shadow passes
         m_context->RestoreMainRenderTarget();

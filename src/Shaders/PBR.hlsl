@@ -74,7 +74,7 @@ cbuffer ShadowCB : register(b3)
     uint  pcssEnabled;              // 1 = PCSS active, 0 = PCF 3x3 fallback
     float lightSize;                // virtual light source size (sceneDiagonal * 0.02)
     float cubeShadowFarPlane;       // Point light cube shadow far plane (for depth normalisation)
-    float _padPCSS;
+    float shadowNearNorm;           // near/far ratio for perspective-aware PCSS blocker search
 };
 
 // ---------------------------------------------------------------------------
@@ -398,8 +398,15 @@ float CalcShadowPCSS(uint shadowIdx, float3 worldPos, float2 screenPos)
     float angle = frac(sin(dot(floor(screenPos), float2(127.1f, 311.7f))) * 43758.5453f) * 6.2831f;
     float cosA = cos(angle), sinA = sin(angle);
 
-    // --- Blocker Search ---
-    float searchRadius = lightSize * shadowTexelSize;
+    // --- Blocker Search (perspective-aware radius) ---
+    // searchWidth = lightSize × (receiverDepth - nearPlane) / receiverDepth
+    // Scales with depth: distant receivers → wider search (correct for perspective).
+    // For orthographic (Directional/CSM), shadowNearNorm ≈ 0 → degrades gracefully.
+    float searchRadius = lightSize
+        * max(receiverDepth - shadowNearNorm, 0.0f)
+        / max(receiverDepth, 0.001f)
+        * shadowTexelSize;
+    searchRadius = clamp(searchRadius, shadowTexelSize * 0.5f, shadowTexelSize * 8.0f);
     float blockerSum   = 0.0f;
     int   numBlockers  = 0;
     [unroll]

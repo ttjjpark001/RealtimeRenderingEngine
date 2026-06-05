@@ -134,6 +134,68 @@ TEST(PCSS_ShadowConstants, LightSize_DefaultIsZero)
 }
 
 // ---------------------------------------------------------------------------
+// Perspective-aware Blocker Search radius (mirrors PBR.hlsl CalcShadowPCSS)
+// searchRadius = lightSize * max(receiverDepth - nearNorm, 0) / max(receiverDepth, 0.001) * texelSize
+// clamped to [texelSize*0.5, texelSize*8]
+// ---------------------------------------------------------------------------
+
+static float CalcBlockerSearchRadius(float receiverDepth, float nearNorm,
+                                      float lightSize, float shadowTexelSize)
+{
+    float r = lightSize
+        * (std::max)(receiverDepth - nearNorm, 0.0f)
+        / (std::max)(receiverDepth, 0.001f)
+        * shadowTexelSize;
+    return (std::max)(shadowTexelSize * 0.5f, (std::min)(shadowTexelSize * 8.0f, r));
+}
+
+TEST(PCSS_BlockerSearch, AtFarDepth_RadiusApproachesLightSize)
+{
+    float texelSize = 1.0f / 2048.0f;
+    float nearNorm  = 0.1f / 100.0f;  // near=0.1, far=100 → 0.001
+    float r = CalcBlockerSearchRadius(1.0f, nearNorm, 1.0f, texelSize);
+    float expected = 1.0f * (1.0f - nearNorm) / 1.0f * texelSize;
+    EXPECT_NEAR(r, expected, texelSize);
+}
+
+TEST(PCSS_BlockerSearch, AtNearPlane_RadiusIsMinimum)
+{
+    float texelSize = 1.0f / 2048.0f;
+    float nearNorm  = 0.1f;
+    // receiverDepth == nearNorm → numerator = 0 → clamped to minimum
+    float r = CalcBlockerSearchRadius(nearNorm, nearNorm, 1.0f, texelSize);
+    EXPECT_FLOAT_EQ(r, texelSize * 0.5f);
+}
+
+TEST(PCSS_BlockerSearch, IncreasesWithDepth)
+{
+    float texelSize = 1.0f / 2048.0f;
+    float nearNorm  = 0.01f;
+    float r1 = CalcBlockerSearchRadius(0.3f, nearNorm, 1.0f, texelSize);
+    float r2 = CalcBlockerSearchRadius(0.7f, nearNorm, 1.0f, texelSize);
+    EXPECT_GT(r2, r1);
+}
+
+TEST(PCSS_BlockerSearch, ScalesWithLightSize)
+{
+    float texelSize = 1.0f / 2048.0f;
+    float nearNorm  = 0.01f;
+    float r1 = CalcBlockerSearchRadius(0.5f, nearNorm, 1.0f, texelSize);
+    float r2 = CalcBlockerSearchRadius(0.5f, nearNorm, 2.0f, texelSize);
+    EXPECT_NEAR(r2, r1 * 2.0f, texelSize);
+}
+
+TEST(PCSS_BlockerSearch, NearNormZero_EqualsOldFormula)
+{
+    // When nearNorm=0, formula = lightSize / receiverDepth * texelSize * receiverDepth
+    //                          = lightSize * texelSize  (same as old fixed formula)
+    float texelSize = 1.0f / 2048.0f;
+    float r = CalcBlockerSearchRadius(0.5f, 0.0f, 1.0f, texelSize);
+    float oldFormula = (std::max)(texelSize * 0.5f, (std::min)(texelSize * 8.0f, 1.0f * texelSize));
+    EXPECT_NEAR(r, oldFormula, 1e-8f);
+}
+
+// ---------------------------------------------------------------------------
 // lightSize multiplier (mirrors Renderer lightSize = diagonal * 0.02 * mult)
 // ---------------------------------------------------------------------------
 

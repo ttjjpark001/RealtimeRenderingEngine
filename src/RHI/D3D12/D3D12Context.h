@@ -127,7 +127,7 @@ struct ShadowConstants
     uint32 pcssEnabled;                                   // 4   PCSS 활성 여부
     float  lightSize;                                     // 4   가상 광원 크기 (sceneDiagonal * 0.02)
     float  cubeShadowFarPlane;                            // 4   Point light cube shadow far plane
-    float  _padPCSS;                                      // 4
+    float  shadowNearNorm;                                // 4   near/far 비율 (PCSS perspective-aware blocker search용)
 };  // Total: 576 bytes → 768 aligned (256 * 3)
 static_assert(sizeof(ShadowConstants) <= 768, "ShadowConstants exceeds 768-byte CB slot");
 
