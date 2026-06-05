@@ -141,7 +141,7 @@ struct Vertex {
 - Mesh는 Vertex 배열 + Index 배열 + `DirectX::BoundingBox aabb`로 구성
 
 ### 화면 모드 (View Menu)
-- 프리셋: 800×450, 960×540 (기본), Full Screen (Borderless Windowed)
+- 프리셋: 1440×810, 1600×900 (기본), Full Screen (Borderless Windowed)
 - Esc 키로 전체 화면 → 이전 윈도우 모드 복귀
 - 모드 전환 시 RHI OnResize → SwapChain ResizeBuffers → RTV 재생성
 
