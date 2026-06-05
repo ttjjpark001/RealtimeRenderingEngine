@@ -25,6 +25,7 @@ public:
     bool Initialize(uint32 width, uint32 height, const std::string& title, HINSTANCE hInstance);
     void ProcessMessages();
     bool IsRunning() const { return m_isRunning; }
+    bool HasFocus()  const { return m_hasFocus; }
 
     uint32 GetWidth() const { return m_width; }
     uint32 GetHeight() const { return m_height; }
@@ -67,6 +68,7 @@ private:
     DropFileCallback m_dropFileCallback;
     Win32Menu* m_menu = nullptr;
 
+    bool m_hasFocus = true;
     bool m_rightButtonDown = false;
     bool m_middleButtonDown = false;
     POINT m_lastMousePos = {};

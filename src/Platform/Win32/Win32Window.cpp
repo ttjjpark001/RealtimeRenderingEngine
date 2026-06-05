@@ -216,6 +216,19 @@ LRESULT Win32Window::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam)
         break;
     }
 
+    case WM_ACTIVATE:
+    {
+        m_hasFocus = (LOWORD(wParam) != WA_INACTIVE);
+        if (!m_hasFocus)
+        {
+            // 포커스를 잃으면 드래그 상태를 초기화해 카메라가 고착되지 않도록 함
+            m_rightButtonDown  = false;
+            m_middleButtonDown = false;
+            ReleaseCapture();
+        }
+        return 0;
+    }
+
     case WM_KEYDOWN:
     {
         if (wParam == VK_ESCAPE && m_isFullscreen)
@@ -292,15 +305,19 @@ LRESULT Win32Window::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam)
         m_lastMousePos.x = x;
         m_lastMousePos.y = y;
 
-        if (m_rightButtonDown && m_rightDragCallback)
-            m_rightDragCallback(dx, dy);
-        if (m_middleButtonDown && m_middleDragCallback)
-            m_middleDragCallback(dx, dy);
+        if (m_hasFocus)
+        {
+            if (m_rightButtonDown && m_rightDragCallback)
+                m_rightDragCallback(dx, dy);
+            if (m_middleButtonDown && m_middleDragCallback)
+                m_middleDragCallback(dx, dy);
+        }
         return 0;
     }
 
     case WM_MOUSEWHEEL:
     {
+        if (!m_hasFocus) return 0;
         int delta = GET_WHEEL_DELTA_WPARAM(wParam);
         if (m_mouseWheelCallback)
             m_mouseWheelCallback(delta);

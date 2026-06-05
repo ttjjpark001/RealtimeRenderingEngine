@@ -313,48 +313,51 @@ void Engine::Update(float deltaTime)
         m_lightManager->GetLightMutable(m_orbitLightIndex).direction = lightDir;
     }
 
-    // Sponza sun direction toggle (L key) — only when loaded via Sponza! menu
-    if (m_isSponzaScene && m_lightManager &&
-        m_sponzaSunKeyIndex < m_lightManager->GetActiveLightCount())
+    if (m_window->HasFocus())
     {
-        bool keyDown = (GetAsyncKeyState('L') & 0x8000) != 0;
-        if (keyDown && !m_sponzaSunToggleKeyWasDown)
+        // Sponza sun direction toggle (L key) — only when loaded via Sponza! menu
+        if (m_isSponzaScene && m_lightManager &&
+            m_sponzaSunKeyIndex < m_lightManager->GetActiveLightCount())
         {
-            m_sponzaSunAltMode = !m_sponzaSunAltMode;
-            XMVECTOR dir = m_sponzaSunAltMode
-                ? XMVector3Normalize(XMVectorSet(-0.3f, -1.5f, 0.3f, 0.0f))  // high sun (~74°)
-                : XMVector3Normalize(XMVectorSet(-0.3f, -1.0f, 0.5f, 0.0f)); // default (~60°)
-            XMStoreFloat3(&m_lightManager->GetLightMutable(m_sponzaSunKeyIndex).direction, dir);
+            bool keyDown = (GetAsyncKeyState('L') & 0x8000) != 0;
+            if (keyDown && !m_sponzaSunToggleKeyWasDown)
+            {
+                m_sponzaSunAltMode = !m_sponzaSunAltMode;
+                XMVECTOR dir = m_sponzaSunAltMode
+                    ? XMVector3Normalize(XMVectorSet(-0.3f, -1.5f, 0.3f, 0.0f))
+                    : XMVector3Normalize(XMVectorSet(-0.3f, -1.0f, 0.5f, 0.0f));
+                XMStoreFloat3(&m_lightManager->GetLightMutable(m_sponzaSunKeyIndex).direction, dir);
+            }
+            m_sponzaSunToggleKeyWasDown = keyDown;
         }
-        m_sponzaSunToggleKeyWasDown = keyDown;
-    }
 
-    // Bistro interior/exterior lighting toggle (L key) — only when loaded via Bistro! menu
-    if (m_isBistroScene && m_lightManager)
-    {
-        bool keyDown = (GetAsyncKeyState('L') & 0x8000) != 0;
-        if (keyDown && !m_bistroLightKeyWasDown)
+        // Bistro interior/exterior lighting toggle (L key) — only when loaded via Bistro! menu
+        if (m_isBistroScene && m_lightManager)
         {
-            m_bistroInteriorMode = !m_bistroInteriorMode;
-            ApplyBistroLighting();
+            bool keyDown = (GetAsyncKeyState('L') & 0x8000) != 0;
+            if (keyDown && !m_bistroLightKeyWasDown)
+            {
+                m_bistroInteriorMode = !m_bistroInteriorMode;
+                ApplyBistroLighting();
+            }
+            m_bistroLightKeyWasDown = keyDown;
         }
-        m_bistroLightKeyWasDown = keyDown;
-    }
 
-    // Move camera with WASD+QE, adjust FOV with +/-
-    if (m_camera)
-    {
-        float speed = 3.0f * deltaTime;
+        // Move camera with WASD+QE, adjust FOV with +/-
+        if (m_camera)
+        {
+            float speed = 3.0f * deltaTime;
 
-        if (GetAsyncKeyState('W') & 0x8000) m_camera->MoveForward(speed);
-        if (GetAsyncKeyState('S') & 0x8000) m_camera->MoveForward(-speed);
-        if (GetAsyncKeyState('A') & 0x8000) m_camera->MoveRight(-speed);
-        if (GetAsyncKeyState('D') & 0x8000) m_camera->MoveRight(speed);
-        if (GetAsyncKeyState('Q') & 0x8000) m_camera->MoveUp(speed);
-        if (GetAsyncKeyState('E') & 0x8000) m_camera->MoveUp(-speed);
+            if (GetAsyncKeyState('W') & 0x8000) m_camera->MoveForward(speed);
+            if (GetAsyncKeyState('S') & 0x8000) m_camera->MoveForward(-speed);
+            if (GetAsyncKeyState('A') & 0x8000) m_camera->MoveRight(-speed);
+            if (GetAsyncKeyState('D') & 0x8000) m_camera->MoveRight(speed);
+            if (GetAsyncKeyState('Q') & 0x8000) m_camera->MoveUp(speed);
+            if (GetAsyncKeyState('E') & 0x8000) m_camera->MoveUp(-speed);
 
-        if (GetAsyncKeyState(VK_OEM_PLUS) & 0x8000)  m_camera->AdjustFov(5.0f * deltaTime);
-        if (GetAsyncKeyState(VK_OEM_MINUS) & 0x8000)  m_camera->AdjustFov(-5.0f * deltaTime);
+            if (GetAsyncKeyState(VK_OEM_PLUS) & 0x8000)  m_camera->AdjustFov(5.0f * deltaTime);
+            if (GetAsyncKeyState(VK_OEM_MINUS) & 0x8000)  m_camera->AdjustFov(-5.0f * deltaTime);
+        }
     }
 
     // Update texture streamer: refresh VRAM stats every 0.5 s
