@@ -93,7 +93,8 @@ private:
     bool m_isSponzaScene = false;
     bool m_sponzaSunAltMode = false;
     bool m_sponzaSunToggleKeyWasDown = false;
-    size_t m_sponzaSunKeyIndex = 0;  // index of sun (Key) light in m_lightManager
+    size_t m_sponzaSunKeyIndex = 0;      // index of sun (Key) light in m_lightManager
+    size_t m_sponzaTorchStartIndex = 2;  // index of first torch light in m_lightManager
 
     // Bistro-specific interior/exterior lighting toggle (L key)
     bool m_isBistroScene = false;

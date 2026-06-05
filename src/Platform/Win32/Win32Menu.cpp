@@ -21,15 +21,15 @@ bool Win32Menu::Initialize(HWND hwnd)
 
     // View menu
     m_viewMenu = CreatePopupMenu();
-    AppendMenuW(m_viewMenu, MF_STRING, ID_VIEW_800x450, L"800 x 450");
-    AppendMenuW(m_viewMenu, MF_STRING, ID_VIEW_960x540, L"960 x 540");
+    AppendMenuW(m_viewMenu, MF_STRING, ID_VIEW_1440x810, L"1440 x 810");
+    AppendMenuW(m_viewMenu, MF_STRING, ID_VIEW_1600x900, L"1600 x 900");
     AppendMenuW(m_viewMenu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m_viewMenu, MF_STRING, ID_VIEW_FULLSCREEN, L"Full Screen");
     AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_viewMenu), L"View");
 
-    // Default check: 960x540
-    CheckMenuRadioItem(m_viewMenu, ID_VIEW_800x450, ID_VIEW_960x540,
-        ID_VIEW_960x540, MF_BYCOMMAND);
+    // Default check: 1600x900
+    CheckMenuRadioItem(m_viewMenu, ID_VIEW_1440x810, ID_VIEW_1600x900,
+        ID_VIEW_1600x900, MF_BYCOMMAND);
 
     // Light menu
     m_lightMenu = CreatePopupMenu();
@@ -95,6 +95,12 @@ bool Win32Menu::Initialize(HWND hwnd)
     AppendMenuW(m_optimMenu, MF_STRING,              ID_OPTIM_PCSS_SIZE_SMALL,  L"PCSS Light Size: Small (0.5x)");
     AppendMenuW(m_optimMenu, MF_STRING | MF_CHECKED, ID_OPTIM_PCSS_SIZE_NORMAL, L"PCSS Light Size: Normal (1.0x)");
     AppendMenuW(m_optimMenu, MF_STRING,              ID_OPTIM_PCSS_SIZE_LARGE,  L"PCSS Light Size: Large (2.0x)");
+    AppendMenuW(m_optimMenu, MF_SEPARATOR,           0,                         nullptr);
+    AppendMenuW(m_optimMenu, MF_STRING | MF_GRAYED,  ID_OPTIM_TORCH_SHADOW_0,   L"Torch Shadows: Off");
+    AppendMenuW(m_optimMenu, MF_STRING | MF_GRAYED,  ID_OPTIM_TORCH_SHADOW_1,   L"Torch Shadows: 1");
+    AppendMenuW(m_optimMenu, MF_STRING | MF_GRAYED,  ID_OPTIM_TORCH_SHADOW_2,   L"Torch Shadows: 2");
+    AppendMenuW(m_optimMenu, MF_STRING | MF_GRAYED,  ID_OPTIM_TORCH_SHADOW_3,   L"Torch Shadows: 3");
+    AppendMenuW(m_optimMenu, MF_STRING | MF_GRAYED,  ID_OPTIM_TORCH_SHADOW_4,   L"Torch Shadows: All 4");
     AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_optimMenu), L"Optimization");
 
     SetMenu(hwnd, m_menuBar);
@@ -121,16 +127,16 @@ bool Win32Menu::HandleCommand(WPARAM wParam)
         return true;
 
     // View commands
-    case ID_VIEW_800x450:
-        CheckMenuRadioItem(m_viewMenu, ID_VIEW_800x450, ID_VIEW_960x540,
-            ID_VIEW_800x450, MF_BYCOMMAND);
-        if (m_viewCallback) m_viewCallback(800, 450, false);
+    case ID_VIEW_1440x810:
+        CheckMenuRadioItem(m_viewMenu, ID_VIEW_1440x810, ID_VIEW_1600x900,
+            ID_VIEW_1440x810, MF_BYCOMMAND);
+        if (m_viewCallback) m_viewCallback(1440, 810, false);
         return true;
 
-    case ID_VIEW_960x540:
-        CheckMenuRadioItem(m_viewMenu, ID_VIEW_800x450, ID_VIEW_960x540,
-            ID_VIEW_960x540, MF_BYCOMMAND);
-        if (m_viewCallback) m_viewCallback(960, 540, false);
+    case ID_VIEW_1600x900:
+        CheckMenuRadioItem(m_viewMenu, ID_VIEW_1440x810, ID_VIEW_1600x900,
+            ID_VIEW_1600x900, MF_BYCOMMAND);
+        if (m_viewCallback) m_viewCallback(1600, 900, false);
         return true;
 
     case ID_VIEW_FULLSCREEN:
@@ -315,9 +321,31 @@ bool Win32Menu::HandleCommand(WPARAM wParam)
         return true;
     }
 
+    case ID_OPTIM_TORCH_SHADOW_0:
+    case ID_OPTIM_TORCH_SHADOW_1:
+    case ID_OPTIM_TORCH_SHADOW_2:
+    case ID_OPTIM_TORCH_SHADOW_3:
+    case ID_OPTIM_TORCH_SHADOW_4:
+        CheckMenuRadioItem(m_optimMenu,
+            ID_OPTIM_TORCH_SHADOW_0, ID_OPTIM_TORCH_SHADOW_4, id, MF_BYCOMMAND);
+        if (m_torchShadowCountCallback)
+            m_torchShadowCountCallback(static_cast<int>(id - ID_OPTIM_TORCH_SHADOW_0));
+        return true;
+
     default:
         return false;
     }
+}
+
+void Win32Menu::SetTorchShadowMenuEnabled(bool enabled, int checkedCount)
+{
+    UINT flag = enabled ? MF_ENABLED : MF_GRAYED;
+    for (UINT id = ID_OPTIM_TORCH_SHADOW_0; id <= ID_OPTIM_TORCH_SHADOW_4; id++)
+        EnableMenuItem(m_optimMenu, id, MF_BYCOMMAND | flag);
+    if (enabled)
+        CheckMenuRadioItem(m_optimMenu,
+            ID_OPTIM_TORCH_SHADOW_0, ID_OPTIM_TORCH_SHADOW_4,
+            ID_OPTIM_TORCH_SHADOW_0 + checkedCount, MF_BYCOMMAND);
 }
 
 } // namespace RRE

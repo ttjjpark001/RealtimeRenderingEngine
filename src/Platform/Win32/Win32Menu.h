@@ -8,8 +8,8 @@ namespace RRE
 {
 
 // Menu command IDs
-constexpr UINT ID_VIEW_800x450      = 1001;
-constexpr UINT ID_VIEW_960x540      = 1002;
+constexpr UINT ID_VIEW_1440x810     = 1001;
+constexpr UINT ID_VIEW_1600x900     = 1002;
 constexpr UINT ID_VIEW_FULLSCREEN   = 1003;
 
 constexpr UINT ID_LIGHT_SHOW_INFO   = 4001;
@@ -51,6 +51,12 @@ constexpr UINT ID_OPTIM_PCSS_SIZE_SMALL  = 8009;
 constexpr UINT ID_OPTIM_PCSS_SIZE_NORMAL = 8010;
 constexpr UINT ID_OPTIM_PCSS_SIZE_LARGE  = 8011;
 
+constexpr UINT ID_OPTIM_TORCH_SHADOW_0   = 8012;
+constexpr UINT ID_OPTIM_TORCH_SHADOW_1   = 8013;
+constexpr UINT ID_OPTIM_TORCH_SHADOW_2   = 8014;
+constexpr UINT ID_OPTIM_TORCH_SHADOW_3   = 8015;
+constexpr UINT ID_OPTIM_TORCH_SHADOW_4   = 8016;
+
 class Win32Menu
 {
 public:
@@ -75,6 +81,7 @@ public:
     using CSMDebugToggleCallback         = std::function<void()>;
     using PCSSToggleCallback             = std::function<void()>;
     using PCSSLightSizeCallback          = std::function<void(float multiplier)>;
+    using TorchShadowCountCallback       = std::function<void(int count)>;
 
     Win32Menu() = default;
     ~Win32Menu() = default;
@@ -104,6 +111,10 @@ public:
     void SetCSMDebugToggleCallback(CSMDebugToggleCallback cb)           { m_csmDebugToggleCallback = std::move(cb); }
     void SetPCSSToggleCallback(PCSSToggleCallback cb)                   { m_pcssToggleCallback = std::move(cb); }
     void SetPCSSLightSizeCallback(PCSSLightSizeCallback cb)             { m_pcssLightSizeCallback = std::move(cb); }
+    void SetTorchShadowCountCallback(TorchShadowCountCallback cb)       { m_torchShadowCountCallback = std::move(cb); }
+
+    // Sponza 씬 로드 시 활성화, 다른 씬 로드 시 비활성화
+    void SetTorchShadowMenuEnabled(bool enabled, int checkedCount = 4);
 
 private:
     HWND m_hwnd = nullptr;
@@ -136,6 +147,7 @@ private:
     CSMDebugToggleCallback         m_csmDebugToggleCallback;
     PCSSToggleCallback             m_pcssToggleCallback;
     PCSSLightSizeCallback          m_pcssLightSizeCallback;
+    TorchShadowCountCallback       m_torchShadowCountCallback;
 };
 
 } // namespace RRE

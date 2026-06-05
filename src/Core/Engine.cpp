@@ -40,7 +40,7 @@ bool Engine::Initialize(const EngineInitParams& params)
 
     // Create window
     m_window = std::make_unique<Win32Window>();
-    if (!m_window->Initialize(960, 540, "Realtime Rendering Engine", hInstance))
+    if (!m_window->Initialize(1600, 900, "Realtime Rendering Engine", hInstance))
     {
         return false;
     }
@@ -230,6 +230,15 @@ bool Engine::Initialize(const EngineInitParams& params)
     m_menu->SetPCSSLightSizeCallback([this](float multiplier) {
         if (m_renderer)
             m_renderer->SetLightSizeMultiplier(multiplier);
+    });
+    m_menu->SetTorchShadowCountCallback([this](int count) {
+        if (!m_lightManager || !m_isSponzaScene) return;
+        for (int i = 0; i < 4; i++)
+        {
+            size_t idx = m_sponzaTorchStartIndex + i;
+            if (idx < m_lightManager->GetActiveLightCount())
+                m_lightManager->GetLightMutable(idx).castShadow = (i < count);
+        }
     });
 
     // Create debug HUD
@@ -592,6 +601,7 @@ void Engine::LoadSponzaScene()
         m_isSponzaScene = true;
         m_sponzaSunAltMode = false;
         m_sponzaSunKeyIndex = 0;        // Key light is added first (index 0)
+        m_sponzaTorchStartIndex = 2;    // Key(0), Fill(1), Torch(2~5)
 
         // Key Light — Directional (sun): warm, casts shadows
         {
@@ -632,9 +642,11 @@ void Engine::LoadSponzaScene()
             torch.color     = { 1.0f, 0.45f, 0.08f };
             torch.intensity = 8.0f;
             torch.Kc = 1.0f; torch.Kl = 0.7f; torch.Kq = 1.8f;
-            torch.castShadow = true;
+            torch.castShadow = false;
             m_lightManager->AddLight(torch);
         }
+
+        if (m_menu) m_menu->SetTorchShadowMenuEnabled(true, 0);
     }
 }
 
@@ -784,6 +796,7 @@ void Engine::LoadScene(const std::string& filePath)
     // Clear scene-specific state (overridden by LoadSponzaScene/LoadBistroScene if called from there)
     m_isSponzaScene = false;
     m_isBistroScene = false;
+    if (m_menu) m_menu->SetTorchShadowMenuEnabled(false);
 
     // Wait for GPU to finish all pending work
     auto* context = static_cast<D3D12Context*>(m_rhiDevice->GetContext());
