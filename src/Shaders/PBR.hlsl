@@ -343,21 +343,20 @@ static const float2 PoissonDisk[16] =
 // Point light omnidirectional shadow (TextureCube, linear depth comparison)
 float SamplePointShadow(uint idx, float3 lightToPixel)
 {
-    float result       = 1.0f;
-    float receiverDist = length(lightToPixel);
-    if (cubeShadowFarPlane <= 0.0f) return result;
+    float result = 1.0f;
+    if (cubeShadowFarPlane > 0.0f)
+    {
+        float receiverDepth = length(lightToPixel) / cubeShadowFarPlane;
+        float3 dir          = normalize(lightToPixel);
 
-    float receiverDepth = receiverDist / cubeShadowFarPlane;
-    float3 dir          = normalize(lightToPixel);
+        float storedDepth = 1.0f;
+        if      (idx == 0) storedDepth = PointShadowMap0.SampleLevel(LinearSampler, dir, 0).r;
+        else if (idx == 1) storedDepth = PointShadowMap1.SampleLevel(LinearSampler, dir, 0).r;
+        else if (idx == 2) storedDepth = PointShadowMap2.SampleLevel(LinearSampler, dir, 0).r;
+        else if (idx == 3) storedDepth = PointShadowMap3.SampleLevel(LinearSampler, dir, 0).r;
 
-    float storedDepth = 1.0f;
-    if      (idx == 0) storedDepth = PointShadowMap0.SampleLevel(LinearSampler, dir, 0).r;
-    else if (idx == 1) storedDepth = PointShadowMap1.SampleLevel(LinearSampler, dir, 0).r;
-    else if (idx == 2) storedDepth = PointShadowMap2.SampleLevel(LinearSampler, dir, 0).r;
-    else if (idx == 3) storedDepth = PointShadowMap3.SampleLevel(LinearSampler, dir, 0).r;
-
-    float bias = 0.02f;
-    result = (storedDepth + bias < receiverDepth) ? 0.0f : 1.0f;
+        result = (storedDepth + 0.02f < receiverDepth) ? 0.0f : 1.0f;
+    }
     return result;
 }
 
@@ -392,54 +391,56 @@ float CalcShadowPCSS(uint shadowIdx, float3 worldPos, float2 screenPos)
     bool inRange = (uv.x >= 0.0f && uv.x <= 1.0f &&
                     uv.y >= 0.0f && uv.y <= 1.0f &&
                     receiverDepth >= 0.0f && receiverDepth <= 1.0f);
-    if (!inRange) return result;
-
-    // Per-pixel rotation angle to break up Poisson Disk banding
-    float angle = frac(sin(dot(floor(screenPos), float2(127.1f, 311.7f))) * 43758.5453f) * 6.2831f;
-    float cosA = cos(angle), sinA = sin(angle);
-
-    // --- Blocker Search (perspective-aware radius) ---
-    // searchWidth = lightSize × (receiverDepth - nearPlane) / receiverDepth
-    // Scales with depth: distant receivers → wider search (correct for perspective).
-    // For orthographic (Directional/CSM), shadowNearNorm ≈ 0 → degrades gracefully.
-    float searchRadius = lightSize
-        * max(receiverDepth - shadowNearNorm, 0.0f)
-        / max(receiverDepth, 0.001f)
-        * shadowTexelSize;
-    searchRadius = clamp(searchRadius, shadowTexelSize * 0.5f, shadowTexelSize * 8.0f);
-    float blockerSum   = 0.0f;
-    int   numBlockers  = 0;
-    [unroll]
-    for (int bi = 0; bi < NUM_POISSON_SAMPLES; bi++)
+    if (inRange)
     {
-        float2 rotated = float2(PoissonDisk[bi].x * cosA - PoissonDisk[bi].y * sinA,
-                                PoissonDisk[bi].x * sinA + PoissonDisk[bi].y * cosA);
-        float smDepth = SampleShadowMapRaw(shadowIdx, uv + rotated * searchRadius);
-        if (smDepth < receiverDepth)
+        // Per-pixel rotation angle to break up Poisson Disk banding
+        float angle = frac(sin(dot(floor(screenPos), float2(127.1f, 311.7f))) * 43758.5453f) * 6.2831f;
+        float cosA = cos(angle), sinA = sin(angle);
+
+        // --- Blocker Search (perspective-aware radius) ---
+        // searchWidth = lightSize × (receiverDepth - nearPlane) / receiverDepth
+        // Scales with depth: distant receivers → wider search (correct for perspective).
+        // For orthographic (Directional/CSM), shadowNearNorm ≈ 0 → degrades gracefully.
+        float searchRadius = lightSize
+            * max(receiverDepth - shadowNearNorm, 0.0f)
+            / max(receiverDepth, 0.001f)
+            * shadowTexelSize;
+        searchRadius = clamp(searchRadius, shadowTexelSize * 0.5f, shadowTexelSize * 8.0f);
+        float blockerSum  = 0.0f;
+        int   numBlockers = 0;
+        [unroll]
+        for (int bi = 0; bi < NUM_POISSON_SAMPLES; bi++)
         {
-            blockerSum += smDepth;
-            numBlockers++;
+            float2 rotated = float2(PoissonDisk[bi].x * cosA - PoissonDisk[bi].y * sinA,
+                                    PoissonDisk[bi].x * sinA + PoissonDisk[bi].y * cosA);
+            float smDepth = SampleShadowMapRaw(shadowIdx, uv + rotated * searchRadius);
+            if (smDepth < receiverDepth)
+            {
+                blockerSum += smDepth;
+                numBlockers++;
+            }
+        }
+        if (numBlockers > 0)
+        {
+            // --- Penumbra Width ---
+            float avgBlocker   = blockerSum / (float)numBlockers;
+            float penumbra     = (receiverDepth - avgBlocker) / avgBlocker * lightSize;
+            float filterRadius = clamp(penumbra * shadowTexelSize,
+                                       shadowTexelSize * 1.5f,   // min ≈ PCF 3x3
+                                       shadowTexelSize * 9.0f);  // max ≈ PCF 9x9
+
+            // --- Variable-radius PCF with Poisson Disk ---
+            float shadow = 0.0f;
+            [unroll]
+            for (int pi = 0; pi < NUM_POISSON_SAMPLES; pi++)
+            {
+                float2 rotated = float2(PoissonDisk[pi].x * cosA - PoissonDisk[pi].y * sinA,
+                                        PoissonDisk[pi].x * sinA + PoissonDisk[pi].y * cosA);
+                shadow += saturate(SampleShadowMap(shadowIdx, uv + rotated * filterRadius, receiverDepth));
+            }
+            result = shadow / (float)NUM_POISSON_SAMPLES;
         }
     }
-    if (numBlockers == 0) return 1.0f;  // fully lit — no blockers found
-
-    // --- Penumbra Width ---
-    float avgBlocker    = blockerSum / (float)numBlockers;
-    float penumbra      = (receiverDepth - avgBlocker) / avgBlocker * lightSize;
-    float filterRadius  = clamp(penumbra * shadowTexelSize,
-                                shadowTexelSize * 1.5f,   // min ≈ PCF 3x3
-                                shadowTexelSize * 9.0f);  // max ≈ PCF 9x9
-
-    // --- Variable-radius PCF with Poisson Disk ---
-    float shadow = 0.0f;
-    [unroll]
-    for (int pi = 0; pi < NUM_POISSON_SAMPLES; pi++)
-    {
-        float2 rotated = float2(PoissonDisk[pi].x * cosA - PoissonDisk[pi].y * sinA,
-                                PoissonDisk[pi].x * sinA + PoissonDisk[pi].y * cosA);
-        shadow += saturate(SampleShadowMap(shadowIdx, uv + rotated * filterRadius, receiverDepth));
-    }
-    result = shadow / (float)NUM_POISSON_SAMPLES;
     return result;
 }
 

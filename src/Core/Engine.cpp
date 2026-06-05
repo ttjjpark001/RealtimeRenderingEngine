@@ -632,7 +632,7 @@ void Engine::LoadSponzaScene()
             torch.color     = { 1.0f, 0.45f, 0.08f };
             torch.intensity = 8.0f;
             torch.Kc = 1.0f; torch.Kl = 0.7f; torch.Kq = 1.8f;
-            torch.castShadow = false;
+            torch.castShadow = true;
             m_lightManager->AddLight(torch);
         }
     }
