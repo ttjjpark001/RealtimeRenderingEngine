@@ -130,7 +130,7 @@ private:
     bool          m_lodEnabled             = false;
     bool          m_mipMappingEnabled      = true;
     bool          m_frustumCullingEnabled  = true;
-    bool          m_occlusionCullingEnabled = false;
+    bool          m_occlusionCullingEnabled = true;
     bool          m_lightCullingEnabled    = true;
     bool          m_vramPressure           = false;
     bool          m_csmEnabled             = true;
