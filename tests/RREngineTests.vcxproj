@@ -112,6 +112,7 @@
     <ClCompile Include="unit\test_LightCuller.cpp" />
     <ClCompile Include="unit\test_OcclusionCuller.cpp" />
     <ClCompile Include="unit\test_CSM.cpp" />
+    <ClCompile Include="unit\test_PCSS.cpp" />
     <ClCompile Include="$(SolutionDir)src\Asset\SceneLoader.cpp" />
     <ClCompile Include="$(SolutionDir)src\Asset\Texture.cpp" />
     <ClCompile Include="$(SolutionDir)src\Asset\TextureCache.cpp" />

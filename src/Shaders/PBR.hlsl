@@ -70,6 +70,9 @@ cbuffer ShadowCB : register(b3)
     uint  csmDebugView;             // 1 = tint by cascade index (red/green/blue)
     float3 cameraForward;           // world-space camera forward direction
     float _padFwd;
+    uint  pcssEnabled;              // 1 = PCSS active, 0 = PCF 3x3 fallback
+    float lightSize;                // virtual light source size (sceneDiagonal * 0.02)
+    float2 _padPCSS;
 };
 
 // ---------------------------------------------------------------------------
@@ -272,6 +275,105 @@ float CalcShadowCSM(uint baseIdx, float3 worldPos, float3 biasedPos)
 }
 
 // ---------------------------------------------------------------------------
+// PCSS — Poisson Disk soft shadows
+// ---------------------------------------------------------------------------
+static const int NUM_POISSON_SAMPLES = 16;
+static const float2 PoissonDisk[16] =
+{
+    float2(-0.94201624f, -0.39906216f),
+    float2( 0.94558609f, -0.76890725f),
+    float2(-0.09418410f, -0.92938870f),
+    float2( 0.34495938f,  0.29387760f),
+    float2(-0.91588581f,  0.45771432f),
+    float2(-0.81544232f, -0.87912464f),
+    float2(-0.38277543f,  0.27676845f),
+    float2( 0.97484398f,  0.75648379f),
+    float2( 0.44323325f, -0.97511554f),
+    float2( 0.53742981f, -0.47373420f),
+    float2(-0.26496911f, -0.41893023f),
+    float2( 0.79197514f,  0.19090188f),
+    float2(-0.24188840f,  0.99706507f),
+    float2(-0.81409955f,  0.91437590f),
+    float2( 0.19984126f,  0.78641367f),
+    float2( 0.14383161f, -0.14100790f),
+};
+
+// Raw depth sample (no comparison) — used by blocker search
+float SampleShadowMapRaw(uint idx, float2 uv)
+{
+    float result = 1.0f;
+    if      (idx == 0) result = ShadowMap0.SampleLevel(LinearSampler, uv, 0).r;
+    else if (idx == 1) result = ShadowMap1.SampleLevel(LinearSampler, uv, 0).r;
+    else if (idx == 2) result = ShadowMap2.SampleLevel(LinearSampler, uv, 0).r;
+    else if (idx == 3) result = ShadowMap3.SampleLevel(LinearSampler, uv, 0).r;
+    else if (idx == 4) result = ShadowMap4.SampleLevel(LinearSampler, uv, 0).r;
+    else if (idx == 5) result = ShadowMap5.SampleLevel(LinearSampler, uv, 0).r;
+    else if (idx == 6) result = ShadowMap6.SampleLevel(LinearSampler, uv, 0).r;
+    else if (idx == 7) result = ShadowMap7.SampleLevel(LinearSampler, uv, 0).r;
+    return result;
+}
+
+// PCSS: Blocker Search → Penumbra Width → variable-radius PCF
+// screenPos: SV_POSITION.xy for per-pixel rotation noise
+float CalcShadowPCSS(uint shadowIdx, float3 worldPos, float2 screenPos)
+{
+    float result = 1.0f;
+    shadowIdx = min(shadowIdx, MAX_SHADOW_MAPS - 1);
+
+    float4 lightSpacePos = mul(float4(worldPos, 1.0f), lightViewProj[shadowIdx]);
+    float3 projCoords    = lightSpacePos.xyz / lightSpacePos.w;
+    float2 uv            = float2( projCoords.x * 0.5f + 0.5f,
+                                  -projCoords.y * 0.5f + 0.5f);
+    float  receiverDepth = projCoords.z;
+
+    bool inRange = (uv.x >= 0.0f && uv.x <= 1.0f &&
+                    uv.y >= 0.0f && uv.y <= 1.0f &&
+                    receiverDepth >= 0.0f && receiverDepth <= 1.0f);
+    if (!inRange) return result;
+
+    // Per-pixel rotation angle to break up Poisson Disk banding
+    float angle = frac(sin(dot(floor(screenPos), float2(127.1f, 311.7f))) * 43758.5453f) * 6.2831f;
+    float cosA = cos(angle), sinA = sin(angle);
+
+    // --- Blocker Search ---
+    float searchRadius = lightSize * shadowTexelSize;
+    float blockerSum   = 0.0f;
+    int   numBlockers  = 0;
+    [unroll]
+    for (int bi = 0; bi < NUM_POISSON_SAMPLES; bi++)
+    {
+        float2 rotated = float2(PoissonDisk[bi].x * cosA - PoissonDisk[bi].y * sinA,
+                                PoissonDisk[bi].x * sinA + PoissonDisk[bi].y * cosA);
+        float smDepth = SampleShadowMapRaw(shadowIdx, uv + rotated * searchRadius);
+        if (smDepth < receiverDepth)
+        {
+            blockerSum += smDepth;
+            numBlockers++;
+        }
+    }
+    if (numBlockers == 0) return 1.0f;  // fully lit — no blockers found
+
+    // --- Penumbra Width ---
+    float avgBlocker    = blockerSum / (float)numBlockers;
+    float penumbra      = (receiverDepth - avgBlocker) / avgBlocker * lightSize;
+    float filterRadius  = clamp(penumbra * shadowTexelSize,
+                                shadowTexelSize * 1.5f,   // min ≈ PCF 3x3
+                                shadowTexelSize * 9.0f);  // max ≈ PCF 9x9
+
+    // --- Variable-radius PCF with Poisson Disk ---
+    float shadow = 0.0f;
+    [unroll]
+    for (int pi = 0; pi < NUM_POISSON_SAMPLES; pi++)
+    {
+        float2 rotated = float2(PoissonDisk[pi].x * cosA - PoissonDisk[pi].y * sinA,
+                                PoissonDisk[pi].x * sinA + PoissonDisk[pi].y * cosA);
+        shadow += saturate(SampleShadowMap(shadowIdx, uv + rotated * filterRadius, receiverDepth));
+    }
+    result = shadow / (float)NUM_POISSON_SAMPLES;
+    return result;
+}
+
+// ---------------------------------------------------------------------------
 // Pixel Shader
 // ---------------------------------------------------------------------------
 float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
@@ -401,10 +503,23 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
         if (lights[i].shadowMapIndex >= 0 && (uint)lights[i].shadowMapIndex < shadowMapCount)
         {
             float3 shadowPos = input.worldPos + N * shadowNormalBiasWorld;
-            if (csmEnabled && lights[i].type == 0)
-                shadowFactor = CalcShadowCSM((uint)lights[i].shadowMapIndex, input.worldPos, shadowPos);
+            uint   baseIdx   = (uint)lights[i].shadowMapIndex;
+
+            if (pcssEnabled)
+            {
+                // PCSS — cascade-aware for Directional lights
+                uint shadowIdx = baseIdx;
+                if (csmEnabled && lights[i].type == 0)
+                {
+                    int cascadeIdx = GetCascadeIndex(input.worldPos);
+                    shadowIdx = min(baseIdx + (uint)cascadeIdx, shadowMapCount - 1);
+                }
+                shadowFactor = CalcShadowPCSS(shadowIdx, shadowPos, input.position.xy);
+            }
+            else if (csmEnabled && lights[i].type == 0)
+                shadowFactor = CalcShadowCSM(baseIdx, input.worldPos, shadowPos);
             else
-                shadowFactor = CalcShadow((uint)lights[i].shadowMapIndex, shadowPos);
+                shadowFactor = CalcShadow(baseIdx, shadowPos);
         }
 
         Lo += (diffuse + specular) * lightColor * attenuation * NdotL * shadowFactor;

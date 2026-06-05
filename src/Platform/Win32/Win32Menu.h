@@ -46,6 +46,7 @@ constexpr UINT ID_OPTIM_MIPMAP           = 8004;
 constexpr UINT ID_OPTIM_OCCLUSION_CULL   = 8005;
 constexpr UINT ID_OPTIM_CSM              = 8006;
 constexpr UINT ID_OPTIM_CSM_DEBUG        = 8007;
+constexpr UINT ID_OPTIM_PCSS             = 8008;
 
 class Win32Menu
 {
@@ -69,6 +70,7 @@ public:
     using OcclusionCullToggleCallback    = std::function<void()>;
     using CSMToggleCallback              = std::function<void()>;
     using CSMDebugToggleCallback         = std::function<void()>;
+    using PCSSToggleCallback             = std::function<void()>;
 
     Win32Menu() = default;
     ~Win32Menu() = default;
@@ -96,6 +98,7 @@ public:
     void SetOcclusionCullToggleCallback(OcclusionCullToggleCallback cb) { m_occlusionCullToggleCallback = std::move(cb); }
     void SetCSMToggleCallback(CSMToggleCallback cb)                     { m_csmToggleCallback = std::move(cb); }
     void SetCSMDebugToggleCallback(CSMDebugToggleCallback cb)           { m_csmDebugToggleCallback = std::move(cb); }
+    void SetPCSSToggleCallback(PCSSToggleCallback cb)                   { m_pcssToggleCallback = std::move(cb); }
 
 private:
     HWND m_hwnd = nullptr;
@@ -126,6 +129,7 @@ private:
     OcclusionCullToggleCallback    m_occlusionCullToggleCallback;
     CSMToggleCallback              m_csmToggleCallback;
     CSMDebugToggleCallback         m_csmDebugToggleCallback;
+    PCSSToggleCallback             m_pcssToggleCallback;
 };
 
 } // namespace RRE

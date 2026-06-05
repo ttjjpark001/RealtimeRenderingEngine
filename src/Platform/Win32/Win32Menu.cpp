@@ -89,6 +89,7 @@ bool Win32Menu::Initialize(HWND hwnd)
     AppendMenuW(m_optimMenu, MF_SEPARATOR,           0,                       nullptr);
     AppendMenuW(m_optimMenu, MF_STRING | MF_CHECKED, ID_OPTIM_CSM,            L"CSM (Cascaded Shadow Maps)");
     AppendMenuW(m_optimMenu, MF_STRING,              ID_OPTIM_CSM_DEBUG,      L"CSM Debug View");
+    AppendMenuW(m_optimMenu, MF_STRING,              ID_OPTIM_PCSS,           L"PCSS (Soft Shadows)");
     AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_optimMenu), L"Optimization");
 
     SetMenu(hwnd, m_menuBar);
@@ -282,6 +283,15 @@ bool Win32Menu::HandleCommand(WPARAM wParam)
         CheckMenuItem(m_optimMenu, ID_OPTIM_CSM_DEBUG,
             MF_BYCOMMAND | ((state & MF_CHECKED) ? MF_UNCHECKED : MF_CHECKED));
         if (m_csmDebugToggleCallback) m_csmDebugToggleCallback();
+        return true;
+    }
+
+    case ID_OPTIM_PCSS:
+    {
+        UINT state = GetMenuState(m_optimMenu, ID_OPTIM_PCSS, MF_BYCOMMAND);
+        CheckMenuItem(m_optimMenu, ID_OPTIM_PCSS,
+            MF_BYCOMMAND | ((state & MF_CHECKED) ? MF_UNCHECKED : MF_CHECKED));
+        if (m_pcssToggleCallback) m_pcssToggleCallback();
         return true;
     }
 

@@ -223,6 +223,10 @@ bool Engine::Initialize(const EngineInitParams& params)
         if (m_renderer)
             m_renderer->SetCSMDebugView(!m_renderer->IsCSMDebugView());
     });
+    m_menu->SetPCSSToggleCallback([this]() {
+        if (m_renderer)
+            m_renderer->SetPCSSEnabled(!m_renderer->IsPCSSEnabled());
+    });
 
     // Create debug HUD
     m_debugHUD = std::make_unique<DebugHUD>();
@@ -423,6 +427,8 @@ void Engine::Update(float deltaTime)
             int modeIdx = static_cast<int>(m_renderer->GetRenderMode());
             if (modeIdx >= 0 && modeIdx <= 4)
                 stats.renderModeName = modeNames[modeIdx];
+
+            stats.shadowModeName = m_renderer->IsPCSSEnabled() ? "PCSS" : "PCF";
 
             // Culling / LOD statistics (Phase 23)
             CullStats cs = m_renderer->GetLastCullStats();

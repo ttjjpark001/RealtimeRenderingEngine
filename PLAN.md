@@ -54,8 +54,16 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 - cascade별 frustum AABB → OrthographicOffCenter 투영 행렬 계산
 - 3-pass Shadow Depth (슬롯 0/1/2)
 - HLSL GetCascadeIndex / CalcShadowCSM / 디버그 컬러 뷰 (red/green/blue)
-- Optimization 메뉴 CSM on/off + CSM Debug View 토글
+- Optimization 메뉴 CSM on/off(8006) + CSM Debug View(8007) 토글
 - 유닛 테스트 12개 (SplitDepths 5, CascadeIndex 5, ShadowConstants 2) — Debug/Release 모두 통과
+
+**Part C 완료**: PCSS (Percentage Closer Soft Shadows) ✅
+- Poisson Disk 16샘플 Blocker Search → Penumbra Width → 가변 커널 PCF
+- CSM cascade와 통합: cascade 선택 후 PCSS 적용
+- lightSize = sceneDiagonal × 0.02, filterRadius clamp [1.5~9.0 texel]
+- ShadowConstants 확장: pcssEnabled, lightSize 추가 (560→576 bytes)
+- Optimization 메뉴 PCSS on/off(8008) 토글, DebugHUD Shadow Mode 표시 (PCF/PCSS)
+- 유닛 테스트 12개 (PenumbraWidth 5, FilterRadius 4, ShadowConstants 3) — Debug/Release 모두 통과
 
 #### Part A: Point Light Cube Map Shadow
 

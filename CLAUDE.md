@@ -356,4 +356,11 @@ glTF/GLB/FBX 씬을 엔진 전용 바이너리(`.rrscene`)로 변환하여 이�
 - Optimization 메뉴 ID_OPTIM_CSM(8006) / ID_OPTIM_CSM_DEBUG(8007) 연동
 - 유닛 테스트 12개 (tests/unit/test_CSM.cpp) — Debug/Release 모두 통과
 
-**다음 구현 대상**: Phase 33 Part A (Point Light Cube Map Shadow) 또는 Part C (PCSS)
+**Phase 33 Part C 완료**: PCSS (Percentage Closer Soft Shadows)
+- Poisson Disk 16샘플 Blocker Search → Penumbra Width → 가변 커널 PCF (CSM cascade 통합)
+- ShadowConstants 확장: pcssEnabled, lightSize 추가 (560→576 bytes)
+- lightSize = sceneDiagonal × 0.02, filterRadius clamp [1.5~9.0 texel]
+- Optimization 메뉴 ID_OPTIM_PCSS(8008) 연동, DebugHUD Shadow Mode 표시 (PCF/PCSS)
+- 유닛 테스트 12개 (tests/unit/test_PCSS.cpp) — Debug/Release 모두 통과
+
+**다음 구현 대상**: Phase 33 Part A — Point Light Cube Map Shadow

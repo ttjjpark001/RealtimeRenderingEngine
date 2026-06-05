@@ -58,7 +58,7 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 
 ---
 
-## Prompt 33: Shadow Quality — Cube Map Shadow + CSM + PCSS (Part B 완료 ✅)
+## Prompt 33: Shadow Quality — Cube Map Shadow + CSM + PCSS (Part B, C 완료 ✅)
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 33 섹션을 참조하여 Phase 33을 구현하라.

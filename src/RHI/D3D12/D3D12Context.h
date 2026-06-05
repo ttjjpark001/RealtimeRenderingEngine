@@ -123,7 +123,10 @@ struct ShadowConstants
     uint32 csmDebugView;                                  // 4   cascade 색상 시각화
     DirectX::XMFLOAT3 cameraForward;                     // 12  world-space 카메라 forward
     float _padFwd;                                        // 4
-};  // Total: 560 bytes → 768 aligned (256 * 3)
+    uint32 pcssEnabled;                                   // 4   PCSS 활성 여부
+    float  lightSize;                                     // 4   가상 광원 크기 (sceneDiagonal * 0.02)
+    float  _padPCSS[2];                                   // 8
+};  // Total: 576 bytes → 768 aligned (256 * 3)
 static_assert(sizeof(ShadowConstants) <= 768, "ShadowConstants exceeds 768-byte CB slot");
 
 // Shadow depth pass per-batch CB (b0) — world comes from per-instance buffer

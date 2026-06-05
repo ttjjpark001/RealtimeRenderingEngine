@@ -92,6 +92,9 @@ public:
     void SetCSMDebugView(bool enabled)          { m_csmDebugView = enabled; }
     bool IsCSMDebugView() const                 { return m_csmDebugView; }
 
+    void SetPCSSEnabled(bool enabled)           { m_pcssEnabled = enabled; }
+    bool IsPCSSEnabled() const                  { return m_pcssEnabled; }
+
     static constexpr uint32 CSM_NUM_CASCADES = 3;
 
     // Upload mesh VB/IB to GPU (cached, idempotent)
@@ -132,6 +135,7 @@ private:
     bool          m_vramPressure           = false;
     bool          m_csmEnabled             = true;
     bool          m_csmDebugView           = false;
+    bool          m_pcssEnabled            = false;
     float         m_sceneDiagonal          = 10.0f;
     DirectX::XMFLOAT3 m_sceneCenter        = { 0.f, 0.f, 0.f };
 
