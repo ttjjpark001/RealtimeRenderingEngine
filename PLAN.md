@@ -44,7 +44,7 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 
 ---
 
-### Phase 33: Shadow Quality — Cube Map Shadow + CSM + PCSS + Spot Light Shadow
+### Phase 33: Shadow Quality — Cube Map Shadow + CSM + PCSS + Spot Light Shadow ✅
 **목표**: (1) `castShadow = true`인 Point Light에 대해 6면 Cube Map 기반 Omnidirectional Shadow Map 구현,
 (2) Directional Light에 Cascaded Shadow Maps(CSM) 적용으로 근거리-원거리 그림자 품질 개선,
 (3) PCSS(Percentage Closer Soft Shadows)로 접촉 경화 그림자 구현,
