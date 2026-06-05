@@ -139,3 +139,54 @@ TEST(EngineInit, ParentRotationAffectsChildWorldMatrix)
     EXPECT_NEAR(afterX, 0.0f, 0.01f);
     EXPECT_NEAR(afterZ, -3.0f, 0.01f);
 }
+
+TEST(EngineInit, PointLightCastShadow_OneCycleDoesNotCrash)
+{
+    // Verifies that a Point light with castShadow=true goes through one render
+    // cycle without crashing. Exercises CreateCubeShadowMaps + 6-pass shadow path.
+    HWND hwnd = CreateTestWindow();
+    ASSERT_NE(hwnd, nullptr);
+
+    RRE::D3D12Device device;
+    ASSERT_TRUE(device.InitializeWARP(hwnd, 320, 240));
+
+    auto* context = static_cast<RRE::D3D12Context*>(device.GetContext());
+    ASSERT_NE(context, nullptr);
+
+    // Scene with one triangle
+    RRE::SceneGraph sceneGraph;
+    auto mesh = CreateTestTriangleMesh();
+    auto node = std::make_unique<RRE::SceneNode>();
+    node->SetMesh(mesh.get());
+    sceneGraph.GetRoot()->AddChild(std::move(node));
+
+    // Renderer
+    RRE::Renderer renderer;
+    renderer.SetContext(context, device.GetD3DDevice());
+    renderer.SetSceneDiagonal(10.0f);
+    renderer.SetSceneCenter({ 0.0f, 0.0f, 0.0f });
+
+    // Point light with castShadow=true
+    RRE::LightManager lightManager;
+    RRE::Light pointLight;
+    pointLight.type       = RRE::LightType::Point;
+    pointLight.position   = { 0.0f, 3.0f, 0.0f };
+    pointLight.color      = { 1.0f, 1.0f, 1.0f };
+    pointLight.intensity  = 10.0f;
+    pointLight.castShadow = true;
+    lightManager.AddLight(pointLight);
+
+    RRE::Camera camera;
+
+    context->BeginFrame();
+    context->Clear({ 0.0f, 0.0f, 0.0f, 1.0f });
+    renderer.RenderScene(sceneGraph, camera, 320.0f / 240.0f, &lightManager);
+    context->EndFrame();
+
+    // DebugHUD should report 6 cube shadow passes (1 light × 6 faces)
+    EXPECT_EQ(lightManager.GetPointShadowCasterCount(), 1u);
+
+    renderer.ClearMeshCache();
+    device.Shutdown();
+    DestroyWindow(hwnd);
+}

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "RHI/D3D12/D3D12Device.h"
+#include "RHI/D3D12/D3D12Context.h"
 #include "RHI/RHIContext.h"
 #include <windows.h>
 
@@ -88,6 +89,41 @@ TEST(RHIBackend, OnResize)
     DirectX::XMFLOAT4 color(0.0f, 0.28f, 0.67f, 1.0f);
     context->Clear(color);
     context->EndFrame();
+
+    device.Shutdown();
+    DestroyWindow(hwnd);
+}
+
+TEST(RHIBackend, CubeShadowMaps_CreateDoesNotCrash)
+{
+    HWND hwnd = CreateTestWindow();
+    ASSERT_NE(hwnd, nullptr);
+
+    RRE::D3D12Device device;
+    ASSERT_TRUE(device.InitializeWARP(hwnd, 320, 240));
+
+    auto* ctx = static_cast<RRE::D3D12Context*>(device.GetContext());
+    ASSERT_NE(ctx, nullptr);
+
+    EXPECT_NO_THROW(ctx->CreateCubeShadowMaps());
+    EXPECT_NO_THROW(ctx->CreateCubeShadowMaps());  // idempotent
+
+    device.Shutdown();
+    DestroyWindow(hwnd);
+}
+
+TEST(RHIBackend, CubeShadowMaps_DefaultSizeIs512)
+{
+    HWND hwnd = CreateTestWindow();
+    ASSERT_NE(hwnd, nullptr);
+
+    RRE::D3D12Device device;
+    ASSERT_TRUE(device.InitializeWARP(hwnd, 320, 240));
+
+    auto* ctx = static_cast<RRE::D3D12Context*>(device.GetContext());
+    ASSERT_NE(ctx, nullptr);
+
+    EXPECT_EQ(ctx->GetCubeShadowMapSize(), 512u);
 
     device.Shutdown();
     DestroyWindow(hwnd);
