@@ -67,6 +67,13 @@ Part A — Point Light Cube Map Shadow, Part B — CSM, Part C — PCSS.
 
 === Part A: Point Light Cube Map Shadow ===
 
+※ Part A 작업 시 아래 두 항목도 함께 처리한다 (Part C 미완 사항):
+  A-추가1. PCSS Blocker Search 반경을 perspective-aware 공식으로 교체한다.
+           searchWidth = lightSize × (receiver_depth - nearPlane) / receiver_depth
+           (현재 고정값 lightSize * shadowTexelSize → Point light perspective에 맞게 개선)
+  A-추가2. PCSS 기본값을 ON으로 변경한다.
+           (Point light shadow 추가 후 contact hardening 효과가 명확해지므로)
+
 1. TextureCube D3D12 리소스를 생성한다.
    - D3D12Context에 Point light 전용 Cube Shadow Map 리소스를 추가한다.
      · ID3D12Resource: TEXTURE2D_ARRAY (ArraySize=6, DXGI_FORMAT_D32_FLOAT)

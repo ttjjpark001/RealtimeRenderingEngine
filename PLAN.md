@@ -66,6 +66,11 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 - 유닛 테스트 12개 (PenumbraWidth 5, FilterRadius 4, ShadowConstants 3) — Debug/Release 모두 통과
 
 #### Part A: Point Light Cube Map Shadow
+> **Part A 작업 시 함께 처리할 항목 (Part C 미완 사항)**:
+> - PCSS Blocker Search 반경을 perspective-aware 공식으로 교체:
+>   `searchWidth = lightSize × (receiver_depth - nearPlane) / receiver_depth`
+>   (현재: `lightSize * shadowTexelSize` 고정 — Point Light perspective 투영 시 필요)
+> - PCSS 기본값 ON으로 변경 (Point Light shadow가 추가되면 효과가 명확해지므로)
 
 1. **TextureCube D3D12 리소스 생성**:
    - `TEXTURE2D_ARRAY` (ArraySize=6, `DXGI_FORMAT_D32_FLOAT`) 리소스 생성
