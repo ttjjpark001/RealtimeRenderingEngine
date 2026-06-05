@@ -58,7 +58,7 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 
 ---
 
-## Prompt 33: Shadow Quality — Cube Map Shadow + CSM + PCSS (전부 완료 ✅)
+## Prompt 33: Shadow Quality — Cube Map Shadow + CSM + PCSS (Part A/B/C 완료 ✅, Part D 미구현)
 
 ```
 PRD.md, PLAN.md, CLAUDE.md의 Phase 33 섹션을 참조하여 Phase 33을 구현하라.
@@ -170,6 +170,32 @@ Part A — Point Light Cube Map Shadow, Part B — CSM, Part C — PCSS.
 - Sponza: 횃불 위치(castShadow=true Point light) 구면 그림자 정상 렌더링
 - Bistro: CSM cascade 색상 디버그 뷰에서 3단계 구분 확인, 원거리 그림자 품질 개선
 - PCSS on/off 전환 시 접촉 경화(Contact Hardening) 그림자 차이 확인
+```
+
+---
+
+## Prompt 33D: Spot Light Shadow
+
+```
+PRD.md, PLAN.md(Phase 33 Part D), CLAUDE.md를 참조하여 Phase 33 Part D를 구현하라.
+이 단계는 castShadow=true인 Spot Light에 대해 Perspective 투영 기반 Shadow Map을 구현한다.
+기존 Directional/Point Shadow 인프라를 최대한 재사용한다.
+
+1. Spot Light Shadow Depth Pass를 구현한다.
+   - castShadow=true인 Spot Light에 대해 기존 Texture2D Shadow Map 슬롯을 할당한다.
+   - Projection: XMMatrixPerspectiveFovLH(outerConeAngle * 2, 1.0f, nearPlane, farPlane)
+   - View 행렬: XMMatrixLookAtLH(lightPos, lightPos + lightDir, upVector)
+   - 기존 BeginShadowPass / DrawShadowDepth / EndShadowPass 패턴을 재사용한다.
+
+2. LightManager 연동을 확인한다.
+   - Spot Light castShadow=true 시 shadowMapIndex가 올바르게 할당되는지 확인한다.
+   - BuildLightConstants()에서 Spot Light의 lightViewProj 행렬이 GPU에 전달되는지 확인한다.
+
+3. HLSL(PBR.hlsl)을 확인한다.
+   - Spot Light는 shadowType==0 (Texture2D) 경로를 사용하므로 기존 PCF/PCSS가 그대로 적용된다.
+   - 별도 HLSL 수정 없이 동작하는지 확인한다.
+
+빌드하여 Spot Light castShadow=true 설정 시 그림자가 정상 렌더링되는지 확인하라.
 ```
 
 ---

@@ -216,7 +216,7 @@ Win32 API 기반의 실시간 렌더링 엔진을 C++로 개발한다. 하드웨
 |----|----------|----------|
 | SM-01 | Shadow Mapping을 이용하여 그림자를 생성한다 | P0 |
 | SM-02 | Directional Light: Orthographic 투영 기반 Shadow Map을 생성한다 | P0 |
-| SM-03 | Spot Light: Perspective 투영 기반 Shadow Map을 생성한다 | P0 |
+| SM-03 | Spot Light: Perspective 투영 기반 Shadow Map을 생성한다 (Phase 33 Part D) | P0 |
 | SM-04 | Point Light: Cube Map(6면) 기반 Omnidirectional Shadow Map을 생성한다 | P1 |
 | SM-05 | Shadow Map 해상도: 기본 1024×1024 (설정 가능) | P0 |
 | SM-06 | Shadow Map은 Depth-only 패스로 렌더링한다 (별도 렌더 패스) | P0 |

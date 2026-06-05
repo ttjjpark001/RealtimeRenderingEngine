@@ -44,10 +44,11 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 
 ---
 
-### Phase 33: Shadow Quality — Cube Map Shadow + CSM + PCSS ✅
+### Phase 33: Shadow Quality — Cube Map Shadow + CSM + PCSS + Spot Light Shadow
 **목표**: (1) `castShadow = true`인 Point Light에 대해 6면 Cube Map 기반 Omnidirectional Shadow Map 구현,
 (2) Directional Light에 Cascaded Shadow Maps(CSM) 적용으로 근거리-원거리 그림자 품질 개선,
-(3) PCSS(Percentage Closer Soft Shadows)로 접촉 경화 그림자 구현.
+(3) PCSS(Percentage Closer Soft Shadows)로 접촉 경화 그림자 구현,
+(4) Spot Light Perspective 투영 기반 Shadow Map 구현.
 
 **Part B 완료**: CSM (Cascaded Shadow Maps) ✅
 - Practical Split Scheme(λ=0.5) 3-cascade 분할
@@ -134,7 +135,22 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
     - Optimization 메뉴에 PCSS on/off 토글 추가 (off 시 기존 PCF 3×3 폴백)
     - DebugHUD에 Shadow Mode 표시 (PCF / PCSS)
 
-**완료 기준**: Point Light Cube Map 구면 그림자 동작(Sponza 횃불 확인), CSM 3 cascade 전환 디버그 색상 시각화 확인(Bistro 원거리 그림자 품질 개선), PCSS on/off 시 접촉 경화 그림자 비교 가능
+**완료 기준**: Point Light Cube Map 구면 그림자 동작(Sponza 횃불 확인), CSM 3 cascade 전환 디버그 색상 시각화 확인(Bistro 원거리 그림자 품질 개선), PCSS on/off 시 접촉 경화 그림자 비교 가능, Spot Light 그림자 정상 렌더링
+
+#### Part D: Spot Light Shadow
+
+13. **Perspective 투영 Shadow Map**:
+    - `castShadow = true`인 Spot Light에 대해 기존 Texture2D Shadow Map 슬롯 재사용
+    - Projection: `XMMatrixPerspectiveFovLH(outerConeAngle * 2, 1.0f, nearPlane, farPlane)`
+    - View 행렬: `XMMatrixLookAtLH(lightPos, lightPos + lightDir, upVector)`
+    - 기존 `BeginShadowPass / DrawShadowDepth / EndShadowPass` 패턴 재사용
+
+14. **HLSL 확장 (PBR.hlsl)**:
+    - Spot Light의 `shadowType == 0` (Texture2D) 경로에서 기존 PCF/PCSS 그대로 적용
+    - `lightViewProj` 슬롯에 Spot Light 투영 행렬 저장
+
+15. **LightManager 연동**:
+    - Spot Light `castShadow=true` 시 Shadow Map 슬롯 자동 할당 (Directional/Point와 동일 방식)
 
 ---
 
