@@ -86,6 +86,9 @@ bool Win32Menu::Initialize(HWND hwnd)
     AppendMenuW(m_optimMenu, MF_STRING,              ID_OPTIM_LOD,            L"LOD");
     AppendMenuW(m_optimMenu, MF_STRING | MF_CHECKED, ID_OPTIM_MIPMAP,         L"MipMap");
     AppendMenuW(m_optimMenu, MF_STRING,              ID_OPTIM_OCCLUSION_CULL, L"Occlusion Culling (Hi-Z)");
+    AppendMenuW(m_optimMenu, MF_SEPARATOR,           0,                       nullptr);
+    AppendMenuW(m_optimMenu, MF_STRING | MF_CHECKED, ID_OPTIM_CSM,            L"CSM (Cascaded Shadow Maps)");
+    AppendMenuW(m_optimMenu, MF_STRING,              ID_OPTIM_CSM_DEBUG,      L"CSM Debug View");
     AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_optimMenu), L"Optimization");
 
     SetMenu(hwnd, m_menuBar);
@@ -261,6 +264,24 @@ bool Win32Menu::HandleCommand(WPARAM wParam)
         CheckMenuItem(m_optimMenu, ID_OPTIM_OCCLUSION_CULL,
             MF_BYCOMMAND | ((state & MF_CHECKED) ? MF_UNCHECKED : MF_CHECKED));
         if (m_occlusionCullToggleCallback) m_occlusionCullToggleCallback();
+        return true;
+    }
+
+    case ID_OPTIM_CSM:
+    {
+        UINT state = GetMenuState(m_optimMenu, ID_OPTIM_CSM, MF_BYCOMMAND);
+        CheckMenuItem(m_optimMenu, ID_OPTIM_CSM,
+            MF_BYCOMMAND | ((state & MF_CHECKED) ? MF_UNCHECKED : MF_CHECKED));
+        if (m_csmToggleCallback) m_csmToggleCallback();
+        return true;
+    }
+
+    case ID_OPTIM_CSM_DEBUG:
+    {
+        UINT state = GetMenuState(m_optimMenu, ID_OPTIM_CSM_DEBUG, MF_BYCOMMAND);
+        CheckMenuItem(m_optimMenu, ID_OPTIM_CSM_DEBUG,
+            MF_BYCOMMAND | ((state & MF_CHECKED) ? MF_UNCHECKED : MF_CHECKED));
+        if (m_csmDebugToggleCallback) m_csmDebugToggleCallback();
         return true;
     }
 

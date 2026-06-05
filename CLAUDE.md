@@ -349,4 +349,11 @@ glTF/GLB/FBX 씬을 엔진 전용 바이너리(`.rrscene`)로 변환하여 이�
 - 1-frame latency 설계: Frame N GPU dispatch → Frame N+1 CPU readback 반영
 - Optimization 메뉴 ID_OPTIM_OCCLUSION_CULL(8005) 연동 완료
 
-**다음 구현 대상**: Phase 33 — CSM (Cascaded Shadow Maps) 또는 PCSS
+**Phase 33 Part B 완료**: CSM (Cascaded Shadow Maps)
+- Practical Split Scheme(λ=0.5) 3-cascade 분할, cascade별 frustum AABB → OrthographicOffCenter 투영
+- ShadowConstants 확장: csmEnabled, cascadeSplitDepths, csmDebugView, cameraForward 추가 (560 bytes)
+- HLSL: GetCascadeIndex / CalcShadowCSM / cascade 디버그 컬러 뷰 (red/green/blue)
+- Optimization 메뉴 ID_OPTIM_CSM(8006) / ID_OPTIM_CSM_DEBUG(8007) 연동
+- 유닛 테스트 12개 (tests/unit/test_CSM.cpp) — Debug/Release 모두 통과
+
+**다음 구현 대상**: Phase 33 Part A (Point Light Cube Map Shadow) 또는 Part C (PCSS)

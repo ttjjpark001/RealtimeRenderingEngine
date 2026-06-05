@@ -174,6 +174,15 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
     {
         m_context->CreateShadowMaps();
 
+        // Camera axes for CSM cascade frustum corner computation
+        XMMATRIX camView    = camera.GetViewMatrix();
+        XMMATRIX camInvView = XMMatrixInverse(nullptr, camView);
+        XMVECTOR camRight   = XMVector3Normalize(camInvView.r[0]);
+        XMVECTOR camUp_     = XMVector3Normalize(camInvView.r[1]);
+        XMVECTOR camFwd     = XMVector3Normalize(camInvView.r[2]);
+        XMVECTOR camPosV    = camInvView.r[3];
+        float    tanHalfFov = tanf(camera.GetFov() * 0.5f);
+
         uint32 shadowIdx = 0;
         for (uint32 li = 0; li < builtLights.numActiveLights && shadowIdx < MAX_SHADOW_MAPS; li++)
         {
@@ -181,94 +190,203 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
                 continue;
 
             const GPULightData& gpuLight = builtLights.lights[li];
-            XMMATRIX lvp;
 
-            XMMATRIX shadowView = XMMatrixIdentity();
-            XMMATRIX shadowProj = XMMatrixIdentity();
-
-            if (gpuLight.type == 0)  // Directional
+            if (gpuLight.type == 0 && m_csmEnabled)
             {
-                XMVECTOR dir    = XMLoadFloat3(&gpuLight.direction);
-                XMVECTOR center = XMLoadFloat3(&m_sceneCenter);
-                XMVECTOR up     = XMVectorSet(0, 1, 0, 0);
-                if (XMVector3NearEqual(XMVector3Normalize(dir), XMVectorSet(0,-1,0,0), XMVectorReplicate(0.01f)) ||
-                    XMVector3NearEqual(XMVector3Normalize(dir), XMVectorSet(0, 1,0,0), XMVectorReplicate(0.01f)))
-                    up = XMVectorSet(0, 0, 1, 0);
-                float orthoSize = m_sceneDiagonal * 1.5f;
-                float farPlane  = m_sceneDiagonal * 3.0f;
-                // nearPlane scales with scene so small models (e.g. FlightHelmet, diagonal~0.66)
-                // don't get their casters clipped.  Shadow cam is diagonal*1.5 from center;
-                // scene geometry starts at diagonal*1.0 from cam, so diagonal*0.5 gives 50%
-                // clearance and keeps near/far ratio at 6:1 (good D32_FLOAT precision).
-                float nearPlane = m_sceneDiagonal * 0.5f;
-                // Place shadow camera behind the scene so the entire depth range [near, far]
-                // covers the scene.  Camera at sceneCenter - dir*(farPlane/2),
-                // looking toward sceneCenter + dir*(farPlane/2).
-                XMVECTOR shadowCamPos = XMVectorSubtract(center,
-                    XMVectorScale(dir, farPlane * 0.5f));
-                shadowView = XMMatrixLookAtLH(shadowCamPos, XMVectorAdd(shadowCamPos, dir), up);
-                shadowProj = XMMatrixOrthographicLH(orthoSize, orthoSize, nearPlane, farPlane);
-                lvp = shadowView * shadowProj;
-            }
-            else if (gpuLight.type == 2)  // Spot
-            {
-                XMVECTOR dir = XMLoadFloat3(&gpuLight.direction);
-                XMVECTOR pos = XMLoadFloat3(&gpuLight.position);
-                XMVECTOR up  = XMVectorSet(0, 1, 0, 0);
-                if (XMVector3NearEqual(XMVector3Normalize(dir), XMVectorSet(0,-1,0,0), XMVectorReplicate(0.01f)) ||
-                    XMVector3NearEqual(XMVector3Normalize(dir), XMVectorSet(0, 1,0,0), XMVectorReplicate(0.01f)))
-                    up = XMVectorSet(0, 0, 1, 0);
-                float fov = acosf(gpuLight.outerConeAngle) * 2.0f;
-                if (fov < 0.1f) fov = 0.1f;
-                float spotFar  = m_sceneDiagonal * 3.0f;
-                float spotNear = m_sceneDiagonal * 0.05f;  // scale with scene; was hardcoded 0.1f
-                shadowView = XMMatrixLookAtLH(pos, XMVectorAdd(pos, dir), up);
-                shadowProj = XMMatrixPerspectiveFovLH(fov, 1.0f, spotNear, spotFar);
-                lvp = shadowView * shadowProj;
-            }
-            else  // Point light (cube shadow not yet implemented)
-            {
-                shadowIdx++;
-                continue;
-            }
+                // ----------------------------------------------------------------
+                // CSM — 3-cascade Directional shadow
+                // ----------------------------------------------------------------
+                if (shadowIdx + CSM_NUM_CASCADES > MAX_SHADOW_MAPS)
+                    break;
 
-            XMStoreFloat4x4(&shadowConst.lightViewProj[shadowIdx], XMMatrixTranspose(lvp));
+                XMFLOAT3 camFwdF;
+                XMStoreFloat3(&camFwdF, camFwd);
+                shadowConst.cameraForward = camFwdF;
+                shadowConst.csmEnabled    = 1;
 
-            XMFLOAT4X4 lvpFloat;
-            XMStoreFloat4x4(&lvpFloat, XMMatrixTranspose(lvp));
+                // Cascade split depths (Practical Split Scheme, lambda = 0.5)
+                float nearZ  = camera.GetNearPlane();
+                float farZ   = min(camera.GetFarPlane(), m_sceneDiagonal * 3.0f);
+                float lambda = 0.5f;
 
-            // Build a frustum from the light's view to skip shadow draw calls
-            // for objects outside the light's view volume.
-            FrustumCuller lightFrustum;
-            lightFrustum.Build(shadowView, shadowProj);
-
-            m_context->BeginShadowPass(shadowIdx);
-            graph.Traverse([this, &lvpFloat, &lightFrustum](SceneNode* node, const XMMATRIX& worldMatrix)
-            {
-                Mesh* mesh = node->GetMesh();
-                if (!mesh) return;
-
-                // Frustum cull against the light's view frustum
-                if (m_frustumCullingEnabled)
+                float splitDepths[CSM_NUM_CASCADES + 1];
+                splitDepths[0]                = nearZ;
+                splitDepths[CSM_NUM_CASCADES] = farZ;
+                for (uint32 k = 1; k < CSM_NUM_CASCADES; k++)
                 {
-                    BoundingBox worldAABB = node->GetWorldAABB();
-                    if (!lightFrustum.IsVisible(worldAABB))
-                        return;
+                    float p         = static_cast<float>(k) / CSM_NUM_CASCADES;
+                    float logSplit  = nearZ * powf(farZ / nearZ, p);
+                    float unifSplit = nearZ + (farZ - nearZ) * p;
+                    splitDepths[k]  = lambda * logSplit + (1.0f - lambda) * unifSplit;
+                }
+                shadowConst.cascadeSplitDepths = {
+                    splitDepths[1], splitDepths[2], splitDepths[3]
+                };
+
+                // Stable light view matrix (shared across all cascades)
+                XMVECTOR dir = XMVector3Normalize(XMLoadFloat3(&gpuLight.direction));
+                XMVECTOR up  = XMVectorSet(0, 1, 0, 0);
+                if (XMVector3NearEqual(dir, XMVectorSet(0,-1,0,0), XMVectorReplicate(0.01f)) ||
+                    XMVector3NearEqual(dir, XMVectorSet(0, 1,0,0), XMVectorReplicate(0.01f)))
+                    up = XMVectorSet(0, 0, 1, 0);
+                XMMATRIX lightView = XMMatrixLookAtLH(
+                    XMVectorNegate(dir) * 1000.0f, XMVectorZero(), up);
+
+                for (uint32 cascade = 0; cascade < CSM_NUM_CASCADES; cascade++)
+                {
+                    float cascNear = splitDepths[cascade];
+                    float cascFar  = splitDepths[cascade + 1];
+
+                    float nearHW = cascNear * tanHalfFov * aspectRatio;
+                    float nearHH = cascNear * tanHalfFov;
+                    float farHW  = cascFar  * tanHalfFov * aspectRatio;
+                    float farHH  = cascFar  * tanHalfFov;
+
+                    XMVECTOR nearC = XMVectorAdd(camPosV, XMVectorScale(camFwd, cascNear));
+                    XMVECTOR farC  = XMVectorAdd(camPosV, XMVectorScale(camFwd, cascFar));
+
+                    XMVECTOR corners[8] = {
+                        XMVectorAdd(XMVectorAdd(nearC, XMVectorScale(camRight,-nearHW)), XMVectorScale(camUp_,-nearHH)),
+                        XMVectorAdd(XMVectorAdd(nearC, XMVectorScale(camRight, nearHW)), XMVectorScale(camUp_,-nearHH)),
+                        XMVectorAdd(XMVectorAdd(nearC, XMVectorScale(camRight,-nearHW)), XMVectorScale(camUp_, nearHH)),
+                        XMVectorAdd(XMVectorAdd(nearC, XMVectorScale(camRight, nearHW)), XMVectorScale(camUp_, nearHH)),
+                        XMVectorAdd(XMVectorAdd(farC,  XMVectorScale(camRight,-farHW)),  XMVectorScale(camUp_,-farHH)),
+                        XMVectorAdd(XMVectorAdd(farC,  XMVectorScale(camRight, farHW)),  XMVectorScale(camUp_,-farHH)),
+                        XMVectorAdd(XMVectorAdd(farC,  XMVectorScale(camRight,-farHW)),  XMVectorScale(camUp_, farHH)),
+                        XMVectorAdd(XMVectorAdd(farC,  XMVectorScale(camRight, farHW)),  XMVectorScale(camUp_, farHH)),
+                    };
+
+                    // Transform corners to light view space → tight AABB
+                    float minX = FLT_MAX, maxX = -FLT_MAX;
+                    float minY = FLT_MAX, maxY = -FLT_MAX;
+                    float minZ = FLT_MAX, maxZ = -FLT_MAX;
+                    for (int ci = 0; ci < 8; ci++)
+                    {
+                        XMVECTOR lv = XMVector3Transform(corners[ci], lightView);
+                        XMFLOAT3 lvf; XMStoreFloat3(&lvf, lv);
+                        minX = min(minX, lvf.x); maxX = max(maxX, lvf.x);
+                        minY = min(minY, lvf.y); maxY = max(maxY, lvf.y);
+                        minZ = min(minZ, lvf.z); maxZ = max(maxZ, lvf.z);
+                    }
+
+                    // Pull Z back to catch shadow casters behind the cascade slice
+                    float zExpand = (maxZ - minZ) * 0.5f + m_sceneDiagonal * 0.1f;
+                    minZ -= zExpand;
+                    // Small XY margin to avoid edge seam artifacts
+                    float mX = (maxX - minX) * 0.02f;
+                    float mY = (maxY - minY) * 0.02f;
+                    minX -= mX; maxX += mX;
+                    minY -= mY; maxY += mY;
+
+                    XMMATRIX shadowProj = XMMatrixOrthographicOffCenterLH(
+                        minX, maxX, minY, maxY, minZ, maxZ);
+                    XMMATRIX lvp = lightView * shadowProj;
+
+                    uint32 slotIdx = shadowIdx + cascade;
+                    XMStoreFloat4x4(&shadowConst.lightViewProj[slotIdx], XMMatrixTranspose(lvp));
+
+                    XMFLOAT4X4 lvpFloat;
+                    XMStoreFloat4x4(&lvpFloat, XMMatrixTranspose(lvp));
+
+                    FrustumCuller cascadeFrustum;
+                    cascadeFrustum.Build(lightView, shadowProj);
+
+                    m_context->BeginShadowPass(slotIdx);
+                    graph.Traverse([this, &lvpFloat, &cascadeFrustum](
+                        SceneNode* node, const XMMATRIX& worldMatrix)
+                    {
+                        Mesh* mesh = node->GetMesh();
+                        if (!mesh) return;
+                        if (m_frustumCullingEnabled &&
+                            !cascadeFrustum.IsVisible(node->GetWorldAABB()))
+                            return;
+                        UploadMesh(mesh);
+                        auto it = m_meshCache.find(mesh);
+                        if (it == m_meshCache.end()) return;
+                        XMFLOAT4X4 worldFloat;
+                        XMStoreFloat4x4(&worldFloat, XMMatrixTranspose(worldMatrix));
+                        m_context->DrawShadowDepth(
+                            it->second.vb.get(), it->second.ib.get(), worldFloat, lvpFloat);
+                    });
+                    m_context->EndShadowPass(slotIdx);
+                }
+                shadowIdx += CSM_NUM_CASCADES;
+            }
+            else if (gpuLight.type == 0 || gpuLight.type == 2)
+            {
+                // ----------------------------------------------------------------
+                // Single shadow map — Directional (CSM off) or Spot
+                // ----------------------------------------------------------------
+                XMMATRIX shadowView = XMMatrixIdentity();
+                XMMATRIX shadowProj = XMMatrixIdentity();
+                XMMATRIX lvp;
+
+                if (gpuLight.type == 0)  // Directional (CSM disabled)
+                {
+                    XMVECTOR dir    = XMLoadFloat3(&gpuLight.direction);
+                    XMVECTOR center = XMLoadFloat3(&m_sceneCenter);
+                    XMVECTOR up     = XMVectorSet(0, 1, 0, 0);
+                    if (XMVector3NearEqual(XMVector3Normalize(dir), XMVectorSet(0,-1,0,0), XMVectorReplicate(0.01f)) ||
+                        XMVector3NearEqual(XMVector3Normalize(dir), XMVectorSet(0, 1,0,0), XMVectorReplicate(0.01f)))
+                        up = XMVectorSet(0, 0, 1, 0);
+                    float orthoSize = m_sceneDiagonal * 1.5f;
+                    float farPlane  = m_sceneDiagonal * 3.0f;
+                    float nearPlane = m_sceneDiagonal * 0.5f;
+                    XMVECTOR shadowCamPos = XMVectorSubtract(center,
+                        XMVectorScale(dir, farPlane * 0.5f));
+                    shadowView = XMMatrixLookAtLH(shadowCamPos, XMVectorAdd(shadowCamPos, dir), up);
+                    shadowProj = XMMatrixOrthographicLH(orthoSize, orthoSize, nearPlane, farPlane);
+                    lvp = shadowView * shadowProj;
+                }
+                else  // Spot
+                {
+                    XMVECTOR dir = XMLoadFloat3(&gpuLight.direction);
+                    XMVECTOR pos = XMLoadFloat3(&gpuLight.position);
+                    XMVECTOR up  = XMVectorSet(0, 1, 0, 0);
+                    if (XMVector3NearEqual(XMVector3Normalize(dir), XMVectorSet(0,-1,0,0), XMVectorReplicate(0.01f)) ||
+                        XMVector3NearEqual(XMVector3Normalize(dir), XMVectorSet(0, 1,0,0), XMVectorReplicate(0.01f)))
+                        up = XMVectorSet(0, 0, 1, 0);
+                    float fov = acosf(gpuLight.outerConeAngle) * 2.0f;
+                    if (fov < 0.1f) fov = 0.1f;
+                    float spotFar  = m_sceneDiagonal * 3.0f;
+                    float spotNear = m_sceneDiagonal * 0.05f;
+                    shadowView = XMMatrixLookAtLH(pos, XMVectorAdd(pos, dir), up);
+                    shadowProj = XMMatrixPerspectiveFovLH(fov, 1.0f, spotNear, spotFar);
+                    lvp = shadowView * shadowProj;
                 }
 
-                UploadMesh(mesh);
-                auto it = m_meshCache.find(mesh);
-                if (it == m_meshCache.end()) return;
+                XMStoreFloat4x4(&shadowConst.lightViewProj[shadowIdx], XMMatrixTranspose(lvp));
 
-                XMFLOAT4X4 worldFloat;
-                XMStoreFloat4x4(&worldFloat, XMMatrixTranspose(worldMatrix));
-                m_context->DrawShadowDepth(
-                    it->second.vb.get(), it->second.ib.get(), worldFloat, lvpFloat);
-            });
-            m_context->EndShadowPass(shadowIdx);
-            shadowIdx++;
+                XMFLOAT4X4 lvpFloat;
+                XMStoreFloat4x4(&lvpFloat, XMMatrixTranspose(lvp));
+
+                FrustumCuller lightFrustum;
+                lightFrustum.Build(shadowView, shadowProj);
+
+                m_context->BeginShadowPass(shadowIdx);
+                graph.Traverse([this, &lvpFloat, &lightFrustum](
+                    SceneNode* node, const XMMATRIX& worldMatrix)
+                {
+                    Mesh* mesh = node->GetMesh();
+                    if (!mesh) return;
+                    if (m_frustumCullingEnabled &&
+                        !lightFrustum.IsVisible(node->GetWorldAABB()))
+                        return;
+                    UploadMesh(mesh);
+                    auto it = m_meshCache.find(mesh);
+                    if (it == m_meshCache.end()) return;
+                    XMFLOAT4X4 worldFloat;
+                    XMStoreFloat4x4(&worldFloat, XMMatrixTranspose(worldMatrix));
+                    m_context->DrawShadowDepth(
+                        it->second.vb.get(), it->second.ib.get(), worldFloat, lvpFloat);
+                });
+                m_context->EndShadowPass(shadowIdx);
+                shadowIdx++;
+            }
+            // Point light: cube shadow not yet implemented — skip
         }
         shadowConst.shadowMapCount = shadowIdx;
+        shadowConst.csmDebugView   = m_csmDebugView ? 1u : 0u;
 
         // Restore main back-buffer RTV/DSV/viewport after all shadow passes
         m_context->RestoreMainRenderTarget();

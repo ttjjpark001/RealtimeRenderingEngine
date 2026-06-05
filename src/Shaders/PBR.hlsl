@@ -56,15 +56,20 @@ cbuffer PerMaterialCB : register(b2)
     uint3 _padMat;        // padding
 };
 
-static const uint MAX_SHADOW_MAPS = 8;
+static const uint MAX_SHADOW_MAPS  = 8;
+static const uint CSM_NUM_CASCADES = 3;
 
 cbuffer ShadowCB : register(b3)
 {
     float4x4 lightViewProj[MAX_SHADOW_MAPS];
-    uint shadowMapCount;
-    float shadowTexelSize;         // 1.0 / shadowMapResolution
-    float shadowNormalBiasWorld;   // world-space normal offset = orthoSize/mapSize * 2
-    float _padShadow;
+    uint  shadowMapCount;
+    float shadowTexelSize;          // 1.0 / shadowMapResolution
+    float shadowNormalBiasWorld;    // world-space normal offset = orthoSize/mapSize * 2
+    uint  csmEnabled;               // 1 = CSM active for Directional lights
+    float3 cascadeSplitDepths;      // view-space Z far boundary per cascade (x=c0, y=c1, z=c2)
+    uint  csmDebugView;             // 1 = tint by cascade index (red/green/blue)
+    float3 cameraForward;           // world-space camera forward direction
+    float _padFwd;
 };
 
 // ---------------------------------------------------------------------------
@@ -243,6 +248,30 @@ float CalcShadow(uint shadowIdx, float3 worldPos)
 }
 
 // ---------------------------------------------------------------------------
+// CSM — cascade index selection and shadow lookup
+// ---------------------------------------------------------------------------
+int GetCascadeIndex(float3 worldPos)
+{
+    // Pre-initialize so FXC can prove result is always assigned (avoids X4000).
+    int result = 2;
+    float viewDepth = dot(worldPos - CameraPosition, normalize(cameraForward));
+    if      (viewDepth < cascadeSplitDepths.x) result = 0;
+    else if (viewDepth < cascadeSplitDepths.y) result = 1;
+    return result;
+}
+
+float CalcShadowCSM(uint baseIdx, float3 worldPos, float3 biasedPos)
+{
+    // Pre-initialize result so FXC dataflow can prove it is always assigned.
+    float result    = 1.0f;
+    int  cascadeIdx = GetCascadeIndex(worldPos);
+    uint shadowIdx  = baseIdx + (uint)cascadeIdx;
+    if (shadowIdx < shadowMapCount)
+        result = CalcShadow(shadowIdx, biasedPos);
+    return result;
+}
+
+// ---------------------------------------------------------------------------
 // Pixel Shader
 // ---------------------------------------------------------------------------
 float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
@@ -368,14 +397,14 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
         float3 kD = (1.0f - F) * (1.0f - metallic);
         float3 diffuse = kD * albedo / PI;
 
-        // Shadow factor — normal offset bias prevents PCF samples from crossing geometry
-        // boundaries (base top face sampling base front face → false shadow).
-        // Bias = 2 shadow-map texels in world space, scaled with scene size.
         float shadowFactor = 1.0f;
         if (lights[i].shadowMapIndex >= 0 && (uint)lights[i].shadowMapIndex < shadowMapCount)
         {
             float3 shadowPos = input.worldPos + N * shadowNormalBiasWorld;
-            shadowFactor = CalcShadow((uint)lights[i].shadowMapIndex, shadowPos);
+            if (csmEnabled && lights[i].type == 0)
+                shadowFactor = CalcShadowCSM((uint)lights[i].shadowMapIndex, input.worldPos, shadowPos);
+            else
+                shadowFactor = CalcShadow((uint)lights[i].shadowMapIndex, shadowPos);
         }
 
         Lo += (diffuse + specular) * lightColor * attenuation * NdotL * shadowFactor;
@@ -385,6 +414,16 @@ float4 PSMain(PSInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
     float3 ambient = float3(0.15f, 0.15f, 0.15f) * albedo * ao;
 
     float3 color = ambient + Lo + emissive;
+
+    // CSM debug: tint pixel by cascade index (red=0, green=1, blue=2)
+    if (csmEnabled && csmDebugView)
+    {
+        int    cascadeIdx  = GetCascadeIndex(input.worldPos);
+        float3 tintColor   = float3(0.2f, 0.2f, 1.0f);  // default: blue (cascade 2)
+        if      (cascadeIdx == 0) tintColor = float3(1.0f, 0.2f, 0.2f);
+        else if (cascadeIdx == 1) tintColor = float3(0.2f, 1.0f, 0.2f);
+        color = lerp(color, tintColor, 0.5f);
+    }
 
     // HDR tone mapping (Reinhard)
     color = color / (color + 1.0f);

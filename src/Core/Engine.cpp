@@ -215,6 +215,14 @@ bool Engine::Initialize(const EngineInitParams& params)
         if (m_renderer)
             m_renderer->SetOcclusionCullingEnabled(!m_renderer->IsOcclusionCullingEnabled());
     });
+    m_menu->SetCSMToggleCallback([this]() {
+        if (m_renderer)
+            m_renderer->SetCSMEnabled(!m_renderer->IsCSMEnabled());
+    });
+    m_menu->SetCSMDebugToggleCallback([this]() {
+        if (m_renderer)
+            m_renderer->SetCSMDebugView(!m_renderer->IsCSMDebugView());
+    });
 
     // Create debug HUD
     m_debugHUD = std::make_unique<DebugHUD>();

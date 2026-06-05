@@ -116,10 +116,14 @@ struct ShadowConstants
 {
     DirectX::XMFLOAT4X4 lightViewProj[MAX_SHADOW_MAPS]; // 64 * 8 = 512
     uint32 shadowMapCount;                                // 4
-    float  shadowTexelSize;                               // 4  (= 1.0f / shadowMapSize)
-    float  shadowNormalBiasWorld;                         // 4  (= orthoSize / mapSize * 2)
-    float _pad;                                           // 4
-};  // Total: 528 bytes → 768 aligned (256 * 3)
+    float  shadowTexelSize;                               // 4   (= 1.0f / shadowMapSize)
+    float  shadowNormalBiasWorld;                         // 4   (= orthoSize / mapSize * 2)
+    uint32 csmEnabled;                                    // 4   CSM 활성 여부
+    DirectX::XMFLOAT3 cascadeSplitDepths;                // 12  cascade 0/1/2 far 경계 (view-space Z)
+    uint32 csmDebugView;                                  // 4   cascade 색상 시각화
+    DirectX::XMFLOAT3 cameraForward;                     // 12  world-space 카메라 forward
+    float _padFwd;                                        // 4
+};  // Total: 560 bytes → 768 aligned (256 * 3)
 static_assert(sizeof(ShadowConstants) <= 768, "ShadowConstants exceeds 768-byte CB slot");
 
 // Shadow depth pass per-batch CB (b0) — world comes from per-instance buffer

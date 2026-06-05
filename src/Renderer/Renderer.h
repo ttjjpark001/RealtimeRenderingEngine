@@ -86,6 +86,14 @@ public:
     void SetLightCullingEnabled(bool enabled)   { m_lightCullingEnabled = enabled; }
     bool IsLightCullingEnabled() const          { return m_lightCullingEnabled; }
 
+    // CSM (Cascaded Shadow Maps) — Phase 33a
+    void SetCSMEnabled(bool enabled)            { m_csmEnabled = enabled; }
+    bool IsCSMEnabled() const                   { return m_csmEnabled; }
+    void SetCSMDebugView(bool enabled)          { m_csmDebugView = enabled; }
+    bool IsCSMDebugView() const                 { return m_csmDebugView; }
+
+    static constexpr uint32 CSM_NUM_CASCADES = 3;
+
     // Upload mesh VB/IB to GPU (cached, idempotent)
     void UploadMesh(Mesh* mesh);
 
@@ -122,6 +130,8 @@ private:
     bool          m_occlusionCullingEnabled = false;
     bool          m_lightCullingEnabled    = true;
     bool          m_vramPressure           = false;
+    bool          m_csmEnabled             = true;
+    bool          m_csmDebugView           = false;
     float         m_sceneDiagonal          = 10.0f;
     DirectX::XMFLOAT3 m_sceneCenter        = { 0.f, 0.f, 0.f };
 

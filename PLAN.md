@@ -49,6 +49,14 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 (2) Directional Light에 Cascaded Shadow Maps(CSM) 적용으로 근거리-원거리 그림자 품질 개선,
 (3) PCSS(Percentage Closer Soft Shadows)로 접촉 경화 그림자 구현.
 
+**Part B 완료**: CSM (Cascaded Shadow Maps) ✅
+- Practical Split Scheme(λ=0.5) 3-cascade 분할
+- cascade별 frustum AABB → OrthographicOffCenter 투영 행렬 계산
+- 3-pass Shadow Depth (슬롯 0/1/2)
+- HLSL GetCascadeIndex / CalcShadowCSM / 디버그 컬러 뷰 (red/green/blue)
+- Optimization 메뉴 CSM on/off + CSM Debug View 토글
+- 유닛 테스트 12개 (SplitDepths 5, CascadeIndex 5, ShadowConstants 2) — Debug/Release 모두 통과
+
 #### Part A: Point Light Cube Map Shadow
 
 1. **TextureCube D3D12 리소스 생성**:
