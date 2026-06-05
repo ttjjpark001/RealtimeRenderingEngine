@@ -413,14 +413,14 @@ void Renderer::RenderScene(SceneGraph& graph, Camera& camera,
                 {
                     XMVECTOR fdir = XMLoadFloat3(&faceDirs[face]);
                     XMVECTOR fup  = XMLoadFloat3(&faceUps[face]);
-                    XMMATRIX view = XMMatrixLookAtLH(lightPos, XMVectorAdd(lightPos, fdir), fup);
-                    XMMATRIX lvp  = view * proj;
+                    XMMATRIX faceView = XMMatrixLookAtLH(lightPos, XMVectorAdd(lightPos, fdir), fup);
+                    XMMATRIX lvp      = faceView * proj;
 
                     XMFLOAT4X4 lvpFloat;
                     XMStoreFloat4x4(&lvpFloat, XMMatrixTranspose(lvp));
 
                     FrustumCuller faceFrustum;
-                    faceFrustum.Build(view, proj);
+                    faceFrustum.Build(faceView, proj);
 
                     m_context->BeginCubeShadowPass(cubeIdx, face);
                     graph.Traverse([this, &lvpFloat, &faceFrustum, &lightPosF, farPlane](
