@@ -182,3 +182,58 @@ TEST(CSM_ShadowConstants, FieldOffsets_MatchHLSLLayout)
     EXPECT_EQ(offsetof(ShadowConstants, csmDebugView),         540u);
     EXPECT_EQ(offsetof(ShadowConstants, cameraForward),        544u);
 }
+
+// ---------------------------------------------------------------------------
+// Cascade blend band (mirrors PBR.hlsl CalcShadowCSM blend logic)
+// ---------------------------------------------------------------------------
+
+// Returns blend factor t in [0,1] for the cascade 0→1 boundary.
+// t=0 → pure cascade 0, t=1 → pure cascade 1.
+static float BlendFactor(float viewDepth, float splitDepth, float bandWidth)
+{
+    float start = splitDepth - bandWidth;
+    float t = (viewDepth - start) / bandWidth;
+    return (std::max)(0.0f, (std::min)(1.0f, t));
+}
+
+TEST(CSM_BlendBand, BeforeBand_IsZero)
+{
+    // viewDepth well before blend zone → pure cascade 0 (t = 0)
+    float split = 17.0f, band = split * 0.1f;
+    EXPECT_FLOAT_EQ(BlendFactor(split - band - 1.0f, split, band), 0.0f);
+}
+
+TEST(CSM_BlendBand, AfterBand_IsOne)
+{
+    // viewDepth at or past split → pure cascade 1 (t = 1)
+    float split = 17.0f, band = split * 0.1f;
+    EXPECT_FLOAT_EQ(BlendFactor(split, split, band), 1.0f);
+    EXPECT_FLOAT_EQ(BlendFactor(split + 5.0f, split, band), 1.0f);
+}
+
+TEST(CSM_BlendBand, InsideBand_IsInRange)
+{
+    float split = 17.0f, band = split * 0.1f;
+    float t = BlendFactor(split - band * 0.5f, split, band);
+    EXPECT_GT(t, 0.0f);
+    EXPECT_LT(t, 1.0f);
+}
+
+TEST(CSM_BlendBand, MidBand_IsApproximatelyHalf)
+{
+    float split = 17.0f, band = split * 0.1f;
+    float t = BlendFactor(split - band * 0.5f, split, band);
+    EXPECT_NEAR(t, 0.5f, 1e-5f);
+}
+
+TEST(CSM_BlendBand, MonotonicallyIncreasing)
+{
+    float split = 17.0f, band = split * 0.1f;
+    float prev = BlendFactor(split - band - 1.0f, split, band);
+    for (float d = split - band; d <= split + 1.0f; d += 0.5f)
+    {
+        float curr = BlendFactor(d, split, band);
+        EXPECT_GE(curr, prev) << "Not monotonic at viewDepth=" << d;
+        prev = curr;
+    }
+}

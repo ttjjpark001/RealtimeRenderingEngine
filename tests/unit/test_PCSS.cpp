@@ -132,3 +132,40 @@ TEST(PCSS_ShadowConstants, LightSize_DefaultIsZero)
     EXPECT_FLOAT_EQ(sc.lightSize, 0.0f);
     EXPECT_EQ(sc.pcssEnabled, 0u);
 }
+
+// ---------------------------------------------------------------------------
+// lightSize multiplier (mirrors Renderer lightSize = diagonal * 0.02 * mult)
+// ---------------------------------------------------------------------------
+
+static float CalcLightSize(float sceneDiagonal, float multiplier)
+{
+    return sceneDiagonal * 0.02f * multiplier;
+}
+
+TEST(PCSS_LightSizeMultiplier, DefaultMultiplier_MatchesBaseline)
+{
+    float diagonal = 37.0f;  // Sponza 기준
+    EXPECT_NEAR(CalcLightSize(diagonal, 1.0f), diagonal * 0.02f, 1e-5f);
+}
+
+TEST(PCSS_LightSizeMultiplier, SmallPreset_IsHalfOfNormal)
+{
+    float diagonal = 37.0f;
+    EXPECT_NEAR(CalcLightSize(diagonal, 0.5f),
+                CalcLightSize(diagonal, 1.0f) * 0.5f, 1e-5f);
+}
+
+TEST(PCSS_LightSizeMultiplier, LargePreset_IsDoubleOfNormal)
+{
+    float diagonal = 37.0f;
+    EXPECT_NEAR(CalcLightSize(diagonal, 2.0f),
+                CalcLightSize(diagonal, 1.0f) * 2.0f, 1e-5f);
+}
+
+TEST(PCSS_LightSizeMultiplier, ScalesWithSceneDiagonal)
+{
+    float mult = 1.0f;
+    float sizeSmall = CalcLightSize(10.0f,  mult);
+    float sizeLarge = CalcLightSize(100.0f, mult);
+    EXPECT_NEAR(sizeLarge, sizeSmall * 10.0f, 1e-4f);
+}
