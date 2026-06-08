@@ -103,6 +103,18 @@ bool Win32Menu::Initialize(HWND hwnd)
     AppendMenuW(m_optimMenu, MF_STRING | MF_GRAYED,  ID_OPTIM_TORCH_SHADOW_4,   L"Torch Shadows: All 4");
     AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_optimMenu), L"Optimization");
 
+    // Animation menu (Phase 34 Part A) — clips populated later via SetAnimationClips()
+    m_animMenu = CreatePopupMenu();
+    AppendMenuW(m_animMenu, MF_STRING | MF_GRAYED, ID_ANIM_PLAY_PAUSE, L"Play / Pause");
+    AppendMenuW(m_animMenu, MF_STRING | MF_GRAYED, ID_ANIM_STOP,       L"Stop");
+    AppendMenuW(m_animMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m_animMenu, MF_STRING | MF_GRAYED, ID_ANIM_SPEED_HALF,   L"Speed: 0.5x");
+    AppendMenuW(m_animMenu, MF_STRING | MF_GRAYED, ID_ANIM_SPEED_NORMAL, L"Speed: 1.0x");
+    AppendMenuW(m_animMenu, MF_STRING | MF_GRAYED, ID_ANIM_SPEED_DOUBLE, L"Speed: 2.0x");
+    AppendMenuW(m_animMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m_animMenu, MF_STRING | MF_GRAYED | MF_DISABLED, 0, L"(No Animation)");
+    AppendMenuW(m_menuBar, MF_POPUP, reinterpret_cast<UINT_PTR>(m_animMenu), L"Animation");
+
     SetMenu(hwnd, m_menuBar);
     return true;
 }
@@ -332,9 +344,100 @@ bool Win32Menu::HandleCommand(WPARAM wParam)
             m_torchShadowCountCallback(static_cast<int>(id - ID_OPTIM_TORCH_SHADOW_0));
         return true;
 
+    // Animation commands (Phase 34 Part A)
+    case ID_ANIM_PLAY_PAUSE:
+        if (m_animPlayPauseCallback) m_animPlayPauseCallback();
+        return true;
+
+    case ID_ANIM_STOP:
+        if (m_animStopCallback) m_animStopCallback();
+        return true;
+
+    case ID_ANIM_SPEED_HALF:
+    case ID_ANIM_SPEED_NORMAL:
+    case ID_ANIM_SPEED_DOUBLE:
+        CheckMenuRadioItem(m_animMenu, ID_ANIM_SPEED_HALF, ID_ANIM_SPEED_DOUBLE, id, MF_BYCOMMAND);
+        if (m_animSpeedCallback)
+        {
+            float speed = (id == ID_ANIM_SPEED_HALF) ? 0.5f
+                        : (id == ID_ANIM_SPEED_DOUBLE) ? 2.0f : 1.0f;
+            m_animSpeedCallback(speed);
+        }
+        return true;
+
     default:
+        // Dynamic animation clip selection
+        if (id >= ID_ANIM_CLIP_BASE && id < ID_ANIM_CLIP_BASE + MAX_ANIM_CLIPS)
+        {
+            size_t clipIndex = static_cast<size_t>(id - ID_ANIM_CLIP_BASE);
+            if (clipIndex < m_animClipCount)
+            {
+                CheckMenuRadioItem(m_animMenu,
+                    ID_ANIM_CLIP_BASE,
+                    static_cast<UINT>(ID_ANIM_CLIP_BASE + m_animClipCount - 1),
+                    id, MF_BYCOMMAND);
+                if (m_animClipSelectCallback) m_animClipSelectCallback(clipIndex);
+            }
+            return true;
+        }
         return false;
     }
+}
+
+void Win32Menu::SetAnimationClips(const std::vector<std::string>& clipNames)
+{
+    if (!m_animMenu) return;
+
+    // Remove all items from index 7 onward (after the separator following speed options)
+    // Layout: Play(0), Stop(1), Sep(2), Half(3), Normal(4), Double(5), Sep(6), clips...
+    constexpr int kClipStartPos = 7;
+    int itemCount = GetMenuItemCount(m_animMenu);
+    for (int i = itemCount - 1; i >= kClipStartPos; --i)
+        DeleteMenu(m_animMenu, static_cast<UINT>(i), MF_BYPOSITION);
+
+    m_animClipCount = 0;
+
+    if (clipNames.empty())
+    {
+        AppendMenuW(m_animMenu, MF_STRING | MF_GRAYED | MF_DISABLED, 0, L"(No Animation)");
+        // Disable Play/Pause, Stop, speed items
+        for (UINT id : {ID_ANIM_PLAY_PAUSE, ID_ANIM_STOP,
+                        ID_ANIM_SPEED_HALF, ID_ANIM_SPEED_NORMAL, ID_ANIM_SPEED_DOUBLE})
+            EnableMenuItem(m_animMenu, id, MF_BYCOMMAND | MF_GRAYED);
+        return;
+    }
+
+    // Enable transport & speed controls
+    for (UINT id : {ID_ANIM_PLAY_PAUSE, ID_ANIM_STOP,
+                    ID_ANIM_SPEED_HALF, ID_ANIM_SPEED_NORMAL, ID_ANIM_SPEED_DOUBLE})
+        EnableMenuItem(m_animMenu, id, MF_BYCOMMAND | MF_ENABLED);
+    CheckMenuRadioItem(m_animMenu, ID_ANIM_SPEED_HALF, ID_ANIM_SPEED_DOUBLE,
+        ID_ANIM_SPEED_NORMAL, MF_BYCOMMAND);
+
+    size_t count = (clipNames.size() < MAX_ANIM_CLIPS) ? clipNames.size() : MAX_ANIM_CLIPS;
+    m_animClipCount = count;
+
+    for (size_t i = 0; i < count; ++i)
+    {
+        // Convert clip name to wide string
+        const std::string& name = clipNames[i];
+        int wLen = MultiByteToWideChar(CP_UTF8, 0, name.c_str(), -1, nullptr, 0);
+        std::wstring wName(wLen, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, name.c_str(), -1, wName.data(), wLen);
+
+        AppendMenuW(m_animMenu, MF_STRING,
+            static_cast<UINT>(ID_ANIM_CLIP_BASE + i), wName.c_str());
+    }
+
+    // Default-check the first clip
+    if (count > 0)
+        CheckMenuRadioItem(m_animMenu,
+            ID_ANIM_CLIP_BASE,
+            static_cast<UINT>(ID_ANIM_CLIP_BASE + count - 1),
+            ID_ANIM_CLIP_BASE, MF_BYCOMMAND);
+
+    // Force menu bar redraw
+    DrawMenuBar(m_hwnd);
 }
 
 void Win32Menu::SetTorchShadowMenuEnabled(bool enabled, int checkedCount)

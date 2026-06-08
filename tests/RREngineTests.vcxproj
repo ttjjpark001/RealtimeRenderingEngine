@@ -115,7 +115,9 @@
     <ClCompile Include="unit\test_PCSS.cpp" />
     <ClCompile Include="unit\test_PointShadow.cpp" />
     <ClCompile Include="unit\test_SpotShadow.cpp" />
+    <ClCompile Include="unit\test_Animation.cpp" />
     <ClCompile Include="$(SolutionDir)src\Asset\SceneLoader.cpp" />
+    <ClCompile Include="$(SolutionDir)src\Core\AnimationController.cpp" />
     <ClCompile Include="$(SolutionDir)src\Asset\Texture.cpp" />
     <ClCompile Include="$(SolutionDir)src\Asset\TextureCache.cpp" />
     <ClCompile Include="$(SolutionDir)src\RHI\D3D12\D3D12Device.cpp" />

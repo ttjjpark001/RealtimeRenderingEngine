@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Core/Types.h"
+#include "Asset/Animation.h"
 #include <memory>
 #include <vector>
 #include <string>
@@ -22,6 +23,7 @@ class SceneGraph;
 class TextureCache;
 class TextureStreamer;
 class ThreadPool;
+class AnimationController;
 
 struct EngineInitParams
 {
@@ -84,6 +86,11 @@ private:
     std::vector<std::unique_ptr<Mesh>> m_loadedMeshes;
     std::vector<std::unique_ptr<Material>> m_loadedMaterials;
     float m_sceneDiagonal = 10.0f;
+
+    // Animation (Phase 34 Part A)
+    std::unique_ptr<AnimationController> m_animController;
+    std::vector<AnimationClip>           m_animationClips;
+    size_t                               m_activeClipIndex = SIZE_MAX;
 
     // Orbiting light (for PBR visualization)
     size_t m_orbitLightIndex = 0;

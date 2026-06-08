@@ -5,6 +5,7 @@
 #include <DirectXCollision.h>
 #include <vector>
 #include <memory>
+#include <string>
 
 namespace RRE
 {
@@ -27,6 +28,10 @@ public:
     // World matrix: parent's world matrix * local matrix (recursive)
     DirectX::XMMATRIX GetWorldMatrix() const;
 
+    // Node name (matches aiNode::mName for animation targeting)
+    void SetName(const std::string& name) { m_name = name; }
+    const std::string& GetName() const    { return m_name; }
+
     // Transform (mutable access marks AABB dirty)
     Transform& GetTransform() { m_aabbDirty = true; return m_localTransform; }
     const Transform& GetTransform() const { return m_localTransform; }
@@ -43,6 +48,7 @@ public:
     DirectX::BoundingBox GetWorldAABB() const;
 
 private:
+    std::string m_name;
     Transform m_localTransform;
     Mesh* m_mesh = nullptr;
     Material* m_material = nullptr;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Core/Types.h"
+#include "Asset/Animation.h"
 #include "Asset/Material.h"
 #include "Renderer/Mesh.h"
 #include "Scene/SceneNode.h"
@@ -77,6 +78,7 @@ struct SceneData
     BoundingBox sceneBounds;
     std::optional<CameraInfo> camera;
     std::unordered_map<std::string, EmbeddedTextureData> embeddedTextures;
+    std::vector<AnimationClip> animations;  // Phase 34: Node Transform Animation
 };
 
 class SceneLoader
@@ -99,6 +101,7 @@ private:
                                               SceneData& sceneData);
     std::optional<CameraInfo> ExtractCamera(const void* aiScenePtr);
     void CalculateSceneBounds(SceneData& data);
+    void LoadAnimations(const void* aiScenePtr, SceneNode* rootNode, SceneData& data);
 };
 
 } // namespace RRE

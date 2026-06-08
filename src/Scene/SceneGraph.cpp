@@ -37,6 +37,23 @@ void SceneGraph::TraverseNode(SceneNode* node, const DirectX::XMMATRIX& parentWo
     }
 }
 
+SceneNode* SceneGraph::FindNodeByName(const std::string& name) const
+{
+    return FindNodeInSubtree(m_root.get(), name);
+}
+
+SceneNode* SceneGraph::FindNodeInSubtree(SceneNode* node, const std::string& name) const
+{
+    if (!node) return nullptr;
+    if (node->GetName() == name) return node;
+    for (auto& child : node->GetChildren())
+    {
+        SceneNode* found = FindNodeInSubtree(child.get(), name);
+        if (found) return found;
+    }
+    return nullptr;
+}
+
 uint32 SceneGraph::GetTotalPolygonCount() const
 {
     if (!m_root)

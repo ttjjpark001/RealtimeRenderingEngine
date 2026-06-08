@@ -2,6 +2,8 @@
 
 #include <Windows.h>
 #include <functional>
+#include <vector>
+#include <string>
 #include "Core/Types.h"
 
 namespace RRE
@@ -57,6 +59,15 @@ constexpr UINT ID_OPTIM_TORCH_SHADOW_2   = 8014;
 constexpr UINT ID_OPTIM_TORCH_SHADOW_3   = 8015;
 constexpr UINT ID_OPTIM_TORCH_SHADOW_4   = 8016;
 
+// Animation menu (Phase 34 Part A)
+constexpr UINT ID_ANIM_PLAY_PAUSE   = 9001;
+constexpr UINT ID_ANIM_STOP         = 9002;
+constexpr UINT ID_ANIM_SPEED_HALF   = 9003;
+constexpr UINT ID_ANIM_SPEED_NORMAL = 9004;
+constexpr UINT ID_ANIM_SPEED_DOUBLE = 9005;
+constexpr UINT ID_ANIM_CLIP_BASE    = 9100;  // 9100..9131 — up to 32 clips
+constexpr UINT MAX_ANIM_CLIPS       = 32;
+
 class Win32Menu
 {
 public:
@@ -82,6 +93,10 @@ public:
     using PCSSToggleCallback             = std::function<void()>;
     using PCSSLightSizeCallback          = std::function<void(float multiplier)>;
     using TorchShadowCountCallback       = std::function<void(int count)>;
+    using AnimationPlayPauseCallback     = std::function<void()>;
+    using AnimationStopCallback          = std::function<void()>;
+    using AnimationSpeedCallback         = std::function<void(float speed)>;
+    using AnimationClipSelectCallback    = std::function<void(size_t clipIndex)>;
 
     Win32Menu() = default;
     ~Win32Menu() = default;
@@ -112,9 +127,16 @@ public:
     void SetPCSSToggleCallback(PCSSToggleCallback cb)                   { m_pcssToggleCallback = std::move(cb); }
     void SetPCSSLightSizeCallback(PCSSLightSizeCallback cb)             { m_pcssLightSizeCallback = std::move(cb); }
     void SetTorchShadowCountCallback(TorchShadowCountCallback cb)       { m_torchShadowCountCallback = std::move(cb); }
+    void SetAnimationPlayPauseCallback(AnimationPlayPauseCallback cb)   { m_animPlayPauseCallback = std::move(cb); }
+    void SetAnimationStopCallback(AnimationStopCallback cb)             { m_animStopCallback = std::move(cb); }
+    void SetAnimationSpeedCallback(AnimationSpeedCallback cb)           { m_animSpeedCallback = std::move(cb); }
+    void SetAnimationClipSelectCallback(AnimationClipSelectCallback cb) { m_animClipSelectCallback = std::move(cb); }
 
     // Sponza 씬 로드 시 활성화, 다른 씬 로드 시 비활성화
     void SetTorchShadowMenuEnabled(bool enabled, int checkedCount = 4);
+
+    // 씬 로드 후 애니메이션 클립 목록 갱신
+    void SetAnimationClips(const std::vector<std::string>& clipNames);
 
 private:
     HWND m_hwnd = nullptr;
@@ -125,6 +147,7 @@ private:
     HMENU m_cameraMenu = nullptr;
     HMENU m_renderMenu = nullptr;
     HMENU m_optimMenu = nullptr;
+    HMENU m_animMenu = nullptr;
 
     ViewCallback m_viewCallback;
     LightColorCallback m_lightColorCallback;
@@ -148,6 +171,11 @@ private:
     PCSSToggleCallback             m_pcssToggleCallback;
     PCSSLightSizeCallback          m_pcssLightSizeCallback;
     TorchShadowCountCallback       m_torchShadowCountCallback;
+    AnimationPlayPauseCallback     m_animPlayPauseCallback;
+    AnimationStopCallback          m_animStopCallback;
+    AnimationSpeedCallback         m_animSpeedCallback;
+    AnimationClipSelectCallback    m_animClipSelectCallback;
+    size_t                         m_animClipCount = 0;
 };
 
 } // namespace RRE

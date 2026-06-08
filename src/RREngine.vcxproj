@@ -121,6 +121,7 @@
     <ClCompile Include="Renderer\LightCuller.cpp" />
     <ClCompile Include="Renderer\InstanceBatcher.cpp" />
     <ClCompile Include="Core\ThreadPool.cpp" />
+    <ClCompile Include="Core\AnimationController.cpp" />
     <ClCompile Include="Scene\Transform.cpp" />
     <ClCompile Include="Scene\SceneNode.cpp" />
     <ClCompile Include="Scene\SceneGraph.cpp" />
@@ -162,8 +163,10 @@
     <ClInclude Include="Lighting\Light.h" />
     <ClInclude Include="Lighting\LightManager.h" />
     <ClInclude Include="Scene\Camera.h" />
+    <ClInclude Include="Asset\Animation.h" />
     <ClInclude Include="Asset\SceneLoader.h" />
     <ClInclude Include="Asset\Material.h" />
+    <ClInclude Include="Core\AnimationController.h" />
     <ClInclude Include="Asset\Texture.h" />
     <ClInclude Include="Asset\TextureCache.h" />
     <ClInclude Include="Asset\TextureStreamer.h" />

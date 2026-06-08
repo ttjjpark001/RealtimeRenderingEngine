@@ -75,6 +75,9 @@ SceneData SceneLoader::LoadScene(const std::string& filePath)
     // Calculate scene bounds
     CalculateSceneBounds(data);
 
+    // Load animations (Phase 34 Part A)
+    LoadAnimations(aiScenePtr, data.rootNode.get(), data);
+
     return data;
 }
 
@@ -82,6 +85,9 @@ void SceneLoader::ProcessNode(AssimpContext& ctx, const void* aiNodePtr,
                               SceneNode* parentNode)
 {
     const aiNode* node = static_cast<const aiNode*>(aiNodePtr);
+
+    // Set node name for animation channel targeting
+    parentNode->SetName(node->mName.C_Str());
 
     // Extract transform from aiNode
     const aiMatrix4x4& m = node->mTransformation;
@@ -473,6 +479,141 @@ void SceneLoader::CalculateSceneBounds(SceneData& data)
         {
             data.sceneBounds.Expand(vertex.position);
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 34 Part A: Node Transform Animation loading
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Depth-first search for a SceneNode with the given name
+SceneNode* FindNodeInTree(SceneNode* node, const std::string& name)
+{
+    if (!node) return nullptr;
+    if (node->GetName() == name) return node;
+    for (auto& child : node->GetChildren())
+    {
+        SceneNode* found = FindNodeInTree(child.get(), name);
+        if (found) return found;
+    }
+    return nullptr;
+}
+
+AnimationInterpolation ConvertInterpolation(aiAnimInterpolation ai)
+{
+    switch (ai)
+    {
+    case aiAnimInterpolation_Step:         return AnimationInterpolation::Step;
+    case aiAnimInterpolation_Cubic_Spline: return AnimationInterpolation::CubicSpline;
+    default:                               return AnimationInterpolation::Linear;
+    }
+}
+
+} // anonymous namespace
+
+void SceneLoader::LoadAnimations(const void* aiScenePtr, SceneNode* rootNode, SceneData& data)
+{
+    const aiScene* scene = static_cast<const aiScene*>(aiScenePtr);
+    if (!scene || !scene->HasAnimations()) return;
+
+    constexpr double kDefaultTps = 25.0;
+
+    for (unsigned int ai = 0; ai < scene->mNumAnimations; ++ai)
+    {
+        const aiAnimation* anim = scene->mAnimations[ai];
+        const double tps = (anim->mTicksPerSecond > 0.0) ? anim->mTicksPerSecond : kDefaultTps;
+
+        AnimationClip clip;
+        clip.name     = anim->mName.C_Str();
+        if (clip.name.empty())
+            clip.name = "Clip_" + std::to_string(ai);
+        clip.duration = static_cast<float>(anim->mDuration / tps);
+
+        for (unsigned int ci = 0; ci < anim->mNumChannels; ++ci)
+        {
+            const aiNodeAnim* nodeAnim = anim->mChannels[ci];
+
+            SceneNode* target = FindNodeInTree(rootNode, nodeAnim->mNodeName.C_Str());
+            if (!target) continue;
+
+            // Translation channel
+            if (nodeAnim->mNumPositionKeys > 0)
+            {
+                AnimationChannel ch;
+                ch.targetNode    = target;
+                ch.property      = AnimationProperty::Translation;
+                ch.interpolation = ConvertInterpolation(
+                    nodeAnim->mPositionKeys[0].mInterpolation);
+
+                ch.posKeys.reserve(nodeAnim->mNumPositionKeys);
+                for (unsigned int k = 0; k < nodeAnim->mNumPositionKeys; ++k)
+                {
+                    Keyframe<DirectX::XMFLOAT3> kf;
+                    kf.time  = static_cast<float>(nodeAnim->mPositionKeys[k].mTime / tps);
+                    kf.value = {
+                        nodeAnim->mPositionKeys[k].mValue.x,
+                        nodeAnim->mPositionKeys[k].mValue.y,
+                        nodeAnim->mPositionKeys[k].mValue.z
+                    };
+                    ch.posKeys.push_back(kf);
+                }
+                clip.channels.push_back(std::move(ch));
+            }
+
+            // Rotation channel — aiQuaternion is (w,x,y,z), XMFLOAT4 is (x,y,z,w)
+            if (nodeAnim->mNumRotationKeys > 0)
+            {
+                AnimationChannel ch;
+                ch.targetNode    = target;
+                ch.property      = AnimationProperty::Rotation;
+                ch.interpolation = ConvertInterpolation(
+                    nodeAnim->mRotationKeys[0].mInterpolation);
+
+                ch.rotKeys.reserve(nodeAnim->mNumRotationKeys);
+                for (unsigned int k = 0; k < nodeAnim->mNumRotationKeys; ++k)
+                {
+                    Keyframe<DirectX::XMFLOAT4> kf;
+                    kf.time  = static_cast<float>(nodeAnim->mRotationKeys[k].mTime / tps);
+                    kf.value = {
+                        nodeAnim->mRotationKeys[k].mValue.x,
+                        nodeAnim->mRotationKeys[k].mValue.y,
+                        nodeAnim->mRotationKeys[k].mValue.z,
+                        nodeAnim->mRotationKeys[k].mValue.w
+                    };
+                    ch.rotKeys.push_back(kf);
+                }
+                clip.channels.push_back(std::move(ch));
+            }
+
+            // Scale channel
+            if (nodeAnim->mNumScalingKeys > 0)
+            {
+                AnimationChannel ch;
+                ch.targetNode    = target;
+                ch.property      = AnimationProperty::Scale;
+                ch.interpolation = ConvertInterpolation(
+                    nodeAnim->mScalingKeys[0].mInterpolation);
+
+                ch.posKeys.reserve(nodeAnim->mNumScalingKeys);
+                for (unsigned int k = 0; k < nodeAnim->mNumScalingKeys; ++k)
+                {
+                    Keyframe<DirectX::XMFLOAT3> kf;
+                    kf.time  = static_cast<float>(nodeAnim->mScalingKeys[k].mTime / tps);
+                    kf.value = {
+                        nodeAnim->mScalingKeys[k].mValue.x,
+                        nodeAnim->mScalingKeys[k].mValue.y,
+                        nodeAnim->mScalingKeys[k].mValue.z
+                    };
+                    ch.posKeys.push_back(kf);
+                }
+                clip.channels.push_back(std::move(ch));
+            }
+        }
+
+        if (!clip.channels.empty())
+            data.animations.push_back(std::move(clip));
     }
 }
 

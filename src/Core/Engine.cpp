@@ -1,4 +1,5 @@
 #include "Core/Engine.h"
+#include "Core/AnimationController.h"
 #include "Platform/Win32/Win32Window.h"
 #include "RHI/RHIDevice.h"
 #include "RHI/RHIContext.h"
@@ -241,6 +242,28 @@ bool Engine::Initialize(const EngineInitParams& params)
         }
     });
 
+    // Create animation controller (Phase 34 Part A)
+    m_animController = std::make_unique<AnimationController>();
+    m_menu->SetAnimationPlayPauseCallback([this]() {
+        if (!m_animController) return;
+        if (m_animController->IsPlaying())
+            m_animController->Pause();
+        else
+            m_animController->Play();
+    });
+    m_menu->SetAnimationStopCallback([this]() {
+        if (m_animController) m_animController->Stop();
+    });
+    m_menu->SetAnimationSpeedCallback([this](float speed) {
+        if (m_animController) m_animController->SetPlaybackSpeed(speed);
+    });
+    m_menu->SetAnimationClipSelectCallback([this](size_t index) {
+        if (!m_animController || index >= m_animationClips.size()) return;
+        m_activeClipIndex = index;
+        m_animController->SetClipByIndex(m_animationClips, index);
+        m_animController->Play();
+    });
+
     // Create debug HUD
     m_debugHUD = std::make_unique<DebugHUD>();
 
@@ -372,6 +395,10 @@ void Engine::Update(float deltaTime)
             if (GetAsyncKeyState(VK_OEM_MINUS) & 0x8000)  m_camera->AdjustFov(-5.0f * deltaTime);
         }
     }
+
+    // Update animation (Phase 34 Part A)
+    if (m_animController)
+        m_animController->Update(deltaTime);
 
     // Update texture streamer: refresh VRAM stats every 0.5 s
     if (m_textureStreamer)
@@ -803,6 +830,9 @@ void Engine::LoadScene(const std::string& filePath)
     context->WaitForGPU();
 
     // Clear previous scene resources
+    if (m_animController) m_animController->SetClip(nullptr);
+    m_animationClips.clear();
+    m_activeClipIndex = SIZE_MAX;
     if (m_renderer) m_renderer->ClearMeshCache();
     if (m_textureCache) m_textureCache->Clear();
     if (m_textureStreamer) m_textureStreamer->Clear();
@@ -991,6 +1021,23 @@ void Engine::LoadScene(const std::string& filePath)
             shadowSize = 2048;
         context->SetShadowMapSize(shadowSize);
         context->RecreateShadowMaps();
+    }
+
+    // Set up animation clips (Phase 34 Part A)
+    m_animationClips = std::move(data.animations);
+    if (m_menu)
+    {
+        std::vector<std::string> clipNames;
+        clipNames.reserve(m_animationClips.size());
+        for (const auto& clip : m_animationClips)
+            clipNames.push_back(clip.name);
+        m_menu->SetAnimationClips(clipNames);
+    }
+    if (!m_animationClips.empty() && m_animController)
+    {
+        m_activeClipIndex = 0;
+        m_animController->SetClipByIndex(m_animationClips, 0);
+        m_animController->Play();
     }
 
 }

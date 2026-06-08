@@ -158,7 +158,7 @@ CPU Readback 간이 방식을 거치지 않고 바로 Hi-Z로 구현한다.
 **목표**: glTF Node Transform 애니메이션(키프레임)과 Skeletal Animation(본/스킨) 구현.
 Part A가 Part B의 전제 조건이므로 순서대로 구현한다.
 
-#### Part A: Node Transform Animation (G-08)
+#### Part A: Node Transform Animation (G-08) ✅
 
 1. **Animation 데이터 구조**:
    - `src/Asset/Animation.h`: `AnimationChannel` (target node, property: TRS, keyframes), `AnimationClip` (name, duration, channels 배열)
