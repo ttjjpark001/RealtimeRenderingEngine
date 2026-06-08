@@ -214,51 +214,7 @@ Part A가 Part B의 전제 조건이므로 순서대로 구현한다.
 
 ---
 
-### Phase 35: RRScenePreprocessor — 오프라인 씬 전처리 도구 + Skeletal Animation 통합 지원
-**목표**: Phase 34에서 구현한 Skeleton/Skin/AnimationClip이 이미 완성된 시점에서,
-glTF/GLB/FBX 씬을 엔진 전용 바이너리(`.rrscene`)로 저장하는 파이프라인을 처음부터 통합 구현한다.
-기본 씬 데이터(Mesh/Material/Texture/Light)와 Skeletal Animation 데이터를 단일 포맷으로 지원하며,
-CLI 도구(`RRScenePreprocessor.exe`)와 렌더링 앱 내 백그라운드 자동 생성의 두 진입점을 제공한다.
-
-1. **`.rrscene` 바이너리 포맷 정의** (`src/Asset/RRSceneFormat.h`, 공용 헤더):
-   - Header: magic("RRSC"), version(uint32=1), sourceHash(uint64, 크기^수정시각), 섹션 오프셋 테이블
-   - Scene Section: 노드 수, 노드별(부모 인덱스, 이름, 로컬 TRS 행렬, meshIndex, materialIndex), 씬 AABB, 카메라 초기 상태
-   - Mesh Section: 메시별 — `isSkinned` 플래그, Vertex 배열(스킨 메시는 joints/weights 포함) raw dump, Index 배열, AABB, LOD 데이터(LOD 0~2 Vertex/Index + 전환 거리)
-   - Material Section: PBR factor 값, AlphaMode, doubleSided, 텍스처 인덱스, sRGB/Linear 포맷 힌트
-   - Texture Section: 텍스처별 — 너비/높이/Mip 수, DXGI_FORMAT, 전체 Mip chain 픽셀 데이터(연속 배치)
-   - Light Section: 타입/색상/강도/위치/방향/감쇠/원뿔각/castShadow/BoundingSphere radius
-   - **Skeleton Section**: 본 수, 본별(이름, parentIndex, inverseBindMatrix), Skin 수, Skin별(skeletonIndex, jointIndices 배열)
-   - **Animation Section**: 클립 수, 클립별(이름, 재생 시간, 채널 수), 채널별(targetNodeIndex, Property(TRS), Interpolation, 키프레임 수, 키프레임 배열)
-   - 스킨 메시 없는 씬은 Skeleton/Animation Section 생략 (SectionCount 기반 감지)
-
-2. **전처리 파이프라인 구현** (`src/Asset/ScenePreprocessor.h/.cpp`, CLI와 엔진이 공유):
-   - `ScenePreprocessor::Generate(sourcePath, outputPath)`: 동기 전처리 (CLI 도구용)
-   - `ScenePreprocessor::GenerateAsync(sourcePath)`: `std::async`로 백그라운드 실행, `std::future<bool>` 반환 (엔진 내 자동 생성용)
-   - 내부 파이프라인: Assimp 파싱 → Vertex/Index 변환 + Tangent → 프리미티브 분리 → 메시별 AABB → Auto-LOD(QEM, LOD1=50%/LOD2=25%) → Skeleton/Skin 추출(스킨 메시 시) → Animation 추출(aiAnimation 존재 시) → 이미지 디코딩(stb_image) → Mip chain(CPU box filter) → 씬 직렬화
-   - 원자적 파일 쓰기: 임시 파일(`.rrscene.tmp`) 완성 후 원본 경로로 rename (부분 파일 방지)
-
-3. **VS 프로젝트 `RRScenePreprocessor` 추가** (솔루션 내 Console Application):
-   - `ScenePreprocessor` (엔진 헤더 공유)를 호출하는 얇은 CLI 래퍼
-   - 진입점: `main(argc, argv)` — 입력 파일 경로를 인수로 받아 `Generate()` 호출
-   - 출력: `bin/Debug/RRScenePreprocessor.exe`
-
-4. **렌더링 앱 이중 로딩 경로 추가** (`src/Asset/SceneLoader`):
-   - **고속 경로**: `.rrscene` 발견 + sourceHash 일치 → 섹션 순서대로 SceneNode/Mesh/Material/Texture/Light 객체 생성 + Skeleton Section 존재 시 Skeleton/Skin 생성 + Animation Section 존재 시 AnimationClip 생성 및 AnimationController 등록 → GPU 업로드(VB/IB/Texture)만 수행 (Assimp 파싱 없음)
-   - **표준 경로**: `.rrscene` 없거나 해시 불일치 → Assimp 런타임 파싱 → 로딩 완료 후 항목 5 실행
-   - DebugHUD에 로딩 경로 표시: "Fast (.rrscene)" / "Standard (Assimp)"
-
-5. **표준 경로 로딩 후 백그라운드 자동 전처리** (`Engine::LoadScene()`):
-   - 표준 경로(Assimp) 로딩 완료 직후: `ScenePreprocessor::GenerateAsync(sourcePath)` 호출
-   - 렌더링을 블로킹하지 않고 백그라운드 스레드에서 전처리 파이프라인 실행 (Skeleton/Animation 포함)
-   - DebugHUD에 진행 상태 표시: "Preprocessing scene..." (완료 후 사라짐)
-   - 완료 시: `.rrscene` 파일 원자적 저장, 콘솔 로그 출력 ("Sponza.rrscene saved")
-   - 다음 로딩 시 자동으로 고속 경로 사용
-
-**완료 기준**: 신규 씬 첫 로딩 시 표준 경로 + 백그라운드 자동 생성 동작 확인, 두 번째 로딩 시 자동으로 고속 경로 사용 확인(1~3초), CLI 도구(`RRScenePreprocessor.exe`)로도 동일한 `.rrscene` 생성 가능, CesiumMan.glb를 전처리 후 고속 로딩으로 스켈레탈 애니메이션 정상 재생 확인, 스킨 없는 씬(Sponza)과 스킨 있는 씬(CesiumMan) 모두 렌더링 결과 동일
-
----
-
-### Phase 36: Deferred Rendering — G-Buffer 기반 렌더링 파이프라인
+### Phase 35: Deferred Rendering — G-Buffer 기반 렌더링 파이프라인
 **목표**: 기존 Forward Rendering 파이프라인을 Deferred Shading으로 전환.
 G-Buffer에 기하학 정보를 저장하고 Lighting Pass에서 화면 공간 라이팅을 수행.
 다수 Point Light의 라이팅 비용을 O(픽셀 × 광원)에서 O(픽셀)로 분리한다.
@@ -274,6 +230,67 @@ G-Buffer에 기하학 정보를 저장하고 Lighting Pass에서 화면 공간 �
 5. **G-Buffer 디버그 뷰**: Albedo/Normal/Metallic-Roughness/Depth 시각화 뷰 모드 ("Render" 메뉴 확장)
 
 **완료 기준**: G-Buffer MRT 생성·시각화, Deferred Lighting Pass 동작, Alpha Blend Forward 합성, 기존 PBR 품질 유지
+
+---
+
+### Phase 36: RRScenePreprocessor — 오프라인 씬 전처리 도구 + Deferred Rendering 통합 지원
+**목표**: Phase 35에서 확정된 Deferred Rendering G-Buffer 레이아웃과 PSO 구조를 기반으로,
+glTF/GLB/FBX 씬을 엔진 전용 바이너리(`.rrscene`)로 저장하는 전처리 파이프라인을 구현한다.
+PSO 타입 사전 분류, G-Buffer 채널 매핑 플래그, BC 포맷 텍스처 압축을 오프라인에서 처리하여
+런타임 부담을 최소화한다.
+CLI 도구(`RRScenePreprocessor.exe`)와 렌더링 앱 내 백그라운드 자동 생성의 두 진입점을 제공한다.
+
+1. **`.rrscene` 바이너리 포맷 정의** (`src/Asset/RRSceneFormat.h`, 공용 헤더):
+   - Header: magic("RRSC"), version(uint32=1), sourceHash(uint64, 크기^수정시각), 섹션 오프셋 테이블
+   - Scene Section: 노드 수, 노드별(부모 인덱스, 이름, 로컬 TRS 행렬, meshIndex, materialIndex), 씬 AABB, 카메라 초기 상태
+   - Mesh Section: 메시별 — `uint8 psoType`(PSO 타입 사전 분류), Vertex 배열 raw dump, Index 배열, AABB, LOD 데이터(LOD 0~2 Vertex/Index + 전환 거리)
+   - Material Section: PBR factor 값, AlphaMode, doubleSided, 텍스처 인덱스, sRGB/Linear 포맷 힌트, `uint16 gBufferChannelMask`(G-Buffer 채널 매핑 비트마스크)
+   - Texture Section: 텍스처별 — 너비/높이/Mip 수, DXGI_FORMAT(BC 포맷), 전체 Mip chain BC 압축 블록
+   - Light Section: 타입/색상/강도/위치/방향/감쇠/원뿔각/castShadow/BoundingSphere radius
+
+2. **전처리 파이프라인 구현** (`src/Asset/ScenePreprocessor.h/.cpp`, CLI와 엔진이 공유):
+   - `ScenePreprocessor::Generate(sourcePath, outputPath)`: 동기 전처리 (CLI 도구용)
+   - `ScenePreprocessor::GenerateAsync(sourcePath)`: `std::async`로 백그라운드 실행, `std::future<bool>` 반환 (엔진 내 자동 생성용)
+   - 내부 파이프라인:
+     a. Assimp 파싱 (aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_CalcTangentSpace | aiProcess_ConvertToLeftHanded)
+     b. Vertex/Index 변환 + Tangent → 프리미티브 분리 → 메시별 AABB
+     c. Auto-LOD (QEM Edge Collapse, LOD1=50%/LOD2=25%)
+     d. **PSO 타입 사전 분류**: Material.AlphaMode + Material.doubleSided → `uint8 psoType` 결정
+        - `0 DeferredOpaque_CullBack`: Opaque/AlphaMask + doubleSided=false
+        - `1 DeferredOpaque_CullNone`: Opaque/AlphaMask + doubleSided=true
+        - `2 ForwardBlend_CullBack`: AlphaBlend + doubleSided=false
+        - `3 ForwardBlend_CullNone`: AlphaBlend + doubleSided=true
+     e. **G-Buffer 채널 매핑 플래그**: Phase 35 G-Buffer 레이아웃 기준으로 텍스처 유무를 비트마스크로 결정
+        - bit0: hasAlbedoMap (RT0 RGB), bit1: metallicFromMetalRoughTex (RT0 A)
+        - bit2: hasNormalMap (RT1 RGB), bit3: roughnessFromMetalRoughTex (RT1 A)
+        - bit4: hasEmissiveMap (RT2 RGB), bit5: hasOcclusionMap (RT2 A)
+        - Material Section의 `uint16 gBufferChannelMask`에 저장
+     f. **BC 포맷 텍스처 압축** (DirectXTex 활용):
+        - Albedo/Emissive (sRGB): BC7 압축
+        - Normal map (Linear, RG only): BC5 압축
+        - MetallicRoughness/AO (Linear): BC4 압축
+        - 전체 Mip chain을 BC 블록 단위로 압축하여 저장
+     g. 씬 구조 직렬화 (노드 계층, 씬 AABB, 카메라, Material, Light)
+     h. 원자적 파일 쓰기: `.rrscene.tmp` 완성 후 최종 경로로 rename
+
+3. **VS 프로젝트 `RRScenePreprocessor` 추가** (솔루션 내 Console Application):
+   - `ScenePreprocessor` (엔진 헤더 공유)를 호출하는 얇은 CLI 래퍼
+   - 진입점: `main(argc, argv)` — 입력 파일 경로를 인수로 받아 `Generate()` 호출
+   - 출력: `bin/Debug/RRScenePreprocessor.exe`
+
+4. **렌더링 앱 이중 로딩 경로 추가** (`src/Asset/SceneLoader`):
+   - **고속 경로**: `.rrscene` 발견 + sourceHash 일치 → 섹션 순서대로 SceneNode/Mesh/Material/Texture/Light 객체 생성 → GPU 업로드(VB/IB/Texture BC 블록)만 수행 (Assimp 파싱 없음), psoType·gBufferChannelMask 직접 사용
+   - **표준 경로**: `.rrscene` 없거나 해시 불일치 → Assimp 런타임 파싱 → 로딩 완료 후 항목 5 실행
+   - DebugHUD에 로딩 경로 표시: "Fast (.rrscene)" / "Standard (Assimp)"
+
+5. **표준 경로 로딩 후 백그라운드 자동 전처리** (`Engine::LoadScene()`):
+   - 표준 경로(Assimp) 로딩 완료 직후: `ScenePreprocessor::GenerateAsync(sourcePath)` 호출
+   - 렌더링을 블로킹하지 않고 백그라운드 스레드에서 전처리 파이프라인 실행
+   - DebugHUD에 진행 상태 표시: "Preprocessing scene..." (완료 후 사라짐)
+   - 완료 시: `.rrscene` 파일 원자적 저장, 콘솔 로그 출력 ("Sponza.rrscene saved")
+   - 다음 로딩 시 자동으로 고속 경로 사용
+
+**완료 기준**: 신규 씬 첫 로딩 시 표준 경로 + 백그라운드 자동 생성 동작 확인, 두 번째 로딩 시 고속 경로 사용 확인(1~3초), CLI 도구(`RRScenePreprocessor.exe`)로 `.rrscene` 생성 가능, psoType·gBufferChannelMask가 G-Buffer Fill Pass에서 올바르게 참조됨 확인, BC 압축 텍스처 GPU 업로드 후 렌더링 결과 동일
 
 ---
 
@@ -510,9 +527,10 @@ Phase 31 (Phase 02 Backup)
     ├── Phase 32 (Occlusion Culling: Hi-Z GPU + Compute 인프라) ──────────────────┐
     ├── Phase 33 (Point Light Cube Map Shadowing) ─────────────────────────────────┤
     └── Phase 34 (Skeletal Animation) ─────────────────────────────────────────────┤
-            └── Phase 35 (RRScenePreprocessor: .rrscene + Skeletal 통합) ──────────┤
                                                                                     │
-                                              Phase 36 (Deferred Rendering) ────────┘
+                                              Phase 35 (Deferred Rendering) ────────┘
+                                                             │
+                                              Phase 36 (RRScenePreprocessor: .rrscene + Deferred 통합)
                                                              │
                                               Phase 37 (HDR Pipeline + Tone Mapping)
                                                              │

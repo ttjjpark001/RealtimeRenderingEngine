@@ -340,119 +340,10 @@ src/Asset/SceneLoader.cpp — LoadAnimations() 내부
 
 ---
 
-## Prompt 35: RRScenePreprocessor — 오프라인 씬 전처리 도구 + Skeletal Animation 통합 지원
+## Prompt 35: Deferred Rendering — G-Buffer 기반 렌더링 파이프라인
 
 ```
-PRD.md, PLAN.md, CLAUDE.md의 Phase 35 섹션을 참조하여 Phase 35를 구현하라.
-Phase 34에서 Skeletal Animation(Skeleton/Skin/AnimationClip)이 이미 구현된 상태에서,
-glTF/GLB/FBX 씬을 엔진 전용 바이너리(.rrscene)로 저장하는 파이프라인을 처음부터 통합 구현한다.
-기본 씬 데이터와 Skeletal Animation 데이터를 단일 포맷으로 지원한다.
-
-1. .rrscene 바이너리 포맷을 정의한다 (src/Asset/RRSceneFormat.h, 공용 헤더).
-   헤더:
-     · char magic[4] = "RRSC"
-     · uint32 version = 1
-     · uint64 sourceHash  (원본 파일 크기 ^ 수정 시각, 변경 감지용)
-     · uint32 sectionCount
-     · SectionEntry[] { SectionType type; uint64 offset; uint64 size; }
-   섹션 타입: Scene / Mesh / Material / Texture / Light / Skeleton / Animation
-   각 섹션 세부 구조:
-   - Scene: 노드 수, 노드별(부모 인덱스, 이름, 로컬 TRS 행렬, meshIndex, materialIndex), 씬 AABB, 카메라 초기(position/yaw/pitch/fov)
-   - Mesh: 메시 수, 메시별(isSkinned 플래그, vertex 수, index 수, Vertex 배열 raw dump
-           [스킨 메시: joints(uint32×4)+weights(float×4) 포함], Index 배열 raw dump, AABB,
-           LOD 수, LOD별 vertex/index + 전환 거리)
-   - Material: 재질 수, 재질별(PBR factor, AlphaMode, doubleSided, textureIndex 참조 5개, sRGB 플래그)
-   - Texture: 텍스처 수, 텍스처별(width, height, mipLevels, DXGI_FORMAT, 전체 Mip chain 픽셀 데이터)
-   - Light: 광원 수, 광원별(type, color, intensity, position, direction, Kc/Kl/Kq, innerCone, outerCone, castShadow, bsRadius)
-   - Skeleton: 본 수, 본별(이름[문자열], parentIndex[int32], inverseBindMatrix[float 4×4]),
-               Skin 수, Skin별(skeletonIndex, jointIndices 배열)
-   - Animation: 클립 수, 클립별(이름, 재생 시간[float], 채널 수,
-                채널별[targetNodeIndex, Property(TRS enum), Interpolation enum,
-                키프레임 수, 키프레임 배열(float time + float3/float4 value)])
-   - 스킨 메시 없는 씬은 Skeleton/Animation Section 생략 (sectionCount에서 제외)
-
-2. 전처리 파이프라인을 공용 클래스로 구현한다 (src/Asset/ScenePreprocessor.h/.cpp).
-   - static bool Generate(const std::string& sourcePath, const std::string& outputPath):
-     동기 실행, CLI 도구와 엔진에서 모두 호출 가능
-     a. Assimp 파싱: aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_CalcTangentSpace | aiProcess_ConvertToLeftHanded
-     b. Vertex/Index 변환: aiMesh → 엔진 Vertex 구조체
-        · Tangent 없으면 Gram-Schmidt 재직교화로 생성
-     c. 프리미티브 분리: aiNode의 복수 aiMesh → 각각 SceneNode로 분리
-     d. 메시별 AABB: BoundingBox::CreateFromPoints()
-     e. Auto-LOD 생성:
-        · LOD 1: 원본 삼각형 50% (QEM Edge Collapse)
-        · LOD 2: 원본 삼각형 25%
-        · 전환 거리: sceneDiagonal × 2.0f (LOD 1), × 6.0f (LOD 2)
-     f. Skeleton/Skin 추출 (스킨 메시가 있을 경우):
-        · aiMesh::mBones 순회: aiBone::mName/mOffsetMatrix → Bone 생성 (Assimp 전치 주의)
-        · aiBone::mWeights → per-vertex joint index + weight 기록
-        · 스킨 메시 Vertex에 joints(uint32×4) + weights(float×4) 포함하여 저장
-        · Skeleton Section 직렬화
-     g. Animation 추출 (aiAnimation 존재 시):
-        · aiNodeAnim::mPositionKeys → Translation 키프레임 (XMFLOAT3 + time)
-        · aiNodeAnim::mRotationKeys → Rotation 키프레임 (XMFLOAT4 quaternion + time)
-        · aiNodeAnim::mScalingKeys → Scale 키프레임 (XMFLOAT3 + time)
-        · Interpolation: aiAnimBehaviour → Linear/Step/CubicSpline 매핑
-        · target name → 노드 인덱스 매핑 후 Animation Section 직렬화
-     h. 이미지 디코딩: stb_image로 PNG/JPEG → RGBA 픽셀 버퍼
-        · baseColor/emissive: sRGB 플래그 설정
-        · normal/metallicRoughness/occlusion: Linear 플래그 설정
-     i. Mip chain 생성: CPU box filter, floor(log2(max(w,h))) + 1 레벨
-     j. 씬 구조 직렬화: 노드 계층, 씬 AABB, 카메라 초기 배치, Material, Light(BoundingSphere 포함)
-     k. 원자적 파일 쓰기: 임시 파일(.rrscene.tmp) 완성 후 최종 경로로 rename
-   - static std::future<bool> GenerateAsync(const std::string& sourcePath):
-     std::async로 백그라운드 스레드에서 Generate() 실행, future 반환
-
-3. CLI 도구 프로젝트를 추가한다 (RRScenePreprocessor, Console Application).
-   - ScenePreprocessor::Generate()를 호출하는 얇은 래퍼
-   - main(argc, argv): 입력 파일 경로 인수 받음, 출력 경로 = 입력과 동일 디렉토리 + .rrscene 확장자
-   - 출력: bin/Debug/RRScenePreprocessor.exe
-
-4. 렌더링 앱에 이중 로딩 경로를 추가한다 (src/Asset/SceneLoader).
-   - SceneLoader::LoadScene(path):
-     a. 동일 디렉토리에 path.rrscene 존재 여부 확인
-     b. 존재하면: LoadRRScene(rrscenePath) 시도
-        · Header magic/version 검증
-        · sourceHash와 원본 파일 해시 비교 → 불일치 시 표준 경로로 폴백 + 로그
-        · 검증 통과 시: 섹션 순서대로 SceneNode/Mesh/Material/Texture/Light 객체 생성
-        · Skeleton Section 존재 시: Skeleton/Skin 객체 생성 → Mesh.skin 포인터 연결
-        · Animation Section 존재 시: AnimationClip 배열 생성 → AnimationController 등록,
-          첫 번째 클립 자동 재생 시작
-        · GPU 업로드(VB/IB/Texture)만 수행 (Assimp 파싱 없음)
-     c. 없거나 실패 시: 기존 Assimp 표준 경로 사용 → 로딩 완료 후 항목 5 실행
-   - DebugHUD에 로딩 경로 표시: "Fast (.rrscene)" 또는 "Standard (Assimp)"
-
-5. 표준 경로 로딩 후 백그라운드 자동 전처리를 구현한다 (Engine::LoadScene()).
-   - 표준 경로(Assimp) 로딩 완료 직후: ScenePreprocessor::GenerateAsync(sourcePath) 호출
-     · 반환된 std::future<bool>을 Engine 멤버(m_preprocessFuture)에 저장
-   - 렌더링 블로킹 없이 백그라운드 스레드에서 전처리 파이프라인 실행 (Skeleton/Animation 포함)
-   - DebugHUD에 진행 상태 표시:
-     · 진행 중: "Preprocessing scene..." (m_preprocessFuture가 유효한 동안)
-     · 완료 후: 메시지 사라짐
-   - 매 프레임 Engine::Update()에서 future 완료 여부 폴링:
-     · future.wait_for(0ms) == ready → 결과 확인, 성공 시 콘솔 로그 출력
-       ("Sponza.rrscene saved — next load will use fast path")
-     · m_preprocessFuture 초기화(reset)
-   - 씬 교체 시 이전 전처리 future가 실행 중이면 detach(취소 불가) 후 진행
-
-6. 동작을 검증한다.
-   - Sponza.gltf 첫 로딩: 표준 경로(Assimp) 사용 + DebugHUD "Preprocessing scene..." 표시 확인
-   - 전처리 완료 후: Sponza.rrscene 파일 생성 확인, 콘솔 로그 확인
-   - Sponza.gltf 두 번째 로딩: 자동으로 고속 경로 사용(~90% 단축) 확인
-   - CesiumMan.glb를 CLI 도구로 전처리 → CesiumMan.rrscene 생성
-   - 렌더링 앱에서 CesiumMan.gltf 열기 → 고속 경로로 스켈레탈 애니메이션 정상 재생 확인
-   - 원본 파일 변경 후 로딩: 해시 불일치 감지 → 표준 경로 폴백 + 재전처리 시작 확인
-
-빌드하여 기본 씬(Sponza)과 스켈레탈 씬(CesiumMan) 모두에서
-첫 로딩 시 백그라운드 자동 생성, 두 번째 로딩부터 고속 경로가 동작하는지 확인하라.
-```
-
----
-
-## Prompt 36: Deferred Rendering — G-Buffer 기반 렌더링 파이프라인
-
-```
-PRD.md, PLAN.md(Phase 03), CLAUDE.md를 참조하여 Phase 36을 구현하라.
+PRD.md, PLAN.md(Phase 35), CLAUDE.md를 참조하여 Phase 35를 구현하라.
 기존 Forward Rendering 파이프라인을 Deferred Shading으로 전환한다.
 Alpha Blend 오브젝트는 Forward 패스를 유지하는 Hybrid 구조를 적용한다.
 
@@ -471,6 +362,82 @@ Alpha Blend 오브젝트는 Forward 패스를 유지하는 Hybrid 구조를 적�
 5. G-Buffer 디버그 뷰 (Render 메뉴): Albedo / Normal / MetalRoughness / Depth 시각화
 
 빌드하여 G-Buffer MRT, Deferred Lighting Pass, Alpha Blend 합성을 확인하라.
+```
+
+---
+
+## Prompt 36: RRScenePreprocessor — 오프라인 씬 전처리 도구 + Deferred Rendering 통합 지원
+
+```
+PRD.md, PLAN.md, CLAUDE.md의 Phase 36 섹션을 참조하여 Phase 36을 구현하라.
+Phase 35에서 확정된 Deferred Rendering G-Buffer 레이아웃과 PSO 구조를 기반으로,
+glTF/GLB/FBX 씬을 엔진 전용 바이너리(.rrscene)로 저장하는 파이프라인을 구현한다.
+PSO 타입 사전 분류, G-Buffer 채널 매핑 플래그, BC 포맷 텍스처 압축을 포함한다.
+
+1. .rrscene 바이너리 포맷을 정의한다 (src/Asset/RRSceneFormat.h, 공용 헤더).
+   헤더:
+     · char magic[4] = "RRSC"
+     · uint32 version = 1
+     · uint64 sourceHash  (원본 파일 크기 ^ 수정 시각, 변경 감지용)
+     · uint32 sectionCount
+     · SectionEntry[] { SectionType type; uint64 offset; uint64 size; }
+   섹션 타입: Scene / Mesh / Material / Texture / Light
+   각 섹션 세부 구조:
+   - Scene: 노드 수, 노드별(부모 인덱스, 이름, 로컬 TRS 행렬, meshIndex, materialIndex), 씬 AABB, 카메라 초기(position/yaw/pitch/fov)
+   - Mesh: 메시 수, 메시별(uint8 psoType, vertex 수, index 수, Vertex 배열 raw dump, Index 배열 raw dump, AABB, LOD 수, LOD별 vertex/index + 전환 거리)
+   - Material: 재질 수, 재질별(PBR factor, AlphaMode, doubleSided, textureIndex 참조 5개, sRGB 플래그, uint16 gBufferChannelMask)
+   - Texture: 텍스처 수, 텍스처별(width, height, mipLevels, DXGI_FORMAT(BC 포맷), 전체 Mip chain BC 압축 블록)
+   - Light: 광원 수, 광원별(type, color, intensity, position, direction, Kc/Kl/Kq, innerCone, outerCone, castShadow, bsRadius)
+
+2. 전처리 파이프라인을 공용 클래스로 구현한다 (src/Asset/ScenePreprocessor.h/.cpp).
+   - static bool Generate(const std::string& sourcePath, const std::string& outputPath)
+   - static std::future<bool> GenerateAsync(const std::string& sourcePath)
+   내부 파이프라인:
+   a. Assimp 파싱: aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_CalcTangentSpace | aiProcess_ConvertToLeftHanded
+   b. Vertex/Index 변환 + Tangent 생성 (없으면 Gram-Schmidt 재직교화) → 프리미티브 분리 → 메시별 AABB
+   c. Auto-LOD (QEM Edge Collapse, LOD1=50%/LOD2=25%, 전환 거리 sceneDiagonal×2/×6)
+   d. PSO 타입 사전 분류: Material.AlphaMode + Material.doubleSided → uint8 psoType
+      · 0=DeferredOpaque_CullBack (Opaque/AlphaMask + doubleSided=false)
+      · 1=DeferredOpaque_CullNone (Opaque/AlphaMask + doubleSided=true)
+      · 2=ForwardBlend_CullBack  (AlphaBlend + doubleSided=false)
+      · 3=ForwardBlend_CullNone  (AlphaBlend + doubleSided=true)
+   e. G-Buffer 채널 매핑 플래그: Phase 35 G-Buffer 레이아웃 기준 비트마스크 계산
+      · bit0: hasAlbedoMap(RT0 RGB), bit1: metallicFromMetalRoughTex(RT0 A)
+      · bit2: hasNormalMap(RT1 RGB), bit3: roughnessFromMetalRoughTex(RT1 A)
+      · bit4: hasEmissiveMap(RT2 RGB), bit5: hasOcclusionMap(RT2 A)
+      → uint16 gBufferChannelMask로 Material Section에 저장
+   f. BC 포맷 텍스처 압축 (DirectXTex):
+      · Albedo/Emissive (sRGB): BC7
+      · Normal map (RG only): BC5
+      · MetallicRoughness/AO: BC4
+      · 전체 Mip chain BC 블록으로 압축 후 저장
+   g. 씬 구조 직렬화 (노드 계층, 씬 AABB, 카메라, Material, Light)
+   h. 원자적 파일 쓰기: .rrscene.tmp 완성 후 최종 경로로 rename
+
+3. CLI 도구 프로젝트를 추가한다 (RRScenePreprocessor, Console Application).
+   - main(argc, argv): 입력 파일 경로 인수 → Generate() 호출
+   - 출력: bin/Debug/RRScenePreprocessor.exe
+
+4. 렌더링 앱에 이중 로딩 경로를 추가한다 (src/Asset/SceneLoader).
+   - 고속 경로: .rrscene 발견 + sourceHash 일치 → 섹션 순서대로 객체 생성, psoType·gBufferChannelMask 직접 사용 → GPU 업로드(BC 텍스처 블록)만 수행
+   - 표준 경로: .rrscene 없거나 해시 불일치 → Assimp 파싱 → 항목 5 실행
+   - DebugHUD: "Fast (.rrscene)" / "Standard (Assimp)"
+
+5. 표준 경로 로딩 후 백그라운드 자동 전처리를 구현한다 (Engine::LoadScene()).
+   - Assimp 로딩 완료 직후: GenerateAsync(sourcePath) 호출, future를 m_preprocessFuture에 저장
+   - DebugHUD: "Preprocessing scene..." 표시, 완료 후 "Sponza.rrscene saved" 콘솔 로그
+   - 매 프레임 future 완료 여부 폴링 → 완료 시 m_preprocessFuture 초기화
+   - 씬 교체 시 이전 future가 실행 중이면 detach 후 진행
+
+6. 동작을 검증한다.
+   - Sponza.gltf 첫 로딩: 표준 경로 + "Preprocessing scene..." 확인
+   - 전처리 완료 후: Sponza.rrscene 생성 확인
+   - 두 번째 로딩: 고속 경로(~90% 단축) 확인
+   - 원본 파일 변경 후 로딩: 해시 불일치 → 표준 경로 폴백 + 재전처리 시작 확인
+   - psoType·gBufferChannelMask가 G-Buffer Fill Pass에서 올바르게 참조됨 확인
+   - BC 압축 텍스처 GPU 업로드 후 렌더링 결과 동일 확인
+
+빌드하여 첫 로딩 시 백그라운드 자동 생성, 두 번째 로딩부터 고속 경로가 동작하는지 확인하라.
 ```
 
 ---
