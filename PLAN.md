@@ -195,6 +195,23 @@ Part A가 Part B의 전제 조건이므로 순서대로 구현한다.
 
 **완료 기준**: glTF 애니메이션 파일(예: CesiumMan.glb, RiggedFigure.glb)에서 노드 TRS 애니메이션 및 스킨 메시 애니메이션이 정상 재생, 모든 테스트 통과
 
+#### Part C: 좌표계 변환 버그 수정 — Yup2Zup 애니메이션 쿼터니언 (G-10)
+
+**배경**: `aiProcess_ConvertToLeftHanded` 사용 시 Yup2Zup 루트 노드를 포함한 glTF 모델(CesiumMilkTruck.glb 등)에서 자식 노드 애니메이션 쿼터니언의 회전축이 월드 공간에서 틀어지는 버그. Part A 구현 중 CesiumMilkTruck.glb 검증 과정에서 발견.
+
+- **원인**: Yup2Zup 루트 노드 회전 `{x=0.5, y=-0.5, z=0.5, w=0.5}`이 ConvertToLeftHanded의 쿼터니언 Z-flip 변환과 합성되면서, 자식 노드 애니메이션 회전 키프레임이 월드 좌표계에서 잘못된 축으로 적용됨
+- **영향 범위**: Z-up DCC 툴(예: Blender Z-up 모드)에서 내보낸 glTF 모델 중 Yup2Zup 루트 보정 노드를 포함한 모델. CesiumMan.glb는 Yup2Zup 노드가 없어 영향 없음.
+- **재현 모델**: `assets/test-models/CesiumMilkTruck/` (Khronos 공식 테스트 모델)
+
+**수정 범위**: `src/Asset/SceneLoader.cpp` — `LoadAnimations()` 내 쿼터니언 보정
+
+1. 채널 target 노드에서 루트까지 계층을 거슬러 올라가 Yup2Zup 패턴 노드 감지 (노드 이름 `"Yup2Zup"` 또는 회전값 패턴)
+2. 감지된 경우 해당 자식 계층 애니메이션 rotation 키프레임에 역보정 쿼터니언 적용
+3. translation/scale 키프레임은 별도 Z 부호 처리 필요 여부 검토
+4. 기존 모델(DamagedHelmet, CesiumMan, Sponza 등) 회귀 없음 확인
+
+**완료 기준**: CesiumMilkTruck.glb 바퀴 애니메이션이 올바른 회전축으로 재생, 기존 모델 회귀 없음, 관련 유닛 테스트 추가 후 전체 테스트 통과
+
 ---
 
 ### Phase 35: RRScenePreprocessor — 오프라인 씬 전처리 도구 + Skeletal Animation 통합 지원

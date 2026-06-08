@@ -298,6 +298,48 @@ Part A(Node Transform Animation)를 먼저 완성한 뒤 Part B(Skeletal Animati
 
 ---
 
+## Prompt 34 Part C: Yup2Zup 애니메이션 쿼터니언 좌표계 버그 수정
+
+```
+PLAN.md의 Phase 34 Part C를 참조하여 Yup2Zup 애니메이션 쿼터니언 버그를 수정하라.
+
+=== 버그 요약 ===
+
+aiProcess_ConvertToLeftHanded 사용 시 Yup2Zup 루트 노드를 포함한 glTF 모델에서
+자식 노드 애니메이션 쿼터니언의 회전축이 월드 공간에서 틀어지는 버그.
+
+재현 모델: assets/test-models/CesiumMilkTruck/CesiumMilkTruck.glb
+- Yup2Zup 루트 노드 회전: {x=0.5, y=-0.5, z=0.5, w=0.5}
+- 바퀴 회전 채널이 올바른 축 대신 틀어진 축으로 재생됨
+
+CesiumMan.glb는 Yup2Zup 노드가 없어 영향 없음 — 회귀 기준 모델로 사용.
+
+=== 수정 범위 ===
+
+src/Asset/SceneLoader.cpp — LoadAnimations() 내부
+
+1. 채널 target 노드에서 루트 방향으로 계층을 순회하여 Yup2Zup 패턴 노드를 감지한다.
+   - 노드 이름이 "Yup2Zup"이거나, 회전값이 {±0.5, ±0.5, ±0.5, ±0.5} 패턴인 경우 감지.
+
+2. 감지된 경우 해당 자식 계층에 속하는 AnimationChannel의 rotation 키프레임에
+   역보정 쿼터니언을 적용한다.
+   - ConvertToLeftHanded가 Assimp 내부에서 쿼터니언에 어떤 변환을 적용하는지
+     (Z분량 부호 반전 여부 등) Assimp 소스를 확인한 뒤 올바른 역보정 수식을 도출한다.
+
+3. translation / scale 키프레임의 Z 부호 처리 필요 여부도 함께 검토하여 수정한다.
+
+4. 기존 모델(DamagedHelmet, CesiumMan, Sponza 등)에서 회귀가 없음을 확인한다.
+
+=== 테스트 ===
+
+- CesiumMilkTruck.glb를 로드하여 바퀴 애니메이션이 올바른 축으로 회전하는지 확인한다.
+- CesiumMan.glb를 로드하여 기존 애니메이션이 그대로 정상 재생되는지 확인한다.
+- 버그 재현 조건을 커버하는 유닛 테스트를 추가한다.
+- 전체 유닛·스모크 테스트가 통과해야 한다.
+```
+
+---
+
 ## Prompt 35: RRScenePreprocessor — 오프라인 씬 전처리 도구 + Skeletal Animation 통합 지원
 
 ```
